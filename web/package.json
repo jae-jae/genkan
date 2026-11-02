@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@preact/signals": "^2.0.0",
-    "preact": "^10.26.0"
+    "preact": "^11.1.0"
   },
   "devDependencies": {
     "typescript": "^5.8.0",

@@ -76,6 +76,19 @@ test.describe('AI tab and top-right AI button', () => {
     await expect(page.getByTestId('copy-skill-prompt').locator('svg[data-icon="check"]')).toBeVisible()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('raw.githubusercontent.com/jae-jae/genkan/')
     await expect(page.getByTestId('copy-skill-prompt').locator('svg[data-icon="copy"]')).toBeVisible() // back after ~1.5 s
+    // the prompt is collapsed to a short preview by default; the toggle expands/collapses it; copy always copies everything
+    const prompt = page.getByTestId('skill-prompt')
+    const toggle = page.getByTestId('skill-prompt-toggle')
+    await expect(prompt).toHaveAttribute('data-collapsed', 'true')
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect((await prompt.boundingBox())!.height).toBeLessThan(110)
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('GENKAN_TOKEN=gk_') // full text even while collapsed
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(prompt).not.toHaveAttribute('data-collapsed', 'true')
+    expect((await prompt.boundingBox())!.height).toBeGreaterThan(180)
+    await toggle.click()
+    await expect(prompt).toHaveAttribute('data-collapsed', 'true')
 
     // MCP: the Claude Code command and the generic JSON snippet, one below the other
     await page.getByTestId('connect-mcp').click()

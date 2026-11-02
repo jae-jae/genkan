@@ -106,7 +106,7 @@ Uploading exactly one file also applies it; several files only add them to the g
   `gk_••••••••…last4`), `token-toggle` (show/hide, `aria-pressed`), `token-copy`, `token-regenerate` (icon button, aria-label only) →
   inline `token-confirm` with `token-regenerate-confirm` / `token-regenerate-cancel`, `mcp-warning` (the single amber warning line).
   Connect: `connect-tabs` (`role=tablist`), `connect-skill|mcp` (`role=tab`, `aria-selected`; only the selected pane is rendered),
-  panes `pane-skill|mcp`. Skill pane (prompt first): `skill-prompt` (the ready-to-paste setup prompt, wrapping `<pre>`) + `copy-skill-prompt`. MCP pane:
+  panes `pane-skill|mcp`. Skill pane (prompt first): `skill-prompt` (the ready-to-paste setup prompt, wrapping `<pre>`; collapsed to a 3-line preview by default, `data-collapsed="true"`) + `skill-prompt-toggle` (expand/collapse, `aria-expanded`) + `copy-skill-prompt` (always copies the full prompt). MCP pane:
   `mcp-command` + `copy-mcp-command` (Claude Code) and `mcp-json` + `copy-mcp-json` (generic client). Prompt and snippets are masked
   while the token is masked; copy buttons (icon-only, check for 1.5 s) always copy the real value. Below it a quiet manual-install row `skill-manual` with the package download link `skill-download` (`<a href=/api/skill download>`; the zip contains the token).
   NOTE: `mcp-command`/`mcp-json` only exist while the MCP pane is selected (default pane is Skill).

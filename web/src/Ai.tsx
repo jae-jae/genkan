@@ -28,13 +28,21 @@ function CopyBtn({ text, testid, cls }: { text: string; testid: string; cls: str
 }
 
 /** `text` is what is displayed (possibly masked); `copy` is what the button copies. */
-function CodeBox({ text, copy, testid, copyId, wrap }: { text: string; copy: string; testid: string; copyId: string; wrap?: boolean }) {
+function CodeBox({ text, copy, testid, copyId, wrap, collapsible }: { text: string; copy: string; testid: string; copyId: string; wrap?: boolean; collapsible?: boolean }) {
+  const [open, setOpen] = useState(false)
+  const clipped = collapsible && !open
   return (
-    <div class={wrap ? 'code wrap' : 'code'}>
-      <pre data-testid={testid} tabIndex={0}>
+    <div class={'code' + (wrap ? ' wrap' : '') + (clipped ? ' clipped' : '')}>
+      <pre data-testid={testid} tabIndex={0} data-collapsed={clipped ? 'true' : undefined}>
         {text}
       </pre>
       <CopyBtn text={copy} testid={copyId} cls="code-copy" />
+      {collapsible && (
+        <button type="button" class="code-toggle" data-testid={testid + '-toggle'} aria-expanded={open} onClick={() => setOpen(!open)}>
+          <Icon n={open ? 'chevron-up' : 'chevron-down'} />
+          {open ? t('ai.collapse') : t('ai.expand')}
+        </button>
+      )}
     </div>
   )
 }
@@ -159,7 +167,7 @@ export function AiTab() {
         {pane === 'skill' && (
           <>
             <p class="hint first">{t('ai.skillHint')}</p>
-            <CodeBox text={disp.prompt} copy={real.prompt} testid="skill-prompt" copyId="copy-skill-prompt" wrap />
+            <CodeBox text={disp.prompt} copy={real.prompt} testid="skill-prompt" copyId="copy-skill-prompt" wrap collapsible />
             <p class="manual" data-testid="skill-manual">
               <span>{t('ai.manual')}</span>
               <a class="btn sm" href="/api/skill" download="genkan-skill.zip" data-testid="skill-download">

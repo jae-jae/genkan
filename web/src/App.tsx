@@ -9,6 +9,7 @@ import { SettingsModal } from './Settings'
 import { Topbar } from './Topbar'
 import { Wallpaper } from './Wallpaper'
 import { t } from './i18n'
+import { DEFAULT_WALLPAPER } from './util'
 import { curWs, editMode, isAdmin, load, loadError, loaded, modal, role, setWs, setupRequired, settings, showLogin, sortedWs } from './store'
 
 function isTyping(el: Element | null) {
@@ -138,7 +139,7 @@ export function App() {
     )
   return (
     <>
-      <Wallpaper value={ws && loaded.value && role.value !== 'none' && !setupRequired.value && !showLogin.value ? ws.wallpaper : 'preset:aurora'} />
+      <Wallpaper value={ws && loaded.value && role.value !== 'none' && !setupRequired.value && !showLogin.value ? ws.wallpaper : DEFAULT_WALLPAPER} />
       {body}
       <ModalHost />
       <CtxMenu />

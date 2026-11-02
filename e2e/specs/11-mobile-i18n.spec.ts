@@ -128,7 +128,7 @@ test.describe('mobile viewport (390x844)', () => {
 })
 
 test.describe('language', () => {
-  test('default follows navigator.language (zh-CN -> Chinese) and Settings switches both ways, persisted', async ({ browser, admin, api }) => {
+  test('Auto (default) follows a zh-CN browser; Settings switches explicit/auto, persisted', async ({ browser, admin, api }) => {
     await api.seed({ links: [{ id: 'a', workspace_id: 'ws1', title: 'Alpha', url: 'http://a.lan' }] })
     const ctx = await browser.newContext({ baseURL: origin(), locale: 'zh-CN' })
     await ctx.addCookies((await admin.storageState()).cookies)
@@ -142,14 +142,18 @@ test.describe('language', () => {
     await expect(page.getByTestId('logout-btn')).toHaveText('退出登录')
     await expect(page.getByTestId('main-menu')).toContainText('排序')
     await page.keyboard.press('Escape')
-    await expect(page.locator('html')).toHaveAttribute('lang', /zh/)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
 
     await openSettings(page)
-    await expect(page.getByTestId('set-lang')).toHaveValue('zh')
-    await page.getByTestId('set-lang').selectOption('en')
-    await expect(page.getByTestId('set-lang')).toHaveValue('en')
+    const sel = page.getByTestId('set-lang')
+    await expect(sel).toHaveValue('auto')
+    await expect(sel.locator('option')).toHaveText(['自动（跟随浏览器）', '简体中文', 'English'])
+    await sel.selectOption('en')
+    await expect(sel).toHaveValue('en')
+    await expect(sel.locator('option')).toHaveText(['Auto (follow browser)', '简体中文', 'English'])
     await page.getByTestId('modal-close').click()
     await expect(page.getByTestId('search-input')).toHaveAttribute('placeholder', /Search/)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en')
     await openMainMenu(page)
     await expect(page.getByTestId('sort-frequency')).toHaveText(/Frequent/i)
     await expect(page.getByTestId('main-menu')).toContainText('Sort')
@@ -159,14 +163,104 @@ test.describe('language', () => {
     await page.reload()
     await expect(page.getByTestId('search-input')).toHaveAttribute('placeholder', /Search/)
 
+    // back to Auto: follows the (Chinese) browser again, persisted as "auto"
     await openSettings(page)
+    await page.getByTestId('set-lang').selectOption('auto')
+    await page.getByTestId('modal-close').click()
+    await expect(page.getByTestId('search-input')).toHaveAttribute('placeholder', /搜索/)
+    expect(await page.evaluate(() => localStorage.getItem('genkan.lang'))).toBe('auto')
+    await page.reload()
+    await expect(page.getByTestId('search-input')).toHaveAttribute('placeholder', /搜索/)
+    await openSettings(page)
+    await expect(page.getByTestId('set-lang')).toHaveValue('auto')
+
+    // explicit Chinese
     await page.getByTestId('set-lang').selectOption('zh')
     await page.getByTestId('modal-close').click()
     await expect(page.getByTestId('search-input')).toHaveAttribute('placeholder', /搜索/)
+    expect(await page.evaluate(() => localStorage.getItem('genkan.lang'))).toBe('zh')
     // no raw i18n keys leak into the UI
     const text = await page.locator('body').innerText()
     expect(text).not.toMatch(/\b(top|set|sort|link|cat|ws|mcp|data|empty|common|auth)\.[a-zA-Z]+\b/)
     await ctx.close()
+  })
+
+  test('Auto with an en-US browser is English; an explicit choice overrides it and Auto goes back', async ({ page }) => {
+    await openApp(page)
+    await expect(page.getByTestId('search-input')).toHaveAttribute('placeholder', /Search/)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+    await openSettings(page)
+    await expect(page.getByTestId('set-lang')).toHaveValue('auto')
+    await expect(page.getByTestId('set-lang').locator('option')).toHaveText(['Auto (follow browser)', '简体中文', 'English'])
+    await page.getByTestId('set-lang').selectOption('zh')
+    await expect(page.getByTestId('set-lang').locator('option')).toHaveText(['自动（跟随浏览器）', '简体中文', 'English'])
+    await page.getByTestId('modal-close').click()
+    await expect(page.getByTestId('search-input')).toHaveAttribute('placeholder', /搜索/)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
+    await page.reload()
+    await expect(page.getByTestId('search-input')).toHaveAttribute('placeholder', /搜索/)
+    await openSettings(page)
+    await page.getByTestId('set-lang').selectOption('auto')
+    await page.getByTestId('modal-close').click()
+    await expect(page.getByTestId('search-input')).toHaveAttribute('placeholder', /Search/)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  })
+
+  test('Auto reacts to the browser languagechange event; priority order and unsupported languages', async ({ page }) => {
+    await page.addInitScript(() => {
+      const w = window as any
+      w.__langs = ['en-US']
+      Object.defineProperty(navigator, 'languages', { get: () => w.__langs, configurable: true })
+      Object.defineProperty(navigator, 'language', { get: () => w.__langs[0], configurable: true })
+    })
+    const setBrowser = (langs: string[]) =>
+      page.evaluate((l) => {
+        ;(window as any).__langs = l
+        window.dispatchEvent(new Event('languagechange'))
+      }, langs)
+    const ph = page.getByTestId('search-input')
+    await openApp(page)
+    await expect(ph).toHaveAttribute('placeholder', /Search/)
+    await setBrowser(['zh-TW', 'en'])
+    await expect(ph).toHaveAttribute('placeholder', /搜索/)
+    await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
+    await setBrowser(['fr-FR', 'zh-CN'])
+    await expect(ph).toHaveAttribute('placeholder', /搜索/)
+    await setBrowser(['en-GB', 'zh-CN']) // the first supported language wins
+    await expect(ph).toHaveAttribute('placeholder', /Search/)
+    await setBrowser(['zh-CN'])
+    await expect(ph).toHaveAttribute('placeholder', /搜索/)
+    await setBrowser(['de-DE']) // unsupported -> English
+    await expect(ph).toHaveAttribute('placeholder', /Search/)
+    // an explicit choice ignores the browser
+    await setBrowser(['zh-CN'])
+    await expect(ph).toHaveAttribute('placeholder', /搜索/)
+    await openSettings(page)
+    await page.getByTestId('set-lang').selectOption('en')
+    await page.getByTestId('modal-close').click()
+    await setBrowser(['zh-CN'])
+    await expect(ph).toHaveAttribute('placeholder', /Search/)
+  })
+
+  test('stored values: legacy zh/en are kept, a missing or invalid value means Auto', async ({ browser, admin, api }) => {
+    void api
+    const run = async (locale: string, stored: string | null, expectZh: boolean, value: string) => {
+      const ctx = await browser.newContext({ baseURL: origin(), locale })
+      await ctx.addCookies((await admin.storageState()).cookies)
+      if (stored !== null) await ctx.addInitScript((v) => localStorage.setItem('genkan.lang', v), stored)
+      const page = await ctx.newPage()
+      await page.goto('/')
+      await expect(page.getByTestId('ws-menu-btn')).toBeVisible()
+      await expect(page.getByTestId('search-input')).toHaveAttribute('placeholder', expectZh ? /搜索/ : /Search/)
+      await openSettings(page)
+      await expect(page.getByTestId('set-lang')).toHaveValue(value)
+      await ctx.close()
+    }
+    await run('en-US', 'zh', true, 'zh') // existing explicit choice survives
+    await run('zh-CN', 'en', false, 'en')
+    await run('zh-CN', 'garbage', true, 'auto')
+    await run('en-US', 'garbage', false, 'auto')
+    await run('zh-CN', null, true, 'auto')
   })
 
   test('English default for en-US, login screen is translated too', async ({ browser, api }) => {

@@ -29,7 +29,7 @@ func firstWS(t *testing.T, s *Store) Workspace {
 func TestDefaults(t *testing.T) {
 	s, dir := open(t)
 	snap := s.Snapshot()
-	if len(snap.Workspaces) != 1 || snap.Workspaces[0].Name != "Home" || snap.Workspaces[0].Wallpaper != "preset:aurora" {
+	if len(snap.Workspaces) != 1 || snap.Workspaces[0].Name != "Home" || snap.Workspaces[0].Wallpaper != "preset:dusk" {
 		t.Fatalf("default workspace: %+v", snap.Workspaces)
 	}
 	want := Settings{Title: "Genkan", SortMode: "frequency", SearchEngine: "https://www.google.com/search?q=%s", OpenInNewTab: true, HealthInterval: 60, ShowClock: true}
@@ -89,7 +89,7 @@ func TestSortAssignmentAndCRUD(t *testing.T) {
 	}
 	// category from another workspace is rejected
 	ws2, _ := s.CreateWorkspace(WorkspaceInput{Name: "Work", Icon: "lucide:briefcase"})
-	if ws2.Sort != 1 || ws2.Wallpaper != "preset:aurora" {
+	if ws2.Sort != 1 || ws2.Wallpaper != "preset:dusk" {
 		t.Fatalf("ws2 %+v", ws2)
 	}
 	if _, err := s.UpdateLink(l2.ID, LinkPatch{WorkspaceID: &ws2.ID, CategoryID: &c1.ID}); ErrKind(err) != KindInvalid {

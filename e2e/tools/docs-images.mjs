@@ -23,7 +23,7 @@ const GALLERY = {
 const heroHtml = `<!doctype html><meta charset="utf-8"><style>
 *{box-sizing:border-box;margin:0}
 html,body{width:1200px;height:860px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",sans-serif}
-.bg{position:absolute;inset:-120px;background:url(${url('desktop-home-gallery')}) center/cover;filter:blur(70px) saturate(1.35) brightness(.82)}
+.bg{position:absolute;inset:-120px;background:url(${url('desktop-home')}) center/cover;filter:blur(70px) saturate(1.25) brightness(.58)}
 .veil{position:absolute;inset:0;background:radial-gradient(120% 90% at 20% 0%,rgba(255,255,255,.16),transparent 60%),linear-gradient(180deg,rgba(10,8,30,.10),rgba(10,8,30,.34))}
 .win{position:absolute;left:64px;top:66px;width:960px;border-radius:14px;background:#1b1b22;overflow:hidden;
  box-shadow:0 0 0 1px rgba(255,255,255,.14),0 2px 6px rgba(0,0,0,.25),0 30px 60px -10px rgba(5,3,25,.5),0 60px 90px -30px rgba(5,3,25,.45)}

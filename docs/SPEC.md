@@ -86,10 +86,10 @@ ID 统一为 12 位随机 base32 小写字符串。时间为 RFC3339 字符串�
 }
 ```
 
-**Workspace** `{ "id", "name", "icon": "lucide:house", "wallpaper": "preset:aurora", "sort": 0 }`
+**Workspace** `{ "id", "name", "icon": "lucide:house", "wallpaper": "preset:dusk", "sort": 0 }`
 - `icon`：`lucide:<name>`，`<name>` 必须属于内置的 52 个 Lucide 图标（Go 切片 `store.BuiltinIcons`，前端内置对应 SVG 路径）：`house, layout-grid, folder, briefcase, code, terminal, server, database, hard-drive, cloud, network, router, wifi, globe, shield, lock, key-round, film, clapperboard, tv, music, headphones, image, camera, gamepad-2, book-open, graduation-cap, newspaper, shopping-cart, wallet, chart-line, activity, gauge, cpu, wrench, settings, bot, sparkles, heart, star, bookmark, users, message-circle, mail, calendar, download, flask-conical, leaf, coffee, plane, lightbulb, rocket`。创建/更新时校验，未知名称 → 400；空串 = `lucide:layout-grid`。首次启动创建的默认工作空间为 `{name:"Home", icon:"lucide:house"}`。
 - **迁移**：加载数据文件时，任何不以 `lucide:` 开头的旧 emoji 图标自动映射（🏠🏡→house；🎬🎞📺→clapperboard；🛠🔧⚙️→wrench；🌐🌍🌎→globe；💼→briefcase；🎮→gamepad-2；🎵🎶→music；📚📖→book-open；💻🖥→code；☁️→cloud；🔒🔐→lock；⭐→star；❤️→heart；其余→layout-grid）并立即写回文件。`POST /api/import` 同样接受旧导出中的 emoji 图标并做同样映射。
-- `wallpaper`：`preset:<id>`（前端内置，id ∈ `aurora, dusk, ocean, forest, sakura, graphite`）或 `upload:<filename>`（URL 为 `/uploads/wallpapers/<filename>`）。空串视为 `preset:aurora`。
+- `wallpaper`：`preset:<id>`（前端内置，id ∈ `dusk, aurora, ocean, forest, sakura, graphite`）或 `upload:<filename>`（URL 为 `/uploads/wallpapers/<filename>`）。**默认壁纸为黄昏（`preset:dusk`）**：首次启动自动创建的 Home、未指定壁纸的新工作空间（REST / MCP / UI 新建表单的默认选中）、空串、登录 / 首次设置页（尚无工作空间）都用它；已存储的显式壁纸不迁移、不改变。
 
 **Category** `{ "id", "workspace_id", "name", "sort": 0 }`
 
@@ -161,7 +161,7 @@ ID 统一为 12 位随机 base32 小写字符串。时间为 RFC3339 字符串�
 | `GET /api/health` | R | – | `{ "<link_id>": {status:"up"\|"down"\|"unknown", latency_ms, checked_at, code} }` |
 | `POST /api/uploads/wallpaper` | A | multipart `file`（jpg/png/webp/avif，≤ 15MB） | `{value:"upload:<file>", url}`（文件名由内容哈希决定，重复上传同一张图是幂等的；前端多选上传时逐张调用） |
 | `GET /api/wallpapers` | A | – | 壁纸图库：`[{value:"upload:<file>", url:"/uploads/wallpapers/<file>", size, created_at}]`（`created_at` 为文件 mtime，RFC3339），按时间倒序，读取自 `uploads/wallpapers/` |
-| `DELETE /api/wallpapers/{file}` | A | – | `{ok:true}`。`file` 必须是安全文件名（`[A-Za-z0-9._-]`，不以 `.` 开头，否则 400）；文件不存在 → 404。删除文件，并把所有 `wallpaper == "upload:<file>"` 的工作空间重置为 `preset:aurora`，递增版本并广播 SSE change |
+| `DELETE /api/wallpapers/{file}` | A | – | `{ok:true}`。`file` 必须是安全文件名（`[A-Za-z0-9._-]`，不以 `.` 开头，否则 400）；文件不存在 → 404。删除文件，并把所有 `wallpaper == "upload:<file>"` 的工作空间重置为默认壁纸 `preset:dusk`，递增版本并广播 SSE change |
 | `POST /api/uploads/icon` | A | multipart `file`（png/svg/ico/webp/jpg，≤ 1MB） | `{value:"upload:<file>", url}` |
 | `GET /api/export` | A | – | 导出 JSON（`{schema, settings, workspaces, categories, links}`，不含 auth / API Token），`Content-Disposition: attachment` |
 | `POST /api/import` | A | `{mode:"replace"\|"merge", data:<export json>}` | `{ok:true, workspaces:n, links:n}` merge 模式：新 ID 导入，不覆盖现有 |
@@ -259,7 +259,7 @@ ID 统一为 12 位随机 base32 小写字符串。时间为 RFC3339 字符串�
 - 实时更新：连接 `/api/events`，断线指数退避重连；页面重新可见时也刷新。
 - 乐观更新 + 失败 toast 提示。
 
-**i18n**：中文 / English 两套字典；默认跟随 `navigator.language`（zh* → 中文），可在设置中手动切换并存 localStorage。所有可见文案走字典。
+**i18n**：中文 / English 两套字典；设置 → 常规 → 语言有三个选项：自动（跟随浏览器，**默认**）/ 简体中文 / English，选择以 `auto` | `zh` | `en` 存 localStorage `genkan.lang`，缺失或非法值视为 `auto`（之前已显式存了 `zh`/`en` 的用户保持不变）。自动模式按 `navigator.languages`（回退 `navigator.language`）取第一个 zh* / en* 项决定（zh* → 中文，其余 → English），并监听 `languagechange` 事件实时切换；`<html lang>` 随之设为 `zh-CN` / `en`。所有可见文案走字典。
 
 **可访问性**：按钮有 aria-label；焦点可见；对比度足够；键盘可完成主要操作。
 

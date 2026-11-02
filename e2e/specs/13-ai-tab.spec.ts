@@ -104,7 +104,7 @@ test.describe('AI tab and top-right AI button', () => {
     await openApp(page)
     await openSettings(page)
     await page.getByTestId('settings-tab-about').click()
-    await expect(page.getByTestId('about-version')).toHaveText(bs.server_version)
+    await expect(page.getByTestId('about-version')).toHaveText(bs.server_version!)
   })
 
   test('exactly one warning line about the token, no big banner', async ({ page }) => {

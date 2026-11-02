@@ -12,9 +12,10 @@ test.describe('wallpaper', () => {
     const other = await api.workspace({ name: 'Other', wallpaper: 'preset:forest' })
     await openApp(page)
     const wp = page.getByTestId('wallpaper')
-    await expect(wp).toHaveAttribute('data-wallpaper', 'preset:aurora')
+    await expect(wp).toHaveAttribute('data-wallpaper', 'preset:dusk') // the default
     await openSettings(page, 'appearance')
-    for (const id of ['dusk', 'ocean', 'forest', 'sakura', 'graphite']) {
+    await expect(page.getByTestId('wp-preset-dusk')).toHaveAttribute('aria-pressed', 'true')
+    for (const id of ['aurora', 'ocean', 'forest', 'sakura', 'graphite']) {
       await page.getByTestId(`wp-preset-${id}`).click()
       await expect(wp).toHaveAttribute('data-wallpaper', `preset:${id}`)
       await expect(page.getByTestId(`wp-preset-${id}`)).toHaveAttribute('aria-pressed', 'true')
@@ -29,6 +30,20 @@ test.describe('wallpaper', () => {
     await expect(wp).toHaveAttribute('data-wallpaper', 'preset:graphite')
     await page.reload()
     await expect(page.getByTestId('wallpaper')).toHaveAttribute('data-wallpaper', 'preset:graphite')
+  })
+
+  test('Dusk is the default: new workspaces (omitted / empty wallpaper) and the login screen', async ({ api, browser }) => {
+    expect((await api.workspace({ name: 'NoWall' })).wallpaper).toBe('preset:dusk')
+    expect((await api.workspace({ name: 'EmptyWall', wallpaper: '' })).wallpaper).toBe('preset:dusk')
+    expect((await api.workspace({ name: 'Explicit', wallpaper: 'preset:aurora' })).wallpaper).toBe('preset:aurora') // explicit choices are kept
+    // anonymous visitor: the login screen has no workspace yet
+    await api.settings({ guest_access: false })
+    const ctx = await browser.newContext({ baseURL: origin(), locale: 'en-US' })
+    const page = await ctx.newPage()
+    await page.goto('/')
+    await expect(page.getByTestId('login-form')).toBeVisible()
+    await expect(page.getByTestId('wallpaper')).toHaveAttribute('data-wallpaper', 'preset:dusk')
+    await ctx.close()
   })
 
   test('upload a single wallpaper: it is added to the gallery and applied', async ({ page, api, ws }) => {
@@ -57,7 +72,7 @@ test.describe('wallpaper', () => {
     expect(await gallery(api)).toHaveLength(1)
   })
 
-  test('gallery: upload 3 files at once, apply one, delete (workspace resets to aurora), apply to all', async ({ page, api, ws }) => {
+  test('gallery: upload 3 files at once, apply one, delete (workspace resets to dusk), apply to all', async ({ page, api, ws }) => {
     const other = await api.workspace({ name: 'Other', wallpaper: 'preset:forest' })
     await openApp(page)
     await openSettings(page, 'appearance')
@@ -69,7 +84,7 @@ test.describe('wallpaper', () => {
     const items = page.getByTestId('wp-gallery').locator('[data-testid^="gallery-item-"]')
     await expect(items).toHaveCount(3)
     await expect(page.getByTestId('wp-upload-progress')).toHaveCount(0) // finished
-    await expect(wp).toHaveAttribute('data-wallpaper', 'preset:aurora')
+    await expect(wp).toHaveAttribute('data-wallpaper', 'preset:dusk')
     const files = await gallery(api)
     expect(files).toHaveLength(3)
     for (const f of files) {
@@ -97,8 +112,8 @@ test.describe('wallpaper', () => {
     await page.getByTestId('confirm-ok').click()
     await expect(page.getByTestId(`gallery-item-${f2}`)).toHaveCount(0)
     await expect(items).toHaveCount(2)
-    await expect(wp).toHaveAttribute('data-wallpaper', 'preset:aurora')
-    await expect.poll(async () => (await api.bootstrap()).workspaces.find((w) => w.id === ws)!.wallpaper).toBe('preset:aurora')
+    await expect(wp).toHaveAttribute('data-wallpaper', 'preset:dusk')
+    await expect.poll(async () => (await api.bootstrap()).workspaces.find((w) => w.id === ws)!.wallpaper).toBe('preset:dusk')
     await expect.poll(async () => (await api.ctx.get(`/uploads/wallpapers/${f2}`)).status()).toBe(404)
     expect((await api.ctx.get(`/uploads/wallpapers/${f1}`)).status()).toBe(200)
 
@@ -116,7 +131,7 @@ test.describe('wallpaper', () => {
     await page.getByTestId(`gallery-delete-${f1}`).click()
     await page.getByTestId('confirm-ok').click()
     await expect(page.getByTestId(`gallery-item-${f1}`)).toHaveCount(0)
-    await expect.poll(async () => (await api.bootstrap()).workspaces.map((w) => w.wallpaper)).toEqual(['preset:aurora', 'preset:aurora'])
+    await expect.poll(async () => (await api.bootstrap()).workspaces.map((w) => w.wallpaper)).toEqual(['preset:dusk', 'preset:dusk'])
   })
 
   test('gallery REST: list, delete validation (404, unsafe names)', async ({ api }) => {

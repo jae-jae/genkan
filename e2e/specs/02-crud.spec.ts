@@ -10,6 +10,7 @@ test.describe('workspaces', () => {
     await page.getByTestId('ws-name').fill('Media')
     await page.getByTestId('ws-icon-clapperboard').click()
     await expect(page.getByTestId('ws-icon')).toHaveAttribute('data-value', 'lucide:clapperboard')
+    await expect(page.getByTestId('wp-preset-dusk')).toHaveAttribute('aria-pressed', 'true') // Dusk is the default selection
     await page.getByTestId('wp-preset-ocean').click()
     await page.getByTestId('ws-save').click()
     await expect(page.getByTestId('workspace-modal')).toHaveCount(0)
@@ -32,7 +33,7 @@ test.describe('workspaces', () => {
 
     // switching back and forth changes the wallpaper
     await switchWs(page, 'Home')
-    await expect(page.getByTestId('wallpaper')).toHaveAttribute('data-wallpaper', 'preset:aurora')
+    await expect(page.getByTestId('wallpaper')).toHaveAttribute('data-wallpaper', 'preset:dusk')
 
     // delete Movies
     await switchWs(page, 'Movies')

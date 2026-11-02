@@ -129,12 +129,12 @@ func (s *Store) normalize() bool {
 		changed = true
 	}
 	if len(d.Workspaces) == 0 {
-		d.Workspaces = []Workspace{{ID: NewID(), Name: "Home", Icon: firstWorkspaceIcon, Wallpaper: "preset:aurora", Sort: 0}}
+		d.Workspaces = []Workspace{{ID: NewID(), Name: "Home", Icon: firstWorkspaceIcon, Wallpaper: DefaultWallpaper, Sort: 0}}
 		changed = true
 	}
 	for i := range d.Workspaces {
 		if d.Workspaces[i].Wallpaper == "" {
-			d.Workspaces[i].Wallpaper = "preset:aurora"
+			d.Workspaces[i].Wallpaper = DefaultWallpaper
 			changed = true
 		}
 		if ic := migrateWorkspaceIcon(d.Workspaces[i].Icon); ic != d.Workspaces[i].Icon {

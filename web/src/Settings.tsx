@@ -5,7 +5,7 @@ import { ContentTab } from './Content'
 import { WallpaperGallery } from './Gallery'
 import { Icon } from './icons'
 import { Modal, Row, Switch } from './parts'
-import { lang, setLang, t } from './i18n'
+import { langPref, setLang, t, type LangPref } from './i18n'
 import { closeModal, curWs, importData, patchSettings, settings, settingsTab, sortedWs, toast, serverVersion, toastError, updateWorkspace, version, type ModalState } from './store'
 
 
@@ -36,8 +36,9 @@ function General() {
         <TextSetting k="title" testid="set-title" />
       </Row>
       <Row label={t('set.language')}>
-        <select data-testid="set-lang" value={lang.value} onChange={(e) => setLang((e.target as HTMLSelectElement).value as any)}>
-          <option value="zh">中文</option>
+        <select data-testid="set-lang" value={langPref.value} onChange={(e) => setLang((e.target as HTMLSelectElement).value as LangPref)}>
+          <option value="auto">{t('set.langAuto')}</option>
+          <option value="zh">简体中文</option>
           <option value="en">English</option>
         </select>
       </Row>

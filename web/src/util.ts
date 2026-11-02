@@ -118,9 +118,11 @@ export function wallpaperUrl(v: string): string | null {
   return v.startsWith('upload:') ? '/uploads/wallpapers/' + v.slice(7) : null
 }
 export const PRESETS = ['aurora', 'dusk', 'ocean', 'forest', 'sakura', 'graphite'] as const
+/** The wallpaper used when none is set (first run, login screens, new workspaces). Keep in sync with store.DefaultWallpaper. */
+export const DEFAULT_WALLPAPER = 'preset:dusk'
 export function presetOf(v: string): string {
-  const id = v.startsWith('preset:') ? v.slice(7) : 'aurora'
-  return (PRESETS as readonly string[]).includes(id) ? id : 'aurora'
+  const id = v.startsWith('preset:') ? v.slice(7) : DEFAULT_WALLPAPER.slice(7)
+  return (PRESETS as readonly string[]).includes(id) ? id : DEFAULT_WALLPAPER.slice(7)
 }
 
 export function lsGet(k: string): string | null {

@@ -30,6 +30,11 @@ const (
 
 var WallpaperPresets = []string{"aurora", "dusk", "ocean", "forest", "sakura", "graphite"}
 
+// DefaultWallpaper is used for the first workspace, for new workspaces created
+// without a wallpaper, for the empty string and as the reset target when an
+// uploaded wallpaper is deleted.
+const DefaultWallpaper = "preset:dusk"
+
 type Settings struct {
 	Title          string `json:"title"`
 	SortMode       string `json:"sort_mode"`
@@ -319,7 +324,7 @@ func cleanIcon(s string) (string, error) {
 func cleanWallpaper(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "preset:aurora", nil
+		return DefaultWallpaper, nil
 	}
 	switch {
 	case strings.HasPrefix(s, "preset:"):

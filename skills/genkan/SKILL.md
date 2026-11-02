@@ -11,7 +11,7 @@ This Skill is pre-configured for the Genkan instance at `{{GENKAN_URL}}`.
 
 Genkan is a lightweight self-hosted start page. Data model:
 
-- **Workspace**: a top-level tab (e.g. "Home", "Work"). Has a Lucide `icon` (`lucide:<name>`, one of the 52 built-in names listed below) and a `wallpaper` (`preset:aurora|dusk|ocean|forest|sakura|graphite`).
+- **Workspace**: a top-level tab (e.g. "Home", "Work"). Has a Lucide `icon` (`lucide:<name>`, one of the 52 built-in names listed below) and a `wallpaper` (`preset:dusk|aurora|ocean|forest|sakura|graphite`; default `preset:dusk`).
 - **Category**: a titled group inside one workspace (e.g. "Media", "Monitoring").
 - **Link**: a service/bookmark inside a workspace, optionally in a category (no category = "uncategorized", shown last). Fields: `title`, `url`, `description`, `icon`, `pinned` (shown in the pinned row at the top of the workspace AND still in its category; `pin_sort` orders the pinned row, `sort` orders the category), `health_check` (online/offline dot), plus read-only `clicks` and `last_used_at`.
 
@@ -110,4 +110,4 @@ curl -s -H "Authorization: Bearer {{GENKAN_TOKEN}}" "{{GENKAN_URL}}/api/export" 
 curl -s -H "Authorization: Bearer {{GENKAN_TOKEN}}" -H "Content-Type: application/json" -X POST "{{GENKAN_URL}}/api/import" -d "{\"mode\":\"merge\",\"data\":$(cat genkan-backup.json)}"
 ```
 
-Tips: `GET /api/wallpapers` lists the uploaded wallpaper gallery and `DELETE /api/wallpapers/FILE` removes one (workspaces using it fall back to `preset:aurora`); take an `/api/export` backup before large restructures; parse ids from `/api/bootstrap` with `jq` (`.workspaces[] | {id,name}`, `.categories[]`, `.links[]`); new links get `sort = last + 1` in their category. `POST /api/links` fetches the favicon in the background unless `"fetch_icon": false` or an `icon` is given.
+Tips: `GET /api/wallpapers` lists the uploaded wallpaper gallery and `DELETE /api/wallpapers/FILE` removes one (workspaces using it fall back to `preset:dusk`); take an `/api/export` backup before large restructures; parse ids from `/api/bootstrap` with `jq` (`.workspaces[] | {id,name}`, `.categories[]`, `.links[]`); new links get `sort = last + 1` in their category. `POST /api/links` fetches the favicon in the background unless `"fetch_icon": false` or an `icon` is given.

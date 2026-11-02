@@ -395,7 +395,7 @@ test('desktop: settings, appearance (wallpaper gallery)', async ({ browser }) =>
   await expect.poll(() => page.evaluate(() => [...document.images].every((i) => i.complete && i.naturalWidth > 0))).toBe(true)
   await shot(page, 'desktop-settings-appearance')
   await ctx.close()
-  await api.call('PATCH', `/api/workspaces/${wsKey('home')}`, { wallpaper: 'preset:aurora' })
+  await api.call('PATCH', `/api/workspaces/${wsKey('home')}`, { wallpaper: 'preset:dusk' })
 })
 
 test('desktop: settings, content manager', async ({ browser }) => {
@@ -461,14 +461,4 @@ test('mobile: settings, content manager', async ({ browser }) => {
   await expect(page.getByTestId('content-manager')).toBeVisible()
   await shot(page, 'mobile-settings-content')
   await ctx.close()
-})
-
-// Same view on a custom gallery wallpaper (the README hero uses this one).
-test('desktop: home on a gallery wallpaper', async ({ browser }) => {
-  await api.call('PATCH', `/api/workspaces/${wsKey('home')}`, { wallpaper: gallery[1] })
-  const { ctx, page } = await newPage(browser, { viewport: DESKTOP })
-  await openHome(page)
-  await shot(page, 'desktop-home-gallery')
-  await ctx.close()
-  await api.call('PATCH', `/api/workspaces/${wsKey('home')}`, { wallpaper: 'preset:aurora' })
 })

@@ -2,8 +2,8 @@
 
 # Genkan 玄関
 
-**A lightweight, self-hosted start page for your homelab.**<br>
-Wallpaper, frosted-glass capsules, and every service one click away.
+**The AI-native start page for your homelab.**<br>
+Tell your AI assistant to organize your services and Genkan applies it instantly. Wallpaper, frosted-glass UI, ~11 MB.
 
 [![CI](https://github.com/jae-jae/genkan/actions/workflows/ci.yml/badge.svg)](https://github.com/jae-jae/genkan/actions/workflows/ci.yml)
 [![Docker image](https://img.shields.io/badge/ghcr.io-jae--jae%2Fgenkan-2496ED?logo=docker&logoColor=white)](https://github.com/jae-jae/genkan/pkgs/container/genkan)
@@ -16,16 +16,39 @@ English | [简体中文](README.zh-CN.md)
 
 </div>
 
-## Why Genkan
+## AI-first
 
-- **Glass UI, your wallpapers.** Built-in presets plus an upload gallery; works great on desktop and phones (installable as a PWA).
-- **Workspaces, categories, pins.** Pinned links show in a top row and stay in their category; 52 built-in Lucide icons for workspaces.
-- **Sorted the way you like.** By frequency (default), recently used, or your own drag-and-drop order.
-- **Quick search.** Press `/` or `Ctrl/⌘+K`; fuzzy match across all workspaces, with web-search fallback.
-- **Knows what is up.** Optional health dots per service and automatic favicon fetching.
-- **AI that actually organizes it.** Built-in [MCP](https://modelcontextprotocol.io) server and a downloadable Agent Skill; changes apply instantly and the UI updates live.
-- **Private by default.** Admin login, optional read-only guest mode, no telemetry, no runtime internet dependency.
-- **Tiny.** One static Go binary, `FROM scratch` image of ~11 MB, ~6 MB RAM idle, ~42 KB gzipped JS.
+Genkan is built to be driven by an AI assistant. Point Claude, Cursor or any MCP client at it and just say what you want:
+
+> *"Group my services by type and pin the five I use most."*
+>
+> *"Add Jellyfin, Sonarr and Radarr at nas.lan to Media and enable health checks."*
+>
+> *"Find dead links and move them to an Archive category."*
+
+Changes land immediately and the open page updates live. Under the hood: a built-in [MCP](https://modelcontextprotocol.io) server with 13 tools, plus a downloadable Agent Skill with your URL and token already filled in. Live updates use SSE, and everything stays local on your own server.
+
+**Set it up in two steps** (Settings → AI shows both with your real values; one API token covers everything):
+
+1. **Skill (recommended):** click *Download Skill*, then `unzip genkan-skill.zip -d ~/.claude/skills/`.
+2. **MCP:** `claude mcp add --transport http genkan http://<host>:8080/mcp --header "Authorization: Bearer <token>"` (a generic JSON snippet is there too).
+
+> [!WARNING]
+> The token is full admin access and is embedded in the Skill and MCP snippets. Never share or commit them; regenerate the token if it leaks.
+
+The REST API and MCP tools are described in [`docs/SPEC.md`](docs/SPEC.md).
+
+## Features
+
+- **AI-native**: organize via the built-in MCP server or a one-click Skill; changes apply live
+- **Multiple workspaces**: categories, pinned links, Lucide icons
+- **Beautiful UI**: wallpapers and frosted-glass capsules, desktop and mobile
+- **Smart sorting**: by usage frequency (default), recent, or custom drag order
+- **Quick search**: `/` or `Ctrl/⌘+K`, across all workspaces, web fallback
+- **Health checks** and automatic favicons
+- **Fast and tiny**: single Go binary, ~11 MB image, ~6 MB RAM
+- **Private**: self-hosted, login plus read-only guest mode, no telemetry
+- **Easy deploy**: Docker, amd64 / arm64
 
 ## Quick start
 
@@ -67,28 +90,16 @@ Images are published for `linux/amd64` and `linux/arm64` (Raspberry Pi, Apple Si
 - Behind a reverse proxy (Nginx, Caddy, Traefik), forward `X-Forwarded-Proto: https` so cookies get the `Secure` flag.
 - Subcommands: `genkan version`, `genkan healthcheck` (used by the Docker `HEALTHCHECK`).
 
-## AI integration
-
-Genkan has a single API token (Settings → AI). Give it to an AI assistant and ask it to "sort my services into categories".
-
-1. **Skill (recommended):** click *Download Skill*, then `unzip genkan-skill.zip -d ~/.claude/skills/`. The Skill already contains your instance URL and token.
-2. **MCP:** `claude mcp add --transport http genkan http://<host>:8080/mcp --header "Authorization: Bearer <token>"` (Settings → AI shows this with your real values, plus a generic JSON snippet).
-
-> [!WARNING]
-> The token is full admin access and is embedded in the Skill and MCP snippets. Never share or commit them; regenerate the token if it leaks.
-
-The REST API and MCP tools are described in [`docs/SPEC.md`](docs/SPEC.md).
-
 ## Screenshots
 
 <table>
   <tr>
+    <td><img src="docs/images/ai.jpg" alt="AI settings"><br><sub>Settings → AI: token (masked), Skill, MCP</sub></td>
     <td><img src="docs/images/search.jpg" alt="Quick search"><br><sub>Quick search across all workspaces</sub></td>
-    <td><img src="docs/images/context-menu.jpg" alt="Context menu"><br><sub>Right-click (long-press on mobile) menus</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/ai.jpg" alt="AI settings"><br><sub>Settings → AI: token (masked), Skill, MCP</sub></td>
     <td><img src="docs/images/content.jpg" alt="Content manager"><br><sub>Content manager for workspaces, categories and links</sub></td>
+    <td><img src="docs/images/context-menu.jpg" alt="Context menu"><br><sub>Right-click (long-press on mobile) menus</sub></td>
   </tr>
 </table>
 

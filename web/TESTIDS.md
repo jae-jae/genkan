@@ -12,7 +12,7 @@
 | `login-btn` | "Log in" item in the main menu (guest mode only; the only item a guest sees) |
 | `logout-btn` | "Sign out" item in the main menu (admin) |
 | `retry-btn` | shown when bootstrap fails |
-| `wallpaper` | wallpaper root; attr `data-wallpaper` = current value (`preset:aurora`, `upload:x.jpg`) |
+| `wallpaper` | wallpaper root; attr `data-wallpaper` = current value (`preset:dusk` by default, `upload:x.jpg`) |
 | `toast-container`, `toast` | toasts; `toast` has `data-kind` = `info`/`error`/`success` |
 
 ## Top bar: workspace dropdown (top-left) and main menu (top-right)
@@ -99,7 +99,7 @@ Uploading exactly one file also applies it; several files only add them to the g
 | `ctx-edit`, `ctx-pin` (label 收藏 / 取消收藏), `ctx-delete` (opens `confirm-modal`) | admin only |
 
 ## Settings panels
-- General: `set-title`, `set-lang` (`zh`/`en`), `set-clock`, `set-newtab` (switches), `set-engine`, `set-sort`, `set-health`
+- General: `set-title`, `set-lang` (`auto`/`zh`/`en`; default `auto`), `set-clock`, `set-newtab` (switches), `set-engine`, `set-sort`, `set-health`
   (text inputs commit on change/blur/Enter).
 - Security: `set-guest` (switch), `pw-old`, `pw-new`, `pw-save`, `pw-error`.
 - AI (`settings-tab-ai`, panel `settings-panel-ai`): `token-card`, `token-value` (attr `data-masked` = `1`/`0`; masked text is

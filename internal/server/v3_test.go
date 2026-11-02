@@ -201,7 +201,7 @@ func TestWallpaperGallery(t *testing.T) {
 	for _, w := range e.st.Snapshot().Workspaces {
 		wp[w.ID] = w.Wallpaper
 	}
-	if wp[e.ws] != "preset:aurora" || wp[ws2.ID] != "preset:aurora" || wp[ws3.ID] != u2.Value {
+	if wp[e.ws] != "preset:dusk" || wp[ws2.ID] != "preset:dusk" || wp[ws3.ID] != u2.Value {
 		t.Fatalf("workspace wallpapers after delete: %v", wp)
 	}
 	c.mustJSON("GET", "/api/wallpapers", "", &list)

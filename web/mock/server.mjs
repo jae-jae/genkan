@@ -30,8 +30,8 @@ const health = {}
 
 function seed() {
   const W = (name, icon, wallpaper, sort) => ({ id: id(), name, icon, wallpaper, sort })
-  const home = W('Home', 'lucide:house', 'preset:aurora', 0)
-  const media = W('Media', 'lucide:clapperboard', 'preset:dusk', 1)
+  const home = W('Home', 'lucide:house', 'preset:dusk', 0)
+  const media = W('Media', 'lucide:clapperboard', 'preset:aurora', 1)
   const dev = W('Dev', 'lucide:code', 'preset:ocean', 2)
   const net = W('Network', 'lucide:network', 'preset:forest', 3)
   workspaces = [home, media, dev, net]
@@ -137,7 +137,7 @@ async function api(req, res, url) {
   if (p === '/api/workspaces' && m === 'POST') {
     if (!A()) return
     if (!okIcon(body.icon)) return send(res, 400, { error: 'unknown icon' })
-    const w = { id: id(), name: body.name || 'Workspace', icon: body.icon || 'lucide:layout-grid', wallpaper: body.wallpaper || 'preset:aurora', sort: Math.max(-1, ...workspaces.map((x) => x.sort)) + 1 }
+    const w = { id: id(), name: body.name || 'Workspace', icon: body.icon || 'lucide:layout-grid', wallpaper: body.wallpaper || 'preset:dusk', sort: Math.max(-1, ...workspaces.map((x) => x.sort)) + 1 }
     workspaces.push(w); bump(); return send(res, 200, w)
   }
   if (p === '/api/workspaces/reorder' && m === 'POST') { if (!A()) return; body.ids.forEach((i, k) => { const w = workspaces.find((x) => x.id === i); if (w) w.sort = k }); bump(); return send(res, 200, { ok: true }) }
@@ -209,7 +209,7 @@ async function api(req, res, url) {
     const f = path.join(upDir, 'wallpapers', mm[1])
     if (!fs.existsSync(f)) return send(res, 404, { error: 'not found' })
     fs.unlinkSync(f)
-    for (const w of workspaces) if (w.wallpaper === 'upload:' + mm[1]) w.wallpaper = 'preset:aurora'
+    for (const w of workspaces) if (w.wallpaper === 'upload:' + mm[1]) w.wallpaper = 'preset:dusk'
     bump(); return send(res, 200, { ok: true })
   }
   if (p === '/api/uploads/icon' && m === 'POST') { if (!A()) return; return send(res, 200, { value: 'upload:mock.png', url: '/uploads/icons/mock.png' }) }

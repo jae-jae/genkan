@@ -79,7 +79,7 @@ export class Api {
       data: {
         schema: 1,
         settings: d.settings ?? {},
-        workspaces: workspaces.map((w, i) => ({ icon: '', wallpaper: 'preset:aurora', ...w, sort: i })),
+        workspaces: workspaces.map((w, i) => ({ icon: '', wallpaper: 'preset:dusk', ...w, sort: i })),
         categories: (d.categories ?? []).map((c, i) => ({ ...c, sort: i })),
         links: (d.links ?? []).map((l: any, i: number) => ({ category_id: '', description: '', icon: '', pinned: false, clicks: 0, last_used_at: null, health_check: false, ...l, sort: l.sort ?? i, pin_sort: l.pin_sort ?? i })),
       },
@@ -91,7 +91,7 @@ export class Api {
   async reset(): Promise<{ ws: string }> {
     await this.call('POST', '/api/import', {
       mode: 'replace',
-      data: { schema: 1, settings: {}, workspaces: [{ id: '', name: 'Home', icon: 'lucide:house', wallpaper: 'preset:aurora', sort: 0 }], categories: [], links: [] },
+      data: { schema: 1, settings: {}, workspaces: [{ id: '', name: 'Home', icon: 'lucide:house', wallpaper: 'preset:dusk', sort: 0 }], categories: [], links: [] },
     })
     // the wallpaper gallery is part of the baseline too
     for (const f of await this.call<{ value: string }[]>('GET', '/api/wallpapers')) await this.call('DELETE', `/api/wallpapers/${f.value.slice('upload:'.length)}`)

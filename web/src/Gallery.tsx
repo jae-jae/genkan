@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { Icon } from './icons'
 import { t } from './i18n'
 import { gallery, loadGallery, showOver, uploadWallpapers, uploading, version, deleteWallpaper } from './store'
-import { PRESETS } from './util'
+import { DEFAULT_WALLPAPER, PRESETS } from './util'
 
 /**
  * Wallpaper chooser: the 6 presets plus "my gallery" (uploaded images). `manage` adds the delete buttons
@@ -11,7 +11,7 @@ import { PRESETS } from './util'
 export function WallpaperGallery({ value, onPick, manage }: { value: string; onPick: (v: string) => void; manage?: boolean }) {
   const [hot, setHot] = useState(false)
   const files = gallery.value
-  const cur = value || 'preset:aurora'
+  const cur = value || DEFAULT_WALLPAPER
   const up = uploading.value
   useEffect(() => void loadGallery(), [version.value])
 

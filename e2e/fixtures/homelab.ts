@@ -26,9 +26,9 @@ export interface SvcDef {
 }
 
 export const WORKSPACES = [
-  { key: 'home', icon: 'lucide:house', zh: '家庭', en: 'Home', wallpaper: 'preset:aurora' },
+  { key: 'home', icon: 'lucide:house', zh: '家庭', en: 'Home', wallpaper: 'preset:dusk' },
   { key: 'media', icon: 'lucide:clapperboard', zh: '媒体', en: 'Media', wallpaper: 'preset:ocean' },
-  { key: 'dev', icon: 'lucide:code', zh: '开发', en: 'Dev', wallpaper: 'preset:dusk' },
+  { key: 'dev', icon: 'lucide:code', zh: '开发', en: 'Dev', wallpaper: 'preset:aurora' },
   { key: 'net', icon: 'lucide:network', zh: '网络', en: 'Network', wallpaper: 'preset:graphite' },
 ] as const
 

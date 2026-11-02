@@ -24,7 +24,7 @@ import {
   workspaces,
   type ModalState,
 } from './store'
-import { PRESETS, hostOf, iconMode, normalizeUrl } from './util'
+import { DEFAULT_WALLPAPER, hostOf, iconMode, normalizeUrl } from './util'
 import { WallpaperGallery } from './Gallery'
 
 type Mode = 'auto' | 'emoji' | 'upload' | 'url' | 'letter'
@@ -271,7 +271,7 @@ export function WorkspaceModal({ state }: { state: Extract<ModalState, { kind: '
   const existing = state.id ? workspaces.value.find((w) => w.id === state.id) : undefined
   const [name, setName] = useState(existing?.name || '')
   const [icon, setIcon] = useState(existing && existing.icon.startsWith('lucide:') ? existing.icon : 'lucide:layout-grid')
-  const [wp, setWp] = useState(existing?.wallpaper || 'preset:' + PRESETS[workspaces.value.length % PRESETS.length])
+  const [wp, setWp] = useState(existing?.wallpaper || DEFAULT_WALLPAPER)
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const shown = BUILTIN_ICONS.filter((n) => !q.trim() || n.includes(q.trim().toLowerCase().replace(/\s+/g, '-')))

@@ -2,8 +2,8 @@
 
 # Genkan 玄関
 
-**轻量、可自托管的 homelab 导航页。**<br>
-壁纸 + 毛玻璃胶囊界面，所有服务一键直达。
+**面向 homelab 的 AI 原生导航页。**<br>
+对 AI 助手说一句话，Genkan 立即帮你整理好所有服务。壁纸 + 毛玻璃界面，约 11 MB。
 
 [![CI](https://github.com/jae-jae/genkan/actions/workflows/ci.yml/badge.svg)](https://github.com/jae-jae/genkan/actions/workflows/ci.yml)
 [![Docker image](https://img.shields.io/badge/ghcr.io-jae--jae%2Fgenkan-2496ED?logo=docker&logoColor=white)](https://github.com/jae-jae/genkan/pkgs/container/genkan)
@@ -16,16 +16,39 @@
 
 </div>
 
-## 为什么选 Genkan
+## AI 优先
 
-- **毛玻璃界面 + 自选壁纸。** 内置预设，也可上传多张壁纸组成图库；桌面与手机都好用（可添加到主屏，PWA）。
-- **工作空间、分类、置顶。** 置顶链接显示在顶部，同时保留在所属分类中；工作空间可选 52 个内置 Lucide 图标。
-- **按你的习惯排序。** 默认按使用频率，也可按最近使用，或拖拽自定义顺序。
-- **快捷搜索。** 按 `/` 或 `Ctrl/⌘+K`，跨工作空间模糊匹配，找不到时可回退到网页搜索。
-- **服务状态一目了然。** 可选的在线检测（绿/红点）和自动抓取站点图标。
-- **让 AI 帮你整理。** 内置 [MCP](https://modelcontextprotocol.io) 服务和可下载的 Agent Skill，改动即时生效，界面实时刷新。
-- **默认私有。** 管理员登录、可选的访客只读模式，无遥测、运行时零外网依赖。
-- **足够小。** 单个静态 Go 二进制，`FROM scratch` 镜像约 11 MB，空闲内存约 6 MB，JS 约 42 KB（gzip）。
+Genkan 就是为 AI 助手来操作而设计的。把 Claude、Cursor 或任何 MCP 客户端接上去，直接说你想要什么：
+
+> *「把我的服务按类型分组，并置顶我最常用的五个。」*
+>
+> *「把 nas.lan 上的 Jellyfin、Sonarr 和 Radarr 加到 Media，并开启在线检测。」*
+>
+> *「找出失效的链接，移到一个“归档”分类里。」*
+
+改动立即生效，已打开的页面实时刷新。底层是内置的 [MCP](https://modelcontextprotocol.io) 服务（13 个工具）和可下载的 Agent Skill（已填好你的地址与 Token）；实时刷新基于 SSE，所有数据都留在你自己的服务器上。
+
+**两步接入**（设置 → AI 页面会给出带真实值的内容；一个 API Token 即可搞定）：
+
+1. **Skill（推荐）：** 点击「下载 Skill」，然后执行 `unzip genkan-skill.zip -d ~/.claude/skills/`。
+2. **MCP：** `claude mcp add --transport http genkan http://<host>:8080/mcp --header "Authorization: Bearer <token>"`（页面中也有通用 JSON 配置）。
+
+> [!WARNING]
+> Token 等同于管理员权限，且包含在 Skill 与 MCP 配置中。请勿分享或提交到代码仓库；一旦泄露请立即重新生成。
+
+REST API 与 MCP 工具说明见 [`docs/SPEC.md`](docs/SPEC.md)（中文）。
+
+## 特性
+
+- **AI 驱动**：通过内置 MCP 服务或一键 Skill 整理，改动实时生效
+- **多工作空间**：分类、置顶链接、Lucide 图标
+- **界面精美**：壁纸 + 毛玻璃胶囊，桌面与手机适配
+- **智能排序**：按使用频率（默认）、最近使用或自定义拖拽
+- **快捷搜索**：`/` 或 `Ctrl/⌘+K`，跨工作空间，可回退网页搜索
+- **在线检测**与自动图标
+- **高性能 & 体积小**：单个 Go 二进制，镜像约 11 MB，内存约 6 MB
+- **私有安全**：自托管，登录 + 访客只读，无遥测
+- **部署简单**：Docker，amd64 / arm64
 
 ## 快速开始
 
@@ -67,28 +90,16 @@ volumes:
 - 放在反向代理（Nginx、Caddy、Traefik）后面时，请转发 `X-Forwarded-Proto: https`，会话 Cookie 才会带 `Secure` 标记。
 - 子命令：`genkan version`、`genkan healthcheck`（Docker `HEALTHCHECK` 使用）。
 
-## AI 整理
-
-整个实例只有一个 API Token（设置 → AI）。把它交给 AI 助手，然后说「帮我把服务按类型整理成分类」即可。
-
-1. **Skill（推荐）：** 点击「下载 Skill」，然后执行 `unzip genkan-skill.zip -d ~/.claude/skills/`。Skill 中已经填好了你实例的地址和 Token。
-2. **MCP：** `claude mcp add --transport http genkan http://<host>:8080/mcp --header "Authorization: Bearer <token>"`（设置 → AI 页面会直接给出带真实值的命令，以及通用 JSON 配置）。
-
-> [!WARNING]
-> Token 等同于管理员权限，且包含在 Skill 与 MCP 配置中。请勿分享或提交到代码仓库；一旦泄露请立即重新生成。
-
-REST API 与 MCP 工具说明见 [`docs/SPEC.md`](docs/SPEC.md)（中文）。
-
 ## 截图
 
 <table>
   <tr>
+    <td><img src="docs/images/ai.jpg" alt="AI 设置"><br><sub>设置 → AI：Token（已遮罩）、Skill、MCP</sub></td>
     <td><img src="docs/images/search.jpg" alt="快捷搜索"><br><sub>跨工作空间的快捷搜索</sub></td>
-    <td><img src="docs/images/context-menu.jpg" alt="右键菜单"><br><sub>右键菜单（手机上为长按）</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/ai.jpg" alt="AI 设置"><br><sub>设置 → AI：Token（已遮罩）、Skill、MCP</sub></td>
     <td><img src="docs/images/content.jpg" alt="内容管理器"><br><sub>内容管理器：集中管理工作空间、分类与链接</sub></td>
+    <td><img src="docs/images/context-menu.jpg" alt="右键菜单"><br><sub>右键菜单（手机上为长按）</sub></td>
   </tr>
 </table>
 

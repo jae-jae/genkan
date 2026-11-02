@@ -1,7 +1,10 @@
-import { signal } from '@preact/signals'
+import { computed, effect, signal } from '@preact/signals'
 import { lsGet, lsSet } from './util'
 
+/** Resolved UI language. */
 export type Lang = 'zh' | 'en'
+/** The stored choice: follow the browser, or force one language. */
+export type LangPref = 'auto' | Lang
 
 const en: Record<string, string> = {
   'common.close': 'Close',
@@ -116,6 +119,7 @@ const en: Record<string, string> = {
   'tab.about': 'About',
   'set.title': 'Site title',
   'set.language': 'Language',
+  'set.langAuto': 'Auto (follow browser)',
   'set.clock': 'Show clock',
   'set.newtab': 'Open links in a new tab',
   'set.engine': 'Search engine',
@@ -198,7 +202,7 @@ const en: Record<string, string> = {
   'wp.empty': 'Upload images or drop them here to build your own gallery.',
   'wp.delete': 'Delete wallpaper',
   'wp.deleteTitle': 'Delete wallpaper?',
-  'wp.deleteMsg': 'The image is removed for good. Workspaces using it switch back to Aurora.',
+  'wp.deleteMsg': 'The image is removed for good. Workspaces using it switch back to Dusk.',
   'wp.applyAll': 'Apply to all workspaces',
   'wp.appliedAll': 'Wallpaper applied to all workspaces',
   'cm.search': 'Search all links…',
@@ -320,6 +324,7 @@ const zh: Record<string, string> = {
   'tab.about': '关于',
   'set.title': '站点标题',
   'set.language': '语言',
+  'set.langAuto': '自动（跟随浏览器）',
   'set.clock': '显示时钟',
   'set.newtab': '在新标签页打开链接',
   'set.engine': '搜索引擎',
@@ -402,7 +407,7 @@ const zh: Record<string, string> = {
   'wp.empty': '上传图片，或把图片拖到这里，建立你自己的壁纸图库。',
   'wp.delete': '删除壁纸',
   'wp.deleteTitle': '删除壁纸？',
-  'wp.deleteMsg': '图片将被永久删除，正在使用它的工作空间会切换回“极光”。',
+  'wp.deleteMsg': '图片将被永久删除，正在使用它的工作空间会切换回“黄昏”。',
   'wp.applyAll': '应用到所有工作空间',
   'wp.appliedAll': '已应用到所有工作空间',
   'cm.search': '搜索所有链接…',
@@ -413,19 +418,38 @@ const zh: Record<string, string> = {
 
 const dicts = { en, zh }
 
-function detect(): Lang {
-  const saved = lsGet('genkan.lang')
-  if (saved === 'zh' || saved === 'en') return saved
-  return /^zh/i.test(navigator.language || '') ? 'zh' : 'en'
+/** The browser's preferred UI language: the first of navigator.languages that is Chinese (zh*) or English (en*); anything else falls back to English. */
+function browserLang(): Lang {
+  const list = navigator.languages?.length ? navigator.languages : [navigator.language || '']
+  for (const l of list) {
+    if (/^zh\b/i.test(l)) return 'zh'
+    if (/^en\b/i.test(l)) return 'en'
+  }
+  return 'en'
 }
 
-export const lang = signal<Lang>(detect())
-document.documentElement.lang = lang.value === 'zh' ? 'zh-CN' : 'en'
+function readPref(): LangPref {
+  const saved = lsGet('genkan.lang')
+  return saved === 'zh' || saved === 'en' ? saved : 'auto' // missing / invalid -> auto
+}
 
-export function setLang(l: Lang) {
-  lang.value = l
-  lsSet('genkan.lang', l)
-  document.documentElement.lang = l === 'zh' ? 'zh-CN' : 'en'
+/** What the user picked in Settings (default: auto). */
+export const langPref = signal<LangPref>(readPref())
+const browser = signal<Lang>(browserLang())
+/** The language the UI is actually rendered in. */
+export const lang = computed<Lang>(() => (langPref.value === 'auto' ? browser.value : langPref.value))
+
+const htmlLang = () => {
+  document.documentElement.lang = lang.value === 'zh' ? 'zh-CN' : 'en'
+}
+effect(htmlLang)
+window.addEventListener('languagechange', () => {
+  browser.value = browserLang()
+})
+
+export function setLang(p: LangPref) {
+  langPref.value = p
+  lsSet('genkan.lang', p)
 }
 
 export function t(key: string, vars?: Record<string, string | number>): string {

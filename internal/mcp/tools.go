@@ -243,7 +243,7 @@ func (s *Server) buildTools() []tool {
 			schema: obj(M{
 				"name":      str("Workspace name, max 40 chars. 名称。"),
 				"icon":      workspaceIconSchema("Icon shown next to the name (optional)."),
-				"wallpaper": str("preset:aurora|dusk|ocean|forest|sakura|graphite (optional). 壁纸预设（可选）。"),
+				"wallpaper": str("preset:dusk|aurora|ocean|forest|sakura|graphite (optional, default preset:dusk). 壁纸预设（可选，默认 preset:dusk）。"),
 			}, "name"),
 			fn: func(args json.RawMessage) (any, error) {
 				var in store.WorkspaceInput
@@ -260,7 +260,7 @@ func (s *Server) buildTools() []tool {
 		{
 			name: "update_workspace", title: "Update workspace", idempotent: true,
 			desc:   "Rename a workspace or change its icon (a built-in Lucide icon, lucide:<name>) or wallpaper. Only given fields change. 修改工作空间名称/图标（内置 Lucide 图标）/壁纸，仅修改传入字段。",
-			schema: obj(M{"id": str("Workspace id."), "name": str("New name."), "icon": workspaceIconSchema("New icon."), "wallpaper": str("preset:<id> (aurora, dusk, ocean, forest, sakura, graphite).")}, "id"),
+			schema: obj(M{"id": str("Workspace id."), "name": str("New name."), "icon": workspaceIconSchema("New icon."), "wallpaper": str("preset:<id> (dusk, aurora, ocean, forest, sakura, graphite).")}, "id"),
 			fn: func(args json.RawMessage) (any, error) {
 				var a struct {
 					ID string `json:"id"`

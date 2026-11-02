@@ -422,6 +422,10 @@ func TestExportImportCarriesPinSortAndMigratesEmoji(t *testing.T) {
 	if snap.Workspaces[0].Icon != "lucide:gamepad-2" || snap.Workspaces[1].Icon != "lucide:layout-grid" || snap.Links[0].PinSort != 5 {
 		t.Fatalf("import: %+v %+v", snap.Workspaces, snap.Links)
 	}
+	// an empty wallpaper in an import means the default (dusk)
+	if snap.Workspaces[0].Wallpaper != "preset:dusk" || snap.Workspaces[1].Wallpaper != "preset:dusk" {
+		t.Fatalf("empty wallpaper import: %+v", snap.Workspaces)
+	}
 	// an unknown lucide name in an import is rejected
 	bad := oe
 	bad.Workspaces = []Workspace{{ID: "w", Name: "B", Icon: "lucide:nope"}}
@@ -449,7 +453,7 @@ func TestResetWallpaperUsers(t *testing.T) {
 	for _, w := range s.Snapshot().Workspaces {
 		got[w.ID] = w.Wallpaper
 	}
-	if got[w1.ID] != "preset:aurora" || got[w2.ID] != "preset:aurora" || got[w3.ID] != "upload:bbbb.png" {
+	if got[w1.ID] != "preset:dusk" || got[w2.ID] != "preset:dusk" || got[w3.ID] != "upload:bbbb.png" {
 		t.Fatalf("%v", got)
 	}
 }

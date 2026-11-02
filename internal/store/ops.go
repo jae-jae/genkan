@@ -693,7 +693,7 @@ func (s *Store) ResetWallpaperUsers(file string) (int, error) {
 	err := s.commit(true, func() (bool, error) {
 		for i := range s.d.Workspaces {
 			if s.d.Workspaces[i].Wallpaper == "upload:"+file {
-				s.d.Workspaces[i].Wallpaper = "preset:aurora"
+				s.d.Workspaces[i].Wallpaper = DefaultWallpaper
 				n++
 			}
 		}

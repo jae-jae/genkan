@@ -173,9 +173,9 @@ export function AiTab() {
         {pane === 'mcp' && (
           <>
             <p class="hint first">{t('ai.mcpHint')}</p>
-            <h4 class="mini">{t('ai.mcpClaude')}</h4>
+            <h4 class="code-label">{t('ai.mcpClaude')}</h4>
             <CodeBox text={disp.cmd} copy={real.cmd} testid="mcp-command" copyId="copy-mcp-command" />
-            <h4 class="mini">{t('ai.mcpOther')}</h4>
+            <h4 class="code-label">{t('ai.mcpOther')}</h4>
             <CodeBox text={disp.json} copy={real.json} testid="mcp-json" copyId="copy-mcp-json" />
           </>
         )}

@@ -346,8 +346,8 @@ select option { color: #fff; background: #1d2240; }
 .code pre { margin: 0; padding: 12px 14px; border-radius: 12px; background: rgba(0, 0, 0, 0.32); border: 1px solid rgba(255, 255, 255, 0.1); font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; overflow-x: auto; color: #dbe3ff; padding-right: 54px; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.3) transparent; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 60px), transparent calc(100% - 44px)); mask-image: linear-gradient(90deg, #000 calc(100% - 60px), transparent calc(100% - 44px)); }
 .code.wrap pre { white-space: pre-wrap; overflow-wrap: anywhere; -webkit-mask-image: none; mask-image: none; }
 .manual { margin: 14px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font-size: 12.5px; color: var(--faint); }
-.mini { margin: 16px 0 6px; font-size: 12.5px; font-weight: 600; color: var(--dim); }
-.mini:first-of-type { margin-top: 6px; }
+.code-label { margin: 16px 0 6px; font-size: 12.5px; font-weight: 600; color: var(--dim); }
+.code-label:first-of-type { margin-top: 6px; }
 .code pre:focus-visible { -webkit-mask-image: none; mask-image: none; }
 .code-copy { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(46, 52, 92, 0.92); color: #fff; transition: background 0.15s; }
 .code-copy:hover { background: rgba(78, 88, 150, 0.95); }

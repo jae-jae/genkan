@@ -85,6 +85,12 @@ test.describe('AI tab and top-right AI button', () => {
     await expect(cmd).toContainText('claude mcp add --transport http genkan')
     await expect(page.getByTestId('mcp-json')).toContainText('"mcpServers"')
     expect(await cmd.evaluate((e) => getComputedStyle(e).whiteSpace)).toBe('pre')
+    // the section labels are plain full-width headings (regression: a shared class once squeezed them into a 22px column)
+    for (const h of await page.getByTestId('pane-mcp').locator('h4').all()) {
+      const hb = (await h.boundingBox())!
+      expect(hb.width).toBeGreaterThan(150)
+      expect(hb.height).toBeLessThan(30)
+    }
     // the copy button is overlaid in the top-right corner of the code block
     const box = (await cmd.locator('xpath=..').boundingBox())!
     const cb = (await page.getByTestId('copy-mcp-command').boundingBox())!

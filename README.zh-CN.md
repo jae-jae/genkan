@@ -122,3 +122,5 @@ mock 服务、截图生成与 PR 约定见 [CONTRIBUTING.md](CONTRIBUTING.md)，
 [MIT](LICENSE) © 2026 jae-jae
 
 致谢：工作空间与链接的内置图标来自 [Lucide](https://lucide.dev)（ISC）。截图中的示例服务图标来自 [homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons)（Apache-2.0），商标归各自所有者。详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+本项目积极参与并认可 [LINUX DO 社区](https://linux.do)。

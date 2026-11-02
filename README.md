@@ -122,3 +122,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the mock server, screenshots and PR g
 [MIT](LICENSE) © 2026 jae-jae
 
 Acknowledgements: workspace and link icons are from [Lucide](https://lucide.dev) (ISC). Demo service logos in the screenshots come from [homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons) (Apache-2.0) and belong to their respective owners. Details in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+This project proudly supports and recognizes the [LINUX DO community](https://linux.do).

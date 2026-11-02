@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { get, post } from './api'
 import { Icon } from './icons'
 import { t } from './i18n'
-import { toast, toastError } from './store'
+import { serverVersion, toast, toastError } from './store'
 import { copyText } from './util'
 
 function CopyBtn({ text, testid, cls }: { text: string; testid: string; cls: string }) {
@@ -28,9 +28,9 @@ function CopyBtn({ text, testid, cls }: { text: string; testid: string; cls: str
 }
 
 /** `text` is what is displayed (possibly masked); `copy` is what the button copies. */
-function CodeBox({ text, copy, testid, copyId }: { text: string; copy: string; testid: string; copyId: string }) {
+function CodeBox({ text, copy, testid, copyId, wrap }: { text: string; copy: string; testid: string; copyId: string; wrap?: boolean }) {
   return (
-    <div class="code">
+    <div class={wrap ? 'code wrap' : 'code'}>
       <pre data-testid={testid} tabIndex={0}>
         {text}
       </pre>
@@ -41,8 +41,27 @@ function CodeBox({ text, copy, testid, copyId }: { text: string; copy: string; t
 
 const maskToken = (tok: string) => (tok ? tok.slice(0, 3) + '••••••••…' + tok.slice(-4) : '')
 
-type Pane = 'skill' | 'claude' | 'mcp'
-const PANES: Pane[] = ['skill', 'claude', 'mcp']
+type Pane = 'skill' | 'mcp'
+const PANES: Pane[] = ['skill', 'mcp']
+
+/** Git ref the Skill is fetched from: the release tag for release builds (0.2.0 / v0.2.0), otherwise main. */
+export function skillRef(v: string): string {
+  const m = /^v?(\d+\.\d+\.\d+)$/.exec(v.trim())
+  return m ? 'v' + m[1] : 'main'
+}
+
+/** The setup prompt the user pastes into their AI assistant. */
+export function skillPrompt(origin: string, tok: string, ref: string): string {
+  return [
+    'Install the Genkan Skill and connect it to my Genkan instance.',
+    '',
+    `1. Download SKILL.md and reference.md from https://raw.githubusercontent.com/jae-jae/genkan/${ref}/skills/genkan/ into your skills directory, in a folder named genkan/ (Claude Code: ~/.claude/skills/genkan/; other agents: their own skills directory). Overwrite existing files.`,
+    '2. Create ~/.config/genkan/env (make the directory if needed) with exactly these two lines, then run chmod 600 on the file:',
+    `GENKAN_URL=${origin}`,
+    `GENKAN_TOKEN=${tok}`,
+    '3. Verify: call GET $GENKAN_URL/api/bootstrap with the header "Authorization: Bearer $GENKAN_TOKEN" and tell me how many workspaces and links there are. Never print the token.',
+  ].join('\n')
+}
 
 export function AiTab() {
   const [token, setToken] = useState('')
@@ -64,7 +83,9 @@ export function AiTab() {
     setBusy(false)
   }
   const origin = location.origin
+  const ref = skillRef(serverVersion.value)
   const build = (tok: string) => ({
+    prompt: skillPrompt(origin, tok, ref),
     cmd: `claude mcp add --transport http genkan ${origin}/mcp --header "Authorization: Bearer ${tok}"`,
     json: JSON.stringify({ mcpServers: { genkan: { type: 'http', url: origin + '/mcp', headers: { Authorization: 'Bearer ' + tok } } } }, null, 2),
   })
@@ -137,32 +158,24 @@ export function AiTab() {
       <div class="pane" role="tabpanel" id={'connect-pane-' + pane} aria-labelledby={'connect-tab-' + pane} data-testid={'pane-' + pane} key={pane}>
         {pane === 'skill' && (
           <>
-            <ol class="steps">
-              <li>
-                <span>{t('ai.skill1')}</span>
-              </li>
-              <li>
-                <span>
-                  {t('ai.skill2a')} <code>~/.claude/skills/</code>
-                  {t('ai.skill2b')}
-                </span>
-              </li>
-            </ol>
-            <a class="btn primary" href="/api/skill" download="genkan-skill.zip" data-testid="skill-download">
-              <Icon n="download" size={16} />
-              {t('mcp.skillBtn')}
-            </a>
-          </>
-        )}
-        {pane === 'claude' && (
-          <>
-            <p class="hint first">{t('ai.claudeHint')}</p>
-            <CodeBox text={disp.cmd} copy={real.cmd} testid="mcp-command" copyId="copy-mcp-command" />
+            <p class="hint first">{t('ai.skillHint')}</p>
+            <CodeBox text={disp.prompt} copy={real.prompt} testid="skill-prompt" copyId="copy-skill-prompt" wrap />
+            <p class="manual" data-testid="skill-manual">
+              <span>{t('ai.manual')}</span>
+              <a class="btn sm" href="/api/skill" download="genkan-skill.zip" data-testid="skill-download">
+                <Icon n="download" size={14} />
+                {t('ai.manualBtn')}
+              </a>
+              <span>{t('ai.manualTail')}</span>
+            </p>
           </>
         )}
         {pane === 'mcp' && (
           <>
             <p class="hint first">{t('ai.mcpHint')}</p>
+            <h4 class="mini">{t('ai.mcpClaude')}</h4>
+            <CodeBox text={disp.cmd} copy={real.cmd} testid="mcp-command" copyId="copy-mcp-command" />
+            <h4 class="mini">{t('ai.mcpOther')}</h4>
             <CodeBox text={disp.json} copy={real.json} testid="mcp-json" copyId="copy-mcp-json" />
           </>
         )}

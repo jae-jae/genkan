@@ -2,7 +2,7 @@
 
 Genkan（玄関）是一款可自托管的极简导航页，面向 homelab 玩家，通过 Docker 部署在 NAS 等设备上。
 以壁纸 + 毛玻璃胶囊界面集中呈现服务与常用链接；支持多工作空间（Lucide 图标）、分类、置顶、右键菜单、壁纸图库、快捷搜索；
-默认按使用频率排序，可切换最近使用 / 自定义顺序；适配桌面与手机；AI 可通过 MCP / Skills 直接整理导航（直接生效）。
+默认按使用频率排序，可切换最近使用 / 自定义顺序；适配桌面与手机；AI 可通过 Skill（REST API + curl）或 MCP 两种互相独立的方式直接整理导航（直接生效）。
 
 **设计第一原则：轻量、高性能、低资源占用、完全离线可用。**
 
@@ -42,8 +42,8 @@ Genkan（玄関）是一款可自托管的极简导航页，面向 homelab 玩�
 │   ├── dist/              构建产物（前端负责生成；后端放占位 index.html 保证可编译）
 │   ├── package.json, vite.config.ts, tsconfig.json, index.html
 │   └── src/               前端源码（前端负责）
-├── skills/genkan/SKILL.md AI Skill 模板（含 {{GENKAN_URL}} / {{GENKAN_TOKEN}} 占位符，单一来源）
-├── skills/embed.go        package skills；//go:embed genkan/SKILL.md（go:embed 不能引用父目录）
+├── skills/genkan/         AI Skill 源码（仅 REST，不含 MCP，不含任何密钥/占位符；用户通过 raw.githubusercontent.com 直接从仓库获取，另可从设置页下载安装包）：SKILL.md（入口：凭据、`gk` 助手、数据模型、工作流、最佳实践、常用配方）+ reference.md（完整 REST 参考，每个接口一条可运行 curl）
+├── skills/embed.go        package skills；`//go:embed genkan/SKILL.md genkan/reference.md`（go:embed 不能引用父目录），`Files()` 返回与仓库字节一致的文件
 ├── e2e/                   Playwright 端到端测试
 ├── Dockerfile, docker-compose.yml, Makefile, README.md, LICENSE, CONTRIBUTING.md, SECURITY.md
 ├── .github/               CI（测试 + 多架构镜像推送到 GHCR）、dependabot、Issue/PR 模板
@@ -166,9 +166,9 @@ ID 统一为 12 位随机 base32 小写字符串。时间为 RFC3339 字符串�
 | `POST /api/uploads/icon` | A | multipart `file`（png/svg/ico/webp/jpg，≤ 1MB） | `{value:"upload:<file>", url}` |
 | `GET /api/export` | A | – | 导出 JSON（`{schema, settings, workspaces, categories, links}`，不含 auth / API Token），`Content-Disposition: attachment` |
 | `POST /api/import` | A | `{mode:"replace"\|"merge", data:<export json>}` | `{ok:true, workspaces:n, links:n}` merge 模式：新 ID 导入，不覆盖现有 |
+| `GET /api/skill` | A | – | `application/zip`，文件名 `genkan-skill.zip`，内含 `genkan/SKILL.md`、`genkan/reference.md`（与仓库/内嵌文件字节一致，通用、不含密钥、不含 MCP）和服务端生成的 `genkan/.env`（zip 头 unix 权限 0600；内容 `GENKAN_URL=<实例 origin>` 与 `GENKAN_TOKEN=<当前 Token>` 两行）。origin 由请求推导：scheme 取 `X-Forwarded-Proto`（否则 TLS/http），host 取 `X-Forwarded-Host`（否则 `Host`） |
 | `GET /api/token` | A | – | `{"token":"gk_..."}`（`Cache-Control: no-store`） |
 | `POST /api/token/regenerate` | A | – | `{"token":"gk_新..."}`；旧 Token 立即失效；Cookie 鉴权需 CSRF 头 |
-| `GET /api/skill` | A | – | `application/zip`，文件名 `genkan-skill.zip`，内含 `genkan/SKILL.md`，已填入实例 URL 与当前 Token。URL 由请求推导：scheme 取 `X-Forwarded-Proto`（否则 TLS/http），host 取 `X-Forwarded-Host`（否则 `Host`） |
 | `GET /api/events` | R | – | SSE 流 |
 | `GET /healthz` | P | – | `ok` |
 | `POST /mcp` | Bearer token | JSON-RPC | 见第 8 节 |
@@ -202,6 +202,8 @@ ID 统一为 12 位随机 base32 小写字符串。时间为 RFC3339 字符串�
 **图标抓取**：创建链接时 `icon` 为空且 `fetch_icon` 不为 false → 异步抓取；完成后更新 `icon=favicon:<file>` 并广播 change。流程：GET 页面（≤ 1MB，5s 超时，允许自签证书）→ 解析 `<link rel="icon"|"shortcut icon"|"apple-touch-icon"|"mask-icon">`，优先 apple-touch-icon / 最大 sizes / svg → 失败回退 `/favicon.ico` → 校验为图片（≤ 512KB）→ 存 `uploads/icons/`。失败则保持空（显示首字母）。
 
 ## 8. MCP（Streamable HTTP）
+
+MCP 与 Skill 是**两条互相独立、二选一**的 AI 接入路径：安装 Skill 的用户不需要配置 MCP（Skill 直接用 REST API，见第 6 节），配置了 MCP 的用户也不需要 Skill。两者共用同一个 API Token，权限相同。
 
 - 端点 `POST /mcp`，需 `Authorization: Bearer gk_...`（即唯一的 API Token，常量时间比较；Token 重新生成后旧值立即 401）。无状态实现：每个 POST 一个 JSON-RPC 请求（也支持数组批量），响应 `Content-Type: application/json`。`GET /mcp` → 405。通知（无 id）返回 202。
 - 支持方法：`initialize`（protocolVersion 回显客户端版本，若不认识则 `2025-06-18`；capabilities `{tools:{}}`；serverInfo `{name:"genkan",version}`；instructions 简述用途）、`notifications/initialized`、`ping`、`tools/list`、`tools/call`。
@@ -254,7 +256,10 @@ ID 统一为 12 位随机 base32 小写字符串。时间为 RFC3339 字符串�
   - 常规：站点标题、语言、时钟、新标签打开、搜索引擎、排序模式。
   - 外观（当前工作空间壁纸）：6 个预设缩略图，其后是“我的图库”网格（`GET /api/wallpapers`）：当前选中项高亮，点击应用到当前工作空间；悬停/长按显示删除（×，需确认，调用 `DELETE /api/wallpapers/{file}`）；“上传”磁贴支持多选与拖放文件，逐张顺序上传并显示进度，新图片出现在图库；可选“应用到所有工作空间”。
   - 内容（内容管理器）：左侧（手机在上方）工作空间列表（Lucide 图标 + 名称 + 链接数；新增、编辑、删除（确认）、上移/下移）；右侧所选工作空间的分类（含未分类）折叠分组，分组头有 重命名/删除/上移下移/“+ 添加链接”，每个链接行显示图标、标题、描述（弱化）、URL（弱化、截断）及 置顶（星标）/编辑/删除（确认）；“新建分类”按钮；顶部搜索框跨所有工作空间过滤链接并显示 工作空间 › 分类 路径。全部通过现有 REST 接口，改动实时同步。
-  - AI（原“AI / MCP”，全站不再出现旧名称）：一句话简介；“API Token”卡片（遮罩 `gk_••••••••…末4位`，图标按钮：显示/隐藏、复制、重新生成（行内二次确认，说明旧 Token 立即失效、已下载的 Skill 与 MCP 配置需更新）），其下仅一行紧凑琥珀色警告（Token 等同管理员权限，Skill 与配置中都包含它，请勿分享；泄露后请重新生成）；“接入方式”分段控件 [Skill（推荐）| Claude Code | 其他 MCP 客户端]，只显示选中面板：Skill（两步：下载 → 解压到 `~/.claude/skills/`，主按钮“下载 Skill”调用 `/api/skill`）、Claude Code（已填入真实 Token 的 `claude mcp add --transport http genkan <origin>/mcp --header "Authorization: Bearer <token>"`）、其他 MCP 客户端（`mcpServers` JSON 片段）。代码块不换行（横向滚动），右上角仅图标的复制按钮（复制后 1.5s 显示对勾）；Token 隐藏时片段也遮罩，但复制始终复制真实值。
+  - AI（原“AI / MCP”，全站不再出现旧名称）：一句话简介；“API Token”卡片（遮罩 `gk_••••••••…末4位`，图标按钮：显示/隐藏、复制、重新生成（行内二次确认，说明旧 Token 立即失效、需把 Skill 提示词重新发给 AI 并更新 MCP 配置）），其下仅一行紧凑琥珀色警告（Token 等同管理员权限，提示词与 MCP 配置中都包含它，请勿分享；泄露后请重新生成）；“接入方式”分段控件 **[Skill（推荐）| MCP]**（二选一：Skill 直接调用 REST API、无需 MCP 配置，MCP 是替代方案），只显示选中面板：
+    - **Skill**（`pane-skill`）：一句提示（“复制下面这段提示词发给你的 AI 助手（Claude Code、Codex 等），它会自动安装 Skill 并配置 Token。重新生成 Token 后再发一次即可更新。”，并说明无需 MCP），其下是一个自动换行的提示词代码块（`skill-prompt`，右上角图标复制按钮 `copy-skill-prompt`）。其下是次要的、低调的一行“或手动安装：[下载 Skill 安装包]（`skill-download`，调用 `/api/skill`）解压到 skills 目录（Claude Code：`~/.claude/skills/`）。安装包内含 Token，请勿分享。”。提示词（英文，两种界面语言相同，约 6–10 行）要求 AI：① 把 `SKILL.md` 与 `reference.md` 从 `https://raw.githubusercontent.com/jae-jae/genkan/<ref>/skills/genkan/` 下载到它的 skills 目录下名为 `genkan/` 的文件夹（Claude Code：`~/.claude/skills/genkan/`；其他 Agent：各自的 skills 目录），覆盖已有文件；② 创建 `~/.config/genkan/env`（必要时建目录），写入 `GENKAN_URL=<当前页面 origin>` 与 `GENKAN_TOKEN=<真实 Token>` 两行并 `chmod 600`；③ 用 `GET $GENKAN_URL/api/bootstrap`（Bearer Token）验证，报告工作空间与链接数，且不得打印 Token。`<ref>`：`server_version`（去掉前导 `v`）是 `x.y.z` 形式的发布版本时为 `v<x.y.z>`，否则（`dev`、`git describe` 的脏/带提交数版本等）为 `main`。Skill 读取凭据的顺序（`gk` 助手实现，SKILL.md 描述）：环境变量 `GENKAN_URL` / `GENKAN_TOKEN` → `~/.config/genkan/env` → Skill 自身目录里的 `.env`（即 SKILL.md 所在目录；下载包自带）；都缺失时让 AI 请用户重新复制提示词或重新下载安装包。
+    - **MCP**（`pane-mcp`）：简短说明（Skill 的替代方案），其下两个带短标签的代码块：Claude Code（已填入真实 Token 的 `claude mcp add --transport http genkan <origin>/mcp --header "Authorization: Bearer <token>"`，`mcp-command` / `copy-mcp-command`）与其他 MCP 客户端（`mcpServers` JSON 片段，`mcp-json` / `copy-mcp-json`）。
+    - 代码块右上角仅图标的复制按钮（复制后 1.5s 显示对勾）；MCP 代码块不换行（横向滚动）；Token 隐藏时提示词与片段也遮罩（DOM 中不含真实值），但复制始终复制真实值。
   - 安全（访客只读开关、修改密码）、数据（导出 JSON、导入 JSON 替换/合并）、关于（版本，及 Lucide 图标的 ISC 许可声明）。
 - 登录页 / 首次设置页：壁纸背景 + 居中毛玻璃卡片。访客模式下右上角显示"登录"。
 - 实时更新：连接 `/api/events`，断线指数退避重连；页面重新可见时也刷新。
@@ -276,5 +281,5 @@ ID 统一为 12 位随机 base32 小写字符串。时间为 RFC3339 字符串�
 ## 11. 测试
 
 - Go 单元测试：store（CRUD、排序、reorder、导入导出、持久化原子性）、auth（会话签名、token 生成、限速）、mcp（initialize、tools/list、tools/call）、server（权限矩阵、CSRF）。
-- 端到端（Playwright，Chromium）：对**Docker 容器**运行。覆盖：首次设置密码、登录/登出、创建工作空间/分类/链接、编辑删除、置顶（同时出现在顶部与分类中）、右键菜单、内容管理器、壁纸图库（多选上传/删除）、搜索与键盘导航、点击计数与排序模式、拖拽排序、访客只读、壁纸切换与上传、导入导出、单一 API Token（默认生成、重新生成后旧 Token 失效、Skill 下载含当前 Token）+ MCP 调用后 UI 实时刷新、顶栏两个下拉菜单、手机视口布局、中英文切换。
+- 端到端（Playwright，Chromium）：对**Docker 容器**运行。覆盖：首次设置密码、登录/登出、创建工作空间/分类/链接、编辑删除、置顶（同时出现在顶部与分类中）、右键菜单、内容管理器、壁纸图库（多选上传/删除）、搜索与键盘导航、点击计数与排序模式、拖拽排序、访客只读、壁纸切换与上传、导入导出、单一 API Token（默认生成、重新生成后旧 Token 失效、Skill 提示词含真实 Token / origin / 正确的 raw.githubusercontent.com 版本引用，遮罩时复制仍为真实值；下载包 `.env` 含当前 Token 且重新生成后新下载随之更新）+ MCP 调用后 UI 实时刷新、顶栏两个下拉菜单、手机视口布局、中英文切换。
 - 截图（`npm run screenshots`）输出到被 git 忽略的 `.tmp/screenshots/`（默认英文界面，`GENKAN_SHOTS_LANG=zh` 为中文），再由 `npm run docs-images` 合成并压缩为 `docs/images/`（hero + 图库，JPEG）。覆盖：桌面（主页、编辑模式、搜索、链接编辑、工作空间下拉、主菜单、设置-AI、设置-内容、设置-外观、登录页）与手机（主页、搜索、链接编辑、媒体工作空间），使用一套逼真的 homelab 示例数据。

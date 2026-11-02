@@ -20,6 +20,7 @@ import (
 	"github.com/jae-jae/genkan/internal/favicon"
 	"github.com/jae-jae/genkan/internal/health"
 	"github.com/jae-jae/genkan/internal/store"
+	"github.com/jae-jae/genkan/skills"
 )
 
 type env struct {
@@ -266,8 +267,8 @@ func TestPermissionMatrix(t *testing.T) {
 		{"GET", "/api/export", ``},
 		{"POST", "/api/import", `{}`},
 		{"GET", "/api/token", ``},
-		{"POST", "/api/token/regenerate", ``},
 		{"GET", "/api/skill", ``},
+		{"POST", "/api/token/regenerate", ``},
 		{"POST", "/api/uploads/wallpaper", ``},
 		{"POST", "/api/uploads/icon", ``},
 		{"GET", "/api/wallpapers", ``},
@@ -819,7 +820,7 @@ func TestSkillDownload(t *testing.T) {
 	e := setup(t)
 	admin := e.admin()
 	tok := e.st.APIToken()
-	get := func(hdr map[string]string) []byte {
+	get := func(hdr map[string]string) ([]*zip.File, map[string]string) {
 		t.Helper()
 		req, _ := http.NewRequest("GET", e.ts.URL+"/api/skill", nil)
 		for k, v := range hdr {
@@ -836,41 +837,54 @@ func TestSkillDownload(t *testing.T) {
 			t.Fatalf("skill: %d %v", resp.StatusCode, resp.Header)
 		}
 		zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
-		if err != nil || len(zr.File) != 1 || zr.File[0].Name != "genkan/SKILL.md" {
+		if err != nil || len(zr.File) != 3 {
 			t.Fatalf("zip layout: %v", err)
 		}
-		rc, _ := zr.File[0].Open()
-		defer rc.Close()
-		md, _ := io.ReadAll(rc)
-		return md
+		out := map[string]string{}
+		for i, name := range []string{"genkan/SKILL.md", "genkan/reference.md", "genkan/.env"} {
+			if zr.File[i].Name != name {
+				t.Fatalf("entry %d is %q, want %q", i, zr.File[i].Name, name)
+			}
+			rc, _ := zr.File[i].Open()
+			c, _ := io.ReadAll(rc)
+			rc.Close()
+			out[name] = string(c)
+		}
+		return zr.File, out
 	}
-	md := string(get(nil))
-	if !strings.HasPrefix(md, "---\nname: genkan\n") {
-		t.Fatalf("frontmatter missing: %.80q", md)
+	files, got := get(nil)
+	// the .md files are the embedded repo files, untouched and generic
+	for _, sf := range skills.Files() {
+		if got[sf.Name] != string(sf.Content) {
+			t.Fatalf("%s differs from the embedded file", sf.Name)
+		}
+		if strings.Contains(strings.ToLower(got[sf.Name]), "mcp") || strings.Contains(got[sf.Name], tok) {
+			t.Fatalf("%s mentions MCP or contains the token", sf.Name)
+		}
 	}
-	if !strings.Contains(md, tok) || !strings.Contains(md, e.ts.URL+"/mcp") {
-		t.Fatalf("token or URL missing")
+	if !strings.HasPrefix(got["genkan/SKILL.md"], "---\nname: genkan\n") {
+		t.Fatalf("frontmatter missing: %.80q", got["genkan/SKILL.md"])
 	}
-	if strings.Contains(md, "{{") || strings.Contains(md, "}}") {
-		t.Fatal("unreplaced placeholder")
+	if got["genkan/.env"] != "GENKAN_URL="+e.ts.URL+"\nGENKAN_TOKEN="+tok+"\n" {
+		t.Fatalf(".env: %q", got["genkan/.env"])
 	}
-	if !strings.Contains(md, `claude mcp add --transport http genkan `+e.ts.URL+`/mcp --header "Authorization: Bearer `+tok+`"`) {
-		t.Fatal("ready-to-use mcp command missing")
+	if m := files[2].Mode().Perm(); m != 0o600 {
+		t.Fatalf(".env mode %o, want 600", m)
 	}
 	// reverse proxy headers decide the instance URL
-	md = string(get(map[string]string{"X-Forwarded-Proto": "https", "X-Forwarded-Host": "nav.example.com"}))
-	if !strings.Contains(md, "https://nav.example.com/mcp") || strings.Contains(md, e.ts.URL) {
-		t.Fatal("forwarded URL not used")
+	_, got = get(map[string]string{"X-Forwarded-Proto": "https", "X-Forwarded-Host": "nav.example.com"})
+	if !strings.HasPrefix(got["genkan/.env"], "GENKAN_URL=https://nav.example.com\n") {
+		t.Fatalf("forwarded URL not used: %q", got["genkan/.env"])
 	}
-	md = string(get(map[string]string{"X-Forwarded-Host": "evil.com/\"x y"}))
-	if strings.Contains(md, "evil.com") {
+	_, got = get(map[string]string{"X-Forwarded-Host": "evil.com/\"x y"})
+	if strings.Contains(got["genkan/.env"], "evil.com") {
 		t.Fatal("unsafe forwarded host accepted")
 	}
 	// after regenerate the download carries the new token
 	var nt struct{ Token string }
 	admin.mustJSON("POST", "/api/token/regenerate", "", &nt)
-	md = string(get(nil))
-	if !strings.Contains(md, nt.Token) || strings.Contains(md, tok) {
+	_, got = get(nil)
+	if !strings.Contains(got["genkan/.env"], nt.Token) || strings.Contains(got["genkan/.env"], tok) {
 		t.Fatal("skill not updated after regenerate")
 	}
 }

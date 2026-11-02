@@ -18,7 +18,7 @@
 
 ## AI 优先
 
-Genkan 就是为 AI 助手来操作而设计的。把 Claude、Cursor 或任何 MCP 客户端接上去，直接说你想要什么：
+Genkan 就是为 AI 助手来操作而设计的。把 Claude、Cursor 或任何 AI Agent 接上去，直接说你想要什么：
 
 > *「把我的服务按类型分组，并置顶我最常用的五个。」*
 >
@@ -26,21 +26,21 @@ Genkan 就是为 AI 助手来操作而设计的。把 Claude、Cursor 或任何 
 >
 > *「找出失效的链接，移到一个“归档”分类里。」*
 
-改动立即生效，已打开的页面实时刷新。底层是内置的 [MCP](https://modelcontextprotocol.io) 服务（13 个工具）和可下载的 Agent Skill（已填好你的地址与 Token）；实时刷新基于 SSE，所有数据都留在你自己的服务器上。
+改动立即生效，已打开的页面实时刷新。接入 Agent 有两种互相独立的方式：Agent Skill（源码在 [`skills/genkan/`](skills/genkan)，通过 curl 直接调用 REST API，无需配置 MCP），或内置的 [MCP](https://modelcontextprotocol.io) 服务（13 个工具）；实时刷新基于 SSE，所有数据都留在你自己的服务器上。
 
-**两步接入**（设置 → AI 页面会给出带真实值的内容；一个 API Token 即可搞定）：
+**二选一接入**（设置 → AI 页面会给出带真实值的内容；一个 API Token 即可搞定）：
 
-1. **Skill（推荐）：** 点击「下载 Skill」，然后执行 `unzip genkan-skill.zip -d ~/.claude/skills/`。
-2. **MCP：** `claude mcp add --transport http genkan http://<host>:8080/mcp --header "Authorization: Bearer <token>"`（页面中也有通用 JSON 配置）。
+1. **Skill（推荐）：** 设置 → AI → 复制安装提示词，发给你的 AI 助手，它会自动安装 Skill 并配置 Token（也可在该页下载安装包，解压到 `~/.claude/skills/`）。
+2. **MCP（备选）：** `claude mcp add --transport http genkan http://<host>:8080/mcp --header "Authorization: Bearer <token>"`（页面中也有通用 JSON 配置）。
 
 > [!WARNING]
-> Token 等同于管理员权限，且包含在 Skill 与 MCP 配置中。请勿分享或提交到代码仓库；一旦泄露请立即重新生成。
+> Token 等同于管理员权限，且包含在安装提示词与 MCP 配置中。请勿分享或提交到代码仓库；一旦泄露请立即重新生成。
 
-REST API 与 MCP 工具说明见 [`docs/SPEC.md`](docs/SPEC.md)（中文）。
+REST API（Skill 使用）与 MCP 工具说明见 [`docs/SPEC.md`](docs/SPEC.md)（中文）。
 
 ## 特性
 
-- **AI 驱动**：通过内置 MCP 服务或一键 Skill 整理，改动实时生效
+- **AI 驱动**：通过一键 Skill（REST API）或内置 MCP 服务整理，改动实时生效
 - **多工作空间**：分类、置顶链接、工作空间与链接均可选 Lucide 图标
 - **界面精美**：壁纸 + 毛玻璃胶囊，桌面与手机适配
 - **智能排序**：按使用频率（默认）、最近使用或自定义拖拽
@@ -94,7 +94,7 @@ volumes:
 
 <table>
   <tr>
-    <td><img src="docs/images/ai.jpg" alt="AI 设置"><br><sub>设置 → AI：Token（已遮罩）、Skill、MCP</sub></td>
+    <td><img src="docs/images/ai.jpg" alt="AI 设置"><br><sub>设置 → AI：Token（已遮罩）、Skill 提示词、MCP</sub></td>
     <td><img src="docs/images/search.jpg" alt="快捷搜索"><br><sub>跨工作空间的快捷搜索</sub></td>
   </tr>
   <tr>

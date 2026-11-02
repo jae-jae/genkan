@@ -14,7 +14,7 @@ async function tool(ctx: Awaited<ReturnType<typeof request.newContext>>, name: s
 }
 
 test.describe('single API token + Skill + MCP', () => {
-  test('token exists by default and is masked; reveal, copy, regenerate (old token dies), Skill download; MCP drives the open page live via SSE', async ({ page, api, ws }) => {
+  test('token exists by default and is masked; reveal, copy, regenerate (old token dies), Skill setup prompt; MCP drives the open page live via SSE', async ({ page, api, ws }) => {
     await api.link({ workspace_id: ws, title: 'Existing', url: `${origin()}/healthz?l=existing` })
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: origin() })
     await openApp(page)
@@ -31,16 +31,57 @@ test.describe('single API token + Skill + MCP', () => {
     await expect(page.getByTestId('mcp-command')).toHaveCount(0)
     await expect(page.getByTestId('mcp-json')).toHaveCount(0)
     const val = page.getByTestId('token-value')
+    const masked = `gk_\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2026${first.slice(-4)}`
     await expect(val).toHaveAttribute('data-masked', '1')
-    await expect(val).toHaveText(`gk_\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2026${first.slice(-4)}`)
-    await page.getByTestId('connect-claude').click()
-    await expect(page.getByTestId('connect-claude')).toHaveAttribute('aria-selected', 'true')
-    await expect(page.getByTestId('pane-skill')).toHaveCount(0)
-    await expect(page.getByTestId('mcp-json')).toHaveCount(0)
-    await expect(page.getByTestId('mcp-command')).toContainText(`${origin()}/mcp`)
-    await expect(page.getByTestId('mcp-command')).toContainText(`Bearer gk_\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2026${first.slice(-4)}`)
-    await expect(page.getByTestId('mcp-command')).not.toContainText(first)
+    await expect(val).toHaveText(masked)
+
+    // ---- Skill pane: a ready-to-paste prompt; masked on screen, real when copied ----
+    const bs = await api.bootstrap()
+    const m = /^v?(\d+\.\d+\.\d+)$/.exec(bs.server_version || '')
+    const ref = m ? `v${m[1]}` : 'main'
+    const prompt = page.getByTestId('skill-prompt')
+    await expect(prompt).toContainText(`https://raw.githubusercontent.com/jae-jae/genkan/${ref}/skills/genkan/`)
+    await expect(prompt).toContainText('~/.config/genkan/env')
+    await expect(prompt).toContainText('chmod 600')
+    await expect(prompt).toContainText(`GENKAN_URL=${origin()}`)
+    await expect(prompt).toContainText(`GENKAN_TOKEN=${masked}`)
+    await expect(prompt).not.toContainText(first)
     expect(await page.locator('body').innerHTML()).not.toContain(first) // nothing in the DOM while masked (not even hidden)
+    await page.getByTestId('copy-skill-prompt').click()
+    await expect(page.getByTestId('copy-skill-prompt').locator('svg[data-icon="check"]')).toBeVisible()
+    const copied = await page.evaluate(() => navigator.clipboard.readText())
+    expect(copied).toContain(`GENKAN_TOKEN=${first}\n`)
+    expect(copied).toContain(`GENKAN_URL=${origin()}\n`)
+    expect(copied).toContain(`https://raw.githubusercontent.com/jae-jae/genkan/${ref}/skills/genkan/`)
+    expect(copied).not.toMatch(/mcp/i)
+
+    // ---- manual install: the package download carries the current token and this instance's URL in .env ----
+    await expect(page.getByTestId('skill-manual')).toBeVisible()
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('skill-download').click()])
+    expect(dl.suggestedFilename()).toBe('genkan-skill.zip')
+    const zipPath = test.info().outputPath('genkan-skill.zip')
+    await dl.saveAs(zipPath)
+    const { readFileSync } = await import('node:fs')
+    const zip = readFileSync(zipPath)
+    expect(zipEntries(zip)).toEqual(['genkan/SKILL.md', 'genkan/reference.md', 'genkan/.env'])
+    expect(readZipEntry(zip, 'genkan/.env')).toBe(`GENKAN_URL=${origin()}\nGENKAN_TOKEN=${first}\n`)
+    for (const f of ['genkan/SKILL.md', 'genkan/reference.md']) {
+      const md = readZipEntry(zip, f)
+      expect(md).not.toContain(first) // the markdown is generic; only .env holds the token
+      expect(md).not.toMatch(/\{\{|mcp/i)
+    }
+    expect(readZipEntry(zip, 'genkan/SKILL.md').indexOf('WARNING')).toBeLessThan(readZipEntry(zip, 'genkan/SKILL.md').indexOf('# Genkan')) // warning right after the frontmatter
+
+    // ---- MCP pane: both snippets, masked on screen, real when copied ----
+    await page.getByTestId('connect-mcp').click()
+    await expect(page.getByTestId('connect-mcp')).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByTestId('pane-skill')).toHaveCount(0)
+    await expect(page.getByTestId('mcp-command')).toContainText(`${origin()}/mcp`)
+    await expect(page.getByTestId('mcp-command')).toContainText(`Bearer ${masked}`)
+    await expect(page.getByTestId('mcp-command')).not.toContainText(first)
+    await expect(page.getByTestId('mcp-json')).not.toContainText(first)
+    await expect(page.getByTestId('mcp-json')).toContainText('"mcpServers"')
+    expect(await page.locator('body').innerHTML()).not.toContain(first)
     // code blocks never wrap (horizontal scroll instead)
     expect(await page.getByTestId('mcp-command').evaluate((e) => getComputedStyle(e).whiteSpace)).toBe('pre')
     // the copy buttons always copy the real value, even while masked; the icon flips to a check for a moment
@@ -48,11 +89,6 @@ test.describe('single API token + Skill + MCP', () => {
     await expect(page.getByTestId('copy-mcp-command').locator('svg[data-icon="check"]')).toBeVisible()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`claude mcp add --transport http genkan ${origin()}/mcp --header "Authorization: Bearer ${first}"`)
     await expect(page.getByTestId('copy-mcp-command').locator('svg[data-icon="copy"]')).toBeVisible()
-    await page.getByTestId('connect-mcp').click()
-    await expect(page.getByTestId('mcp-command')).toHaveCount(0)
-    await expect(page.getByTestId('mcp-json')).not.toContainText(first)
-    await expect(page.getByTestId('mcp-json')).toContainText('"mcpServers"')
-    expect(await page.locator('body').innerHTML()).not.toContain(first)
     await page.getByTestId('copy-mcp-json').click()
     expect(JSON.parse(await page.evaluate(() => navigator.clipboard.readText()))).toEqual({ mcpServers: { genkan: { type: 'http', url: `${origin()}/mcp`, headers: { Authorization: `Bearer ${first}` } } } })
     await page.getByTestId('token-copy').click()
@@ -62,25 +98,11 @@ test.describe('single API token + Skill + MCP', () => {
     await expect(val).toHaveAttribute('data-masked', '0')
     await expect(val).toHaveText(first)
     await expect(page.getByTestId('mcp-json')).toContainText(`"Authorization": "Bearer ${first}"`)
-    await page.getByTestId('connect-claude').click()
     await expect(page.getByTestId('mcp-command')).toContainText(`Bearer ${first}`)
+    await page.getByTestId('connect-skill').click()
+    await expect(page.getByTestId('skill-prompt')).toContainText(`GENKAN_TOKEN=${first}`)
     await page.getByTestId('token-toggle').click()
     await expect(val).toHaveAttribute('data-masked', '1')
-
-    // ---- Skill download carries the token and this instance's URL ----
-    await page.getByTestId('connect-skill').click()
-    const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('skill-download').click()])
-    expect(dl.suggestedFilename()).toBe('genkan-skill.zip')
-    const zipPath = test.info().outputPath('genkan-skill.zip')
-    await dl.saveAs(zipPath)
-    const { readFileSync } = await import('node:fs')
-    const zip = readFileSync(zipPath)
-    expect(zipEntries(zip)).toEqual(['genkan/SKILL.md'])
-    const skill = readZipEntry(zip, 'genkan/SKILL.md')
-    expect(skill).toContain(`claude mcp add --transport http genkan ${origin()}/mcp --header "Authorization: Bearer ${first}"`)
-    expect(skill).not.toMatch(/\{\{GENKAN_/)
-    expect(skill.indexOf('WARNING')).toBeGreaterThan(skill.indexOf('---', 4)) // right after the frontmatter
-    expect(skill.indexOf('WARNING')).toBeLessThan(skill.indexOf('# Genkan'))
 
     // ---- regenerate: inline confirmation, cancel keeps the token ----
     const oldCtx = await request.newContext({ baseURL: origin(), extraHTTPHeaders: { Authorization: `Bearer ${first}`, 'Content-Type': 'application/json' } })
@@ -99,7 +121,10 @@ test.describe('single API token + Skill + MCP', () => {
     expect(token).not.toBe(first)
     // every snippet on the page follows the new token (still masked)
     await expect(val).toHaveText(`gk_\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2026${token.slice(-4)}`)
-    await page.getByTestId('connect-claude').click()
+    await expect(page.getByTestId('skill-prompt')).toContainText(token.slice(-4))
+    await page.getByTestId('copy-skill-prompt').click()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(`GENKAN_TOKEN=${token}\n`)
+    await page.getByTestId('connect-mcp').click()
     await expect(page.getByTestId('mcp-command')).toContainText(token.slice(-4))
     await page.getByTestId('copy-mcp-command').click()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}"`)
@@ -107,6 +132,12 @@ test.describe('single API token + Skill + MCP', () => {
     expect((await oldCtx.post('/mcp', { data: { jsonrpc: '2.0', id: 2, method: 'ping' } })).status()).toBe(401)
     expect((await oldCtx.get('/api/export')).status()).toBe(401)
     await oldCtx.dispose()
+    // a fresh download follows the new token; the old one is dead
+    await page.getByTestId('connect-skill').click()
+    const [dl2] = await Promise.all([page.waitForEvent('download'), page.getByTestId('skill-download').click()])
+    const zipPath2 = test.info().outputPath('genkan-skill-2.zip')
+    await dl2.saveAs(zipPath2)
+    expect(readZipEntry(readFileSync(zipPath2), 'genkan/.env')).toBe(`GENKAN_URL=${origin()}\nGENKAN_TOKEN=${token}\n`)
     await page.getByTestId('modal-close').click()
 
     // ---- raw MCP over HTTP with the Bearer token ----
@@ -205,15 +236,15 @@ test.describe('single API token + Skill + MCP', () => {
     await none.dispose()
   })
 
-  test('token API: admin-only, CSRF-protected regenerate, Skill zip reflects proxy headers and the current token', async ({ api }) => {
+  test('token API: admin-only, CSRF-protected regenerate, Skill package reflects proxy headers and the current token', async ({ api }) => {
     const tok = await api.token()
     const none = await request.newContext({ baseURL: origin() })
     // anonymous / cookie without CSRF header
     expect((await none.get('/api/token')).status()).toBe(401)
-    expect((await none.get('/api/skill')).status()).toBe(401)
     expect((await none.post('/api/token/regenerate', { headers: { 'X-Requested-With': 'genkan' } })).status()).toBe(401)
     const cookie = (await api.ctx.storageState()).cookies.map((c) => `${c.name}=${c.value}`).join('; ')
     expect((await none.post('/api/token/regenerate', { headers: { Cookie: cookie } })).status()).toBe(403)
+    expect((await none.get('/api/skill')).status()).toBe(401)
     expect(await api.token()).toBe(tok) // nothing changed
     // the removed multi-token endpoints are gone
     for (const [m, p] of [['GET', '/api/tokens'], ['POST', '/api/tokens'], ['DELETE', '/api/tokens/abc']] as const) {
@@ -225,25 +256,22 @@ test.describe('single API token + Skill + MCP', () => {
     // a bearer token works for the whole admin API, including reading itself
     const bearer = { Authorization: `Bearer ${tok}` }
     expect(((await (await none.get('/api/token', { headers: bearer })).json()) as { token: string }).token).toBe(tok)
-    // Skill zip: instance URL from the request, derived from proxy headers when present
+    // Skill package: .env carries the instance URL (from proxy headers when present) and the current token
     const get = async (headers: Record<string, string> = {}) => {
       const r = await api.ctx.get('/api/skill', { headers })
       expect(r.status()).toBe(200)
       expect(r.headers()['content-type']).toBe('application/zip')
       expect(r.headers()['content-disposition']).toContain('genkan-skill.zip')
       const zip = await r.body()
-      expect(zipEntries(zip)).toEqual(['genkan/SKILL.md'])
-      return readZipEntry(zip, 'genkan/SKILL.md')
+      expect(zipEntries(zip)).toEqual(['genkan/SKILL.md', 'genkan/reference.md', 'genkan/.env'])
+      return readZipEntry(zip, 'genkan/.env')
     }
-    expect(await get()).toContain(`genkan ${origin()}/mcp --header "Authorization: Bearer ${tok}"`)
-    const proxied = await get({ 'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'start.example.org' })
-    expect(proxied).toContain('claude mcp add --transport http genkan https://start.example.org/mcp')
-    expect(proxied).toContain(`curl -s -H "Authorization: Bearer ${tok}" "https://start.example.org/api/bootstrap"`)
-    expect(proxied).not.toMatch(/\{\{GENKAN_|\$GENKAN_/)
-    // regenerate through the API: the zip follows, the old token is dead
+    expect(await get()).toBe(`GENKAN_URL=${origin()}\nGENKAN_TOKEN=${tok}\n`)
+    expect(await get({ 'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'start.example.org' })).toBe(`GENKAN_URL=https://start.example.org\nGENKAN_TOKEN=${tok}\n`)
+    // regenerate through the API: the package follows, the old token is dead
     const nt = (await api.call<{ token: string }>('POST', '/api/token/regenerate')).token
     expect(nt).not.toBe(tok)
-    expect(await get()).toContain(nt)
+    expect(await get()).toContain(`GENKAN_TOKEN=${nt}`)
     expect((await none.get('/api/token', { headers: bearer })).status()).toBe(401)
     expect((await none.get('/api/token', { headers: { Authorization: `Bearer ${nt}` } })).status()).toBe(200)
     await none.dispose()

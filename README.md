@@ -18,7 +18,7 @@ English | [简体中文](README.zh-CN.md)
 
 ## AI-first
 
-Genkan is built to be driven by an AI assistant. Point Claude, Cursor or any MCP client at it and just say what you want:
+Genkan is built to be driven by an AI assistant. Point Claude, Cursor or any AI agent at it and just say what you want:
 
 > *"Group my services by type and pin the five I use most."*
 >
@@ -26,21 +26,21 @@ Genkan is built to be driven by an AI assistant. Point Claude, Cursor or any MCP
 >
 > *"Find dead links and move them to an Archive category."*
 
-Changes land immediately and the open page updates live. Under the hood: a built-in [MCP](https://modelcontextprotocol.io) server with 13 tools, plus a downloadable Agent Skill with your URL and token already filled in. Live updates use SSE, and everything stays local on your own server.
+Changes land immediately and the open page updates live. There are two alternative ways to connect an agent: an Agent Skill (source in [`skills/genkan/`](skills/genkan); it uses the REST API with curl, no MCP setup needed) or the built-in [MCP](https://modelcontextprotocol.io) server with 13 tools. Live updates use SSE, and everything stays local on your own server.
 
-**Set it up in two steps** (Settings → AI shows both with your real values; one API token covers everything):
+**Pick one** (Settings → AI shows both with your real values; one API token covers everything):
 
-1. **Skill (recommended):** click *Download Skill*, then `unzip genkan-skill.zip -d ~/.claude/skills/`.
-2. **MCP:** `claude mcp add --transport http genkan http://<host>:8080/mcp --header "Authorization: Bearer <token>"` (a generic JSON snippet is there too).
+1. **Skill (recommended):** Settings → AI → copy the setup prompt and send it to your AI assistant; it installs the Skill and your token (or download the package there and unzip it into `~/.claude/skills/`).
+2. **MCP (alternative):** `claude mcp add --transport http genkan http://<host>:8080/mcp --header "Authorization: Bearer <token>"` (a generic JSON snippet is there too).
 
 > [!WARNING]
-> The token is full admin access and is embedded in the Skill and MCP snippets. Never share or commit them; regenerate the token if it leaks.
+> The token is full admin access and is embedded in the setup prompt and MCP snippets. Never share or commit them; regenerate the token if it leaks.
 
-The REST API and MCP tools are described in [`docs/SPEC.md`](docs/SPEC.md).
+The REST API (which the Skill uses) and the MCP tools are described in [`docs/SPEC.md`](docs/SPEC.md).
 
 ## Features
 
-- **AI-native**: organize via the built-in MCP server or a one-click Skill; changes apply live
+- **AI-native**: organize via a one-click Skill (REST API) or the built-in MCP server; changes apply live
 - **Multiple workspaces**: categories, pinned links, Lucide icons for workspaces and links
 - **Beautiful UI**: wallpapers and frosted-glass capsules, desktop and mobile
 - **Smart sorting**: by usage frequency (default), recent, or custom drag order
@@ -94,7 +94,7 @@ Images are published for `linux/amd64` and `linux/arm64` (Raspberry Pi, Apple Si
 
 <table>
   <tr>
-    <td><img src="docs/images/ai.jpg" alt="AI settings"><br><sub>Settings → AI: token (masked), Skill, MCP</sub></td>
+    <td><img src="docs/images/ai.jpg" alt="AI settings"><br><sub>Settings → AI: token (masked), Skill prompt, MCP</sub></td>
     <td><img src="docs/images/search.jpg" alt="Quick search"><br><sub>Quick search across all workspaces</sub></td>
   </tr>
   <tr>

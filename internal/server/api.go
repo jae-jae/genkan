@@ -481,7 +481,7 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request, _ Role) {
 	writeJSON(w, r, http.StatusOK, map[string]any{"ok": true, "workspaces": nw, "links": nl})
 }
 
-// API token & Skill download ------------------------------------------------------------
+// API token ------------------------------------------------------------
 
 func writeSecretJSON(w http.ResponseWriter, r *http.Request, v any) {
 	w.Header().Set("Cache-Control", "no-store")
@@ -538,17 +538,31 @@ func validHost(h string) bool {
 	return true
 }
 
-// renderSkill fills the embedded SKILL.md template.
-func renderSkill(url, token string) string {
-	return strings.NewReplacer("{{GENKAN_URL}}", url, "{{GENKAN_TOKEN}}", token).Replace(skills.SkillTemplate)
-}
-
+// handleSkill serves the Skill package: the generic SKILL.md and reference.md
+// exactly as embedded, plus a generated genkan/.env (mode 0600) holding this
+// instance's URL and the current token.
 func (s *Server) handleSkill(w http.ResponseWriter, r *http.Request, _ Role) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	f, err := zw.CreateHeader(&zip.FileHeader{Name: "genkan/SKILL.md", Method: zip.Deflate, Modified: time.Now()})
+	now := time.Now()
+	add := func(name string, mode os.FileMode, content []byte) error {
+		h := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: now}
+		h.SetMode(mode)
+		f, err := zw.CreateHeader(h)
+		if err == nil {
+			_, err = f.Write(content)
+		}
+		return err
+	}
+	var err error
+	for _, sf := range skills.Files() {
+		if err = add(sf.Name, 0o644, sf.Content); err != nil {
+			break
+		}
+	}
 	if err == nil {
-		_, err = io.WriteString(f, renderSkill(instanceURL(r), s.st.APIToken()))
+		env := "GENKAN_URL=" + instanceURL(r) + "\nGENKAN_TOKEN=" + s.st.APIToken() + "\n"
+		err = add("genkan/.env", 0o600, []byte(env))
 	}
 	if err == nil {
 		err = zw.Close()

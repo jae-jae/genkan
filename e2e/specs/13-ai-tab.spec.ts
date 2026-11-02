@@ -46,7 +46,7 @@ test.describe('AI tab and top-right AI button', () => {
     await page.getByTestId('settings-tab-ai').click()
     await expect(page.getByTestId('mcp-warning')).toContainText('Token 等同管理员权限')
     await expect(page.getByTestId('connect-skill')).toContainText('Skill（推荐）')
-    await expect(page.getByTestId('connect-mcp')).toContainText('其他 MCP 客户端')
+    await expect(page.getByTestId('connect-mcp')).toContainText('MCP')
     await expect(page.getByTestId('settings-modal')).not.toContainText('AI / MCP')
   })
 
@@ -58,20 +58,32 @@ test.describe('AI tab and top-right AI button', () => {
     await expect(tabs).toHaveAttribute('role', 'tablist')
     await expect(page.getByTestId('connect-skill')).toHaveAttribute('aria-selected', 'true')
 
-    // Skill (default): steps + a prominent download button
+    // Skill (default): one hint line + the setup prompt with an icon copy button
     await expect(page.getByTestId('pane-skill')).toBeVisible()
-    await expect(page.getByTestId('pane-skill').locator('ol > li')).toHaveCount(2)
-    await expect(page.getByTestId('pane-skill')).toContainText('~/.claude/skills/')
-    await expect(page.getByTestId('skill-download')).toHaveAttribute('href', '/api/skill')
-    await expect(page.getByTestId('pane-claude')).toHaveCount(0)
+    await expect(page.getByTestId('pane-skill')).toContainText(/REST API/) // the Skill needs no MCP setup
+    await expect(page.getByTestId('skill-prompt')).toContainText('~/.config/genkan/env')
+    await expect(page.getByTestId('skill-download')).toHaveAttribute('href', '/api/skill') // secondary manual install below the prompt
+    expect((await page.getByTestId('skill-prompt').boundingBox())!.y).toBeLessThan((await page.getByTestId('skill-download').boundingBox())!.y)
+    await expect(page.getByTestId('skill-manual')).toContainText('~/.claude/skills/')
     await expect(page.getByTestId('pane-mcp')).toHaveCount(0)
+    await expect(page.getByTestId('connect-claude')).toHaveCount(0) // just two options: Skill | MCP
+    // the prompt is readable text (wraps); the copy button sits in the top-right corner
+    expect(await page.getByTestId('skill-prompt').evaluate((e) => getComputedStyle(e).whiteSpace)).toBe('pre-wrap')
+    const pbox = (await page.getByTestId('skill-prompt').locator('xpath=..').boundingBox())!
+    const pcb = (await page.getByTestId('copy-skill-prompt').boundingBox())!
+    expect(pcb.x + pcb.width).toBeGreaterThan(pbox.x + pbox.width - 40)
+    await page.getByTestId('copy-skill-prompt').click()
+    await expect(page.getByTestId('copy-skill-prompt').locator('svg[data-icon="check"]')).toBeVisible()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('raw.githubusercontent.com/jae-jae/genkan/')
+    await expect(page.getByTestId('copy-skill-prompt').locator('svg[data-icon="copy"]')).toBeVisible() // back after ~1.5 s
 
-    // Claude Code
-    await page.getByTestId('connect-claude').click()
-    await expect(page.getByTestId('pane-claude')).toBeVisible()
+    // MCP: the Claude Code command and the generic JSON snippet, one below the other
+    await page.getByTestId('connect-mcp').click()
+    await expect(page.getByTestId('pane-mcp')).toBeVisible()
     await expect(page.getByTestId('pane-skill')).toHaveCount(0)
     const cmd = page.getByTestId('mcp-command')
     await expect(cmd).toContainText('claude mcp add --transport http genkan')
+    await expect(page.getByTestId('mcp-json')).toContainText('"mcpServers"')
     expect(await cmd.evaluate((e) => getComputedStyle(e).whiteSpace)).toBe('pre')
     // the copy button is overlaid in the top-right corner of the code block
     const box = (await cmd.locator('xpath=..').boundingBox())!
@@ -82,12 +94,6 @@ test.describe('AI tab and top-right AI button', () => {
     await expect(page.getByTestId('copy-mcp-command').locator('svg[data-icon="check"]')).toBeVisible()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('claude mcp add --transport http genkan')
     await expect(page.getByTestId('copy-mcp-command').locator('svg[data-icon="copy"]')).toBeVisible() // back after ~1.5 s
-
-    // Other MCP clients
-    await page.getByTestId('connect-mcp').click()
-    await expect(page.getByTestId('pane-mcp')).toBeVisible()
-    await expect(page.getByTestId('mcp-command')).toHaveCount(0)
-    await expect(page.getByTestId('mcp-json')).toContainText('"mcpServers"')
     await page.getByTestId('copy-mcp-json').click()
     expect(JSON.parse(await page.evaluate(() => navigator.clipboard.readText())).mcpServers.genkan.url).toBe(`${origin()}/mcp`)
 

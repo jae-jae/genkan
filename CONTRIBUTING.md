@@ -17,6 +17,8 @@ make docker   # build the image
 
 The design is documented in [`docs/SPEC.md`](docs/SPEC.md) (in Chinese). The stable `data-testid` hooks used by the e2e tests are listed in [`web/TESTIDS.md`](web/TESTIDS.md); keep both in sync with your change.
 
+The Agent Skill in [`skills/genkan/`](skills/genkan) is fetched by users straight from GitHub (`main` is the default ref; release builds use their tag), so it must stay compatible (it is also embedded in the binary for the download in Settings → AI) with the REST API on `main`. When you change an endpoint, update `skills/genkan/reference.md` (and `SKILL.md` if the workflow changes) in the same PR, and keep the Skill free of MCP content and secrets.
+
 ### Frontend development with the mock server
 
 `web/mock/` is a dev-only mock of the REST API (in-memory, not shipped) so you can iterate on the UI with hot reload and no backend:

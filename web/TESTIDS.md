@@ -105,10 +105,11 @@ Uploading exactly one file also applies it; several files only add them to the g
 - AI (`settings-tab-ai`, panel `settings-panel-ai`): `token-card`, `token-value` (attr `data-masked` = `1`/`0`; masked text is
   `gk_••••••••…last4`), `token-toggle` (show/hide, `aria-pressed`), `token-copy`, `token-regenerate` (icon button, aria-label only) →
   inline `token-confirm` with `token-regenerate-confirm` / `token-regenerate-cancel`, `mcp-warning` (the single amber warning line).
-  Connect: `connect-tabs` (`role=tablist`), `connect-skill|claude|mcp` (`role=tab`, `aria-selected`; only the selected pane is rendered),
-  panes `pane-skill|claude|mcp`. Skill pane: `skill-download` (`<a href=/api/skill download>`). Claude pane: `mcp-command` + `copy-mcp-command`.
-  Other-MCP pane: `mcp-json` + `copy-mcp-json`. Snippets are masked while the token is masked; copy buttons (icon-only, check for 1.5 s)
-  always copy the real value. NOTE: `mcp-command`/`mcp-json` only exist when their pane is selected (default pane is Skill).
+  Connect: `connect-tabs` (`role=tablist`), `connect-skill|mcp` (`role=tab`, `aria-selected`; only the selected pane is rendered),
+  panes `pane-skill|mcp`. Skill pane (prompt first): `skill-prompt` (the ready-to-paste setup prompt, wrapping `<pre>`) + `copy-skill-prompt`. MCP pane:
+  `mcp-command` + `copy-mcp-command` (Claude Code) and `mcp-json` + `copy-mcp-json` (generic client). Prompt and snippets are masked
+  while the token is masked; copy buttons (icon-only, check for 1.5 s) always copy the real value. Below it a quiet manual-install row `skill-manual` with the package download link `skill-download` (`<a href=/api/skill download>`; the zip contains the token).
+  NOTE: `mcp-command`/`mcp-json` only exist while the MCP pane is selected (default pane is Skill).
 - Content (`settings-tab-content`): `content-manager`, `cm-search` (+ `cm-search-clear`), `cm-results` / `cm-result-<linkId>` / `cm-no-results`
   (cross-workspace search, rows show `workspace › category`), workspace list `cm-ws-list`, `cm-ws-<id>` (select; `aria-current`), `cm-ws-add`;
   selected workspace: `cm-ws-title`, `cm-ws-edit`, `cm-ws-up`, `cm-ws-down`, `cm-ws-delete`, `cm-cat-add`, `cm-link-add`;

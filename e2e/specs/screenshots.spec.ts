@@ -379,7 +379,7 @@ test('desktop: settings, AI tab (token stays masked)', async ({ browser }) => {
   await expect(page.getByTestId('settings-panel-ai')).toBeVisible()
   await expect(page.getByTestId('token-value')).toHaveAttribute('data-masked', '1')
   await shot(page, 'desktop-settings-ai')
-  await page.getByTestId('connect-claude').click()
+  await page.getByTestId('connect-mcp').click()
   await expect(page.getByTestId('mcp-command')).toBeVisible()
   await shot(page, 'desktop-settings-ai-claude')
   await ctx.close()

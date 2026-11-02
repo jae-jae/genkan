@@ -1,0 +1,22 @@
+services:
+  genkan:
+    image: ghcr.io/jae-jae/genkan:latest
+    # build: .                    # or build locally instead of pulling the image
+    container_name: genkan
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - genkan-data:/data         # or a bind mount: ./data:/data
+    environment:
+      # Optional: initialize the admin password on first start (skips the setup page).
+      # GENKAN_PASSWORD: "change-me-please"
+      GENKAN_ADDR: ":8080"
+    # Optional: run unprivileged. With a bind mount, `chown 1000:1000 ./data` first.
+    # user: "1000:1000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  genkan-data:

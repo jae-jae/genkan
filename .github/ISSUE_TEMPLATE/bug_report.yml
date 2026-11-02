@@ -1,0 +1,34 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, what you got. Screenshots help.
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Genkan version
+      description: Settings -> About, or `genkan version`
+      placeholder: v0.1.0
+    validations: { required: true }
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run it?
+      options: [Docker, Docker Compose, Binary, Other]
+    validations: { required: true }
+  - type: input
+    id: browser
+    attributes:
+      label: Browser / device
+      placeholder: Safari 19 on iPhone, Firefox on Linux, ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Container or process output. Remove tokens and passwords first.
+      render: shell

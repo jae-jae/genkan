@@ -1,0 +1,16 @@
+{
+  "name": "genkan-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "screenshots": "GENKAN_SHOTS=1 playwright test --project=screenshots",
+    "docs-images": "node tools/docs-images.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}

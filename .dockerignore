@@ -1,0 +1,16 @@
+.git
+.gitignore
+.tmp
+bin
+data
+docs
+e2e
+web/node_modules
+web/dist
+node_modules
+*.md
+!README.md
+Dockerfile
+docker-compose.yml
+.github
+LICENSE

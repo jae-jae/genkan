@@ -227,6 +227,8 @@ a { color: inherit; }
 .ico { flex: none; width: var(--s); height: var(--s); border-radius: 50%; object-fit: contain; display: block; }
 img.ico { background: rgba(255, 255, 255, 0.9); padding: 2px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
 .ico-letter { display: grid; place-items: center; color: #fff; font-weight: 700; font-size: calc(var(--s) * 0.46); background: linear-gradient(135deg, hsl(var(--h) 78% 64%), hsl(calc(var(--h) + 38) 72% 46%)); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 4px rgba(0, 0, 0, 0.2); }
+.ico-lucide { display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, hsl(var(--h) 66% 60%), hsl(calc(var(--h) + 34) 62% 42%)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 4px rgba(0, 0, 0, 0.2); }
+.ico-lucide svg { display: block; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.22)); }
 .ico-emoji { display: grid; place-items: center; font-size: calc(var(--s) * 0.6); line-height: 1; background: rgba(255, 255, 255, 0.16); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); }
 [data-editing] .cap-edit { cursor: grab; touch-action: pan-y; border-style: dashed; border-color: rgba(255, 255, 255, 0.42); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .cap-actions { position: absolute; top: -9px; right: -5px; display: flex; gap: 4px; }
@@ -281,7 +283,7 @@ select option { color: #fff; background: #1d2240; }
 
 /* ---------- modal ---------- */
 .overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: rgba(6, 8, 26, 0.36); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation: fade 0.2s ease backwards; }
-.modal { width: min(520px, 100%); max-height: min(88dvh, 820px); display: flex; flex-direction: column; background: var(--glass-modal); -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); box-shadow: 0 30px 80px rgba(2, 4, 20, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.2); animation: pop 0.28s var(--ease) backwards; }
+.modal { width: min(520px, 100%); min-width: 0; max-height: min(88dvh, 820px); display: flex; flex-direction: column; background: var(--glass-modal); -webkit-backdrop-filter: blur(28px) saturate(170%); backdrop-filter: blur(28px) saturate(170%); box-shadow: 0 30px 80px rgba(2, 4, 20, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.2); animation: pop 0.28s var(--ease) backwards; }
 .modal-wide { width: min(940px, 100%); height: min(680px, 88dvh); }
 .modal-ws { width: min(700px, 100%); }
 @keyframes pop { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
@@ -427,6 +429,9 @@ code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; pa
 .search-mini { display: flex; align-items: center; gap: 6px; width: 176px; max-width: 55%; padding: 0 12px; height: 30px; border-radius: 999px; background: rgba(255, 255, 255, 0.09); border: 1px solid rgba(255, 255, 255, 0.18); color: var(--dim); }
 .search-mini input[type='text'] { height: 28px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; font-size: 13px; }
 .icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 6px; overflow: auto; padding: 2px; overscroll-behavior: contain; }
+.icon-picker { display: flex; flex-direction: column; gap: 8px; }
+.search-mini.grow { width: 100%; max-width: none; }
+.icon-ctl .icon-grid { max-height: 176px; }
 .icon-cell { height: 42px; padding: 0; display: grid; place-items: center; border-radius: 12px; border: 1px solid transparent; background: rgba(255, 255, 255, 0.07); color: var(--dim); transition: background 0.15s, color 0.15s; }
 .icon-cell:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
 .icon-cell[aria-checked='true'] { background: rgba(255, 255, 255, 0.28); border-color: rgba(255, 255, 255, 0.85); color: #fff; }
@@ -508,6 +513,7 @@ code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; pa
   .row-c { width: 100%; justify-content: flex-start; }
   .field-row { flex-direction: column; }
   .icon-edit { flex-direction: column; }
+  .icon-ctl .seg-b { padding: 4px 7px; }
   .toasts { bottom: calc(18px + env(safe-area-inset-bottom)); }
   .inline-form { flex-wrap: wrap; }
   .settings .spanel { min-height: 0; }

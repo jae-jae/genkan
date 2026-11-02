@@ -41,7 +41,7 @@ The REST API and MCP tools are described in [`docs/SPEC.md`](docs/SPEC.md).
 ## Features
 
 - **AI-native**: organize via the built-in MCP server or a one-click Skill; changes apply live
-- **Multiple workspaces**: categories, pinned links, Lucide icons
+- **Multiple workspaces**: categories, pinned links, Lucide icons for workspaces and links
 - **Beautiful UI**: wallpapers and frosted-glass capsules, desktop and mobile
 - **Smart sorting**: by usage frequency (default), recent, or custom drag order
 - **Quick search**: `/` or `Ctrl/⌘+K`, across all workspaces, web fallback
@@ -121,4 +121,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the mock server, screenshots and PR g
 
 [MIT](LICENSE) © 2026 jae-jae
 
-Acknowledgements: workspace icons are from [Lucide](https://lucide.dev) (ISC). Demo service logos in the screenshots come from [homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons) (Apache-2.0) and belong to their respective owners. Details in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Acknowledgements: workspace and link icons are from [Lucide](https://lucide.dev) (ISC). Demo service logos in the screenshots come from [homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons) (Apache-2.0) and belong to their respective owners. Details in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

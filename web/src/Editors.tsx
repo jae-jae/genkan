@@ -1,8 +1,7 @@
 import { useMemo, useRef, useState } from 'preact/hooks'
 import { post } from './api'
-import { BUILTIN_ICONS } from './lucide'
 import { Icon, WsIcon } from './icons'
-import { Modal, LinkIcon, Switch } from './parts'
+import { IconPicker, Modal, LinkIcon, Switch } from './parts'
 import { t } from './i18n'
 import {
   categories,
@@ -24,10 +23,10 @@ import {
   workspaces,
   type ModalState,
 } from './store'
-import { DEFAULT_WALLPAPER, hostOf, iconMode, normalizeUrl } from './util'
+import { DEFAULT_WALLPAPER, hostOf, iconMode, normalizeUrl, type IconMode } from './util'
 import { WallpaperGallery } from './Gallery'
 
-type Mode = 'auto' | 'emoji' | 'upload' | 'url' | 'letter'
+type Mode = IconMode
 const EMOJIS = ['🏠', '🎬', '🎵', '📺', '📷', '☁️', '🔒', '🛠️', '📊', '🧩', '🌐', '📦', '🎮', '📚', '💾', '🚀']
 
 export function LinkEditor({ state }: { state: Extract<ModalState, { kind: 'link' }> }) {
@@ -43,6 +42,7 @@ export function LinkEditor({ state }: { state: Extract<ModalState, { kind: 'link
   const [mode, setMode] = useState<Mode>(existing ? iconMode(existing.icon) : 'auto')
   const [emoji, setEmoji] = useState(existing?.icon.startsWith('emoji:') ? existing.icon.slice(6) : '')
   const [imgUrl, setImgUrl] = useState(existing?.icon.startsWith('url:') ? existing.icon.slice(4) : '')
+  const [lucide, setLucide] = useState(existing?.icon.startsWith('lucide:') ? existing.icon : '')
   const [upload, setUpload] = useState(existing?.icon.startsWith('upload:') ? existing.icon : '')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -61,7 +61,7 @@ export function LinkEditor({ state }: { state: Extract<ModalState, { kind: 'link
     setCatId('')
   }
   const icon =
-    mode === 'emoji' ? (emoji.trim() ? 'emoji:' + emoji.trim() : '') : mode === 'url' ? (imgUrl.trim() ? 'url:' + imgUrl.trim() : '') : mode === 'upload' ? upload : mode === 'auto' ? (existing?.icon.startsWith('favicon:') ? existing.icon : '') : ''
+    mode === 'emoji' ? (emoji.trim() ? 'emoji:' + emoji.trim() : '') : mode === 'lucide' ? lucide : mode === 'url' ? (imgUrl.trim() ? 'url:' + imgUrl.trim() : '') : mode === 'upload' ? upload : mode === 'auto' ? (existing?.icon.startsWith('favicon:') ? existing.icon : '') : ''
 
   const doUpload = async (f: File | undefined) => {
     if (!f) return
@@ -103,6 +103,7 @@ export function LinkEditor({ state }: { state: Extract<ModalState, { kind: 'link
   const modes: [Mode, string][] = [
     ['auto', t('icon.auto')],
     ['emoji', t('icon.emoji')],
+    ['lucide', t('icon.lucide')],
     ['upload', t('icon.upload')],
     ['url', t('icon.url')],
     ['letter', t('icon.letter')],
@@ -195,6 +196,7 @@ export function LinkEditor({ state }: { state: Extract<ModalState, { kind: 'link
                   </div>
                 </div>
               )}
+              {mode === 'lucide' && <IconPicker value={lucide} onPick={setLucide} testid="link-icon-lucide" />}
               {mode === 'upload' && (
                 <label class="btn upload-btn">
                   <Icon n="upload" size={15} />
@@ -272,9 +274,7 @@ export function WorkspaceModal({ state }: { state: Extract<ModalState, { kind: '
   const [name, setName] = useState(existing?.name || '')
   const [icon, setIcon] = useState(existing && existing.icon.startsWith('lucide:') ? existing.icon : 'lucide:layout-grid')
   const [wp, setWp] = useState(existing?.wallpaper || DEFAULT_WALLPAPER)
-  const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
-  const shown = BUILTIN_ICONS.filter((n) => !q.trim() || n.includes(q.trim().toLowerCase().replace(/\s+/g, '-')))
   const save = async (e: Event) => {
     e.preventDefault()
     const n = name.trim()
@@ -320,21 +320,7 @@ export function WorkspaceModal({ state }: { state: Extract<ModalState, { kind: '
           </div>
         </div>
         <div class="field">
-          <div class="field-line">
-            <label id="w-icon-l">{t('ws.icon')}</label>
-            <span class="search-mini">
-              <Icon n="search" size={14} />
-              <input type="text" data-testid="ws-icon-search" aria-label={t('ws.iconSearch')} placeholder={t('ws.iconSearch')} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()} />
-            </span>
-          </div>
-          <div class="icon-grid" role="radiogroup" aria-labelledby="w-icon-l" data-testid="ws-icon" data-value={icon}>
-            {shown.map((n) => (
-              <button type="button" key={n} class="icon-cell" role="radio" aria-checked={icon === 'lucide:' + n} aria-label={n} title={n} data-testid={'ws-icon-' + n} onClick={() => setIcon('lucide:' + n)}>
-                <Icon n={n} size={19} />
-              </button>
-            ))}
-            {!shown.length && <span class="hint">{t('ws.iconNone')}</span>}
-          </div>
+          <IconPicker value={icon} onPick={setIcon} testid="ws-icon" label={t('ws.icon')} />
         </div>
         <div class="field">
           <label>{t('set.wallpaper')}</label>

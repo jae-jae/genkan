@@ -311,6 +311,11 @@ func cleanIcon(s string) (string, error) {
 			return "", invalid("invalid emoji icon")
 		}
 		return "emoji:" + e, nil
+	case strings.HasPrefix(s, WorkspaceIconPrefix):
+		if !builtinIconSet[s[len(WorkspaceIconPrefix):]] {
+			return "", invalid("unknown lucide icon; use lucide:<name> with one of the built-in icon names (e.g. lucide:server)")
+		}
+		return s, nil
 	case strings.HasPrefix(s, "url:"):
 		u, err := url.Parse(s[len("url:"):])
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
@@ -318,7 +323,7 @@ func cleanIcon(s string) (string, error) {
 		}
 		return s, nil
 	}
-	return "", invalid("icon must be empty or start with favicon:, upload:, emoji: or url:")
+	return "", invalid("icon must be empty or start with favicon:, upload:, emoji:, lucide: or url:")
 }
 
 func cleanWallpaper(s string) (string, error) {

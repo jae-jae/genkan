@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { Icon } from './icons'
+import { BUILTIN_ICONS } from './lucide'
 import { t } from './i18n'
 import { dismissToast, toasts } from './store'
 import { firstChar, hueOf, parseIcon } from './util'
@@ -11,12 +12,55 @@ export function LinkIcon({ icon, title, size = 24 }: { icon: string; title: stri
   useEffect(() => setBad(false), [icon])
   const style = { '--s': size + 'px' } as any
   if (p.kind === 'emoji' && p.value) return <span class="ico ico-emoji" style={style}>{p.value}</span>
+  if (p.kind === 'lucide')
+    return (
+      <span class="ico ico-lucide" style={{ ...style, '--h': hueOf(title || '?') }}>
+        <Icon n={p.value} size={Math.round(size * 0.58)} />
+      </span>
+    )
   if (p.kind === 'img' && !bad)
     return <img class="ico" style={style} src={p.value} alt="" loading="lazy" draggable={false} onError={() => setBad(true)} />
   return (
     <span class="ico ico-letter" style={{ ...style, '--h': hueOf(title || '?') }}>
       {firstChar(title)}
     </span>
+  )
+}
+
+/**
+ * Searchable grid of the built-in Lucide icons, shared by the workspace and link editors.
+ * `value` is `lucide:<name>` (or ''); `testid` prefixes the grid, its search box (`-search`) and its cells (`-<name>`).
+ */
+export function IconPicker({ value, onPick, testid, label }: { value: string; onPick: (v: string) => void; testid: string; label?: string }) {
+  const [q, setQ] = useState('')
+  const needle = q.trim().toLowerCase().replace(/\s+/g, '-')
+  const shown = BUILTIN_ICONS.filter((n) => !needle || n.includes(needle))
+  const lid = testid + '-label'
+  const grid = useRef<HTMLDivElement>(null)
+  // open with the current choice in view (the grid scrolls on small screens)
+  useEffect(() => {
+    const g = grid.current
+    const sel = g?.querySelector<HTMLElement>('[aria-checked="true"]')
+    if (g && sel) g.scrollTop += sel.getBoundingClientRect().top - g.getBoundingClientRect().top - (g.clientHeight - sel.offsetHeight) / 2
+  }, [])
+  return (
+    <div class="icon-picker">
+      <div class="field-line">
+        {label && <label id={lid}>{label}</label>}
+        <span class={'search-mini' + (label ? '' : ' grow')}>
+          <Icon n="search" size={14} />
+          <input type="text" data-testid={testid + '-search'} aria-label={t('ws.iconSearch')} placeholder={t('ws.iconSearch')} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()} />
+        </span>
+      </div>
+      <div class="icon-grid" ref={grid} role="radiogroup" aria-label={label ? undefined : t('link.icon')} aria-labelledby={label ? lid : undefined} data-testid={testid} data-value={value}>
+        {shown.map((n) => (
+          <button type="button" key={n} class="icon-cell" role="radio" aria-checked={value === 'lucide:' + n} aria-label={n} title={n} data-testid={testid + '-' + n} onClick={() => onPick('lucide:' + n)}>
+            <Icon n={n} size={19} />
+          </button>
+        ))}
+        {!shown.length && <span class="hint">{t('ws.iconNone')}</span>}
+      </div>
+    </div>
   )
 }
 

@@ -157,3 +157,32 @@ func TestPinnedSemanticsInToolsAndOverview(t *testing.T) {
 		t.Errorf("search result lacks pin_sort")
 	}
 }
+
+func TestLinkLucideIconViaTools(t *testing.T) {
+	s, _, ws := newSrv(t)
+	_, props := toolSchema(t, s, "create_links")
+	d := props["links"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)["icon"].(map[string]any)["description"].(string)
+	for _, n := range []string{"lucide:<name>", "server", "rocket"} {
+		if !strings.Contains(d, n) {
+			t.Errorf("icon description lacks %q: %s", n, d)
+		}
+	}
+	res := call(t, s, "create_links", M{"links": []M{
+		{"workspace_id": ws, "title": "NAS", "url": "http://nas.lan", "icon": "lucide:server"},
+		{"workspace_id": ws, "title": "Bad", "url": "http://bad.lan", "icon": "lucide:nope"},
+	}})
+	sc := res["structuredContent"].(map[string]any)
+	created := sc["created"].([]any)
+	errs := sc["errors"].([]any)
+	if len(created) != 1 || created[0].(map[string]any)["icon"] != "lucide:server" || len(errs) != 1 || errs[0].(map[string]any)["index"].(float64) != 1 {
+		t.Fatalf("create_links: %v", sc)
+	}
+	id := created[0].(map[string]any)["id"].(string)
+	if res := call(t, s, "update_link", M{"id": id, "icon": "lucide:nope"}); res["isError"] != true {
+		t.Fatalf("update_link accepted unknown lucide: %v", res)
+	}
+	res = call(t, s, "update_link", M{"id": id, "icon": "lucide:database"})
+	if res["isError"] != nil || res["structuredContent"].(map[string]any)["link"].(map[string]any)["icon"] != "lucide:database" {
+		t.Fatalf("update_link: %v", res)
+	}
+}

@@ -73,7 +73,7 @@ Use `page.mouse.down/move(steps)/up`. First drag while sort mode != custom switc
 All modals: `modal-close` (X) ; Esc closes.
 | modal testid | fields / buttons |
 |---|---|
-| `link-modal` | `link-url`, `link-title`, `link-desc`, `link-workspace`, `link-category` (selects), `icon-mode` + `icon-mode-auto/emoji/upload/url/letter`, `link-icon-emoji`, `link-icon-file` (file input), `link-icon-url`, `link-refresh-icon`, `link-pinned` (switch, `aria-checked`), `link-health` (switch), `link-save`, `link-cancel` |
+| `link-modal` | `link-url`, `link-title`, `link-desc`, `link-workspace`, `link-category` (selects), `icon-mode` + `icon-mode-auto/emoji/lucide/upload/url/letter`, `link-icon-emoji`, Lucide picker (mode `lucide`, the shared `IconPicker`): `link-icon-lucide` (the `role=radiogroup` grid, attr `data-value=lucide:<name>` or empty), `link-icon-lucide-<name>` (one `role=radio` per name, `aria-checked`), `link-icon-lucide-search`; the preview tile and capsules draw the glyph as `svg[data-icon=<name>]` inside `.ico-lucide`, `link-icon-file` (file input), `link-icon-url`, `link-refresh-icon`, `link-pinned` (switch, `aria-checked`), `link-health` (switch), `link-save`, `link-cancel` |
 | `category-modal` | `category-name`, `category-save`, `category-cancel` |
 | `workspace-modal` | `ws-name`, icon picker: `ws-icon` (the `role=radiogroup` grid, attr `data-value=lucide:<name>`), `ws-icon-<name>` (one `role=radio` button per Lucide name, `aria-checked`), `ws-icon-search` (filter input), `ws-icon-preview`; wallpaper gallery (below); `ws-save`, `ws-cancel`, `ws-delete` (edit only). The old emoji text input `ws-icon` is gone |
 | `confirm-modal` | `confirm-ok`, `confirm-cancel`, `confirm-checkbox` (category delete: "also delete links") |

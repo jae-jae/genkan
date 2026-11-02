@@ -1,3 +1,4 @@
+import { LUCIDE } from './lucide'
 import type { Category, Link, SortMode } from './types'
 
 export function hueOf(s: string): number {
@@ -26,17 +27,20 @@ export function normalizeUrl(u: string): string {
   return /^([a-z][a-z0-9+.-]*:\/\/|mailto:|tel:)/i.test(u) ? u : 'http://' + u
 }
 
-export type IconKind = 'letter' | 'emoji' | 'img'
+export type IconKind = 'letter' | 'emoji' | 'img' | 'lucide'
 export function parseIcon(icon: string): { kind: IconKind; value: string } {
   if (icon.startsWith('emoji:')) return { kind: 'emoji', value: icon.slice(6) }
   if (icon.startsWith('favicon:') || icon.startsWith('upload:')) return { kind: 'img', value: '/uploads/icons/' + icon.slice(icon.indexOf(':') + 1) }
   if (icon.startsWith('url:')) return { kind: 'img', value: icon.slice(4) }
+  if (icon.startsWith('lucide:') && LUCIDE[icon.slice(7)]) return { kind: 'lucide', value: icon.slice(7) }
   return { kind: 'letter', value: '' }
 }
 
-export function iconMode(icon: string): 'auto' | 'emoji' | 'upload' | 'url' | 'letter' {
+export type IconMode = 'auto' | 'emoji' | 'lucide' | 'upload' | 'url' | 'letter'
+export function iconMode(icon: string): IconMode {
   if (icon.startsWith('favicon:')) return 'auto'
   if (icon.startsWith('emoji:')) return 'emoji'
+  if (icon.startsWith('lucide:')) return 'lucide'
   if (icon.startsWith('upload:')) return 'upload'
   if (icon.startsWith('url:')) return 'url'
   return 'letter'

@@ -109,6 +109,7 @@ ID 统一为 12 位随机 base32 小写字符串。时间为 RFC3339 字符串�
 - `""` → 前端显示标题首字母徽章（颜色由标题哈希决定）
 - `favicon:<file>` / `upload:<file>` → `/uploads/icons/<file>`
 - `emoji:🚀`
+- `lucide:<name>` → 内置 Lucide 图标，`<name>` 必须属于与工作空间相同的 52 个 `store.BuiltinIcons`（未知名称：REST 400、MCP/导入逐条报错）。前端在圆形图标槽内渲染该图标：白色线条字形（约占槽 58%），底色为由标题哈希得到的柔和渐变（与首字母徽章同色系），与真实 favicon 并排协调。无合适 favicon 的服务可用此格式
 - `url:https://...` → 直接作为图片 src
 
 **排序语义**（前端负责呈现，后端 `sort` 字段负责自定义顺序）
@@ -218,7 +219,7 @@ ID 统一为 12 位随机 base32 小写字符串。时间为 RFC3339 字符串�
 | `create_category` | `workspace_id`, `name` | |
 | `update_category` | `id`, `name` | |
 | `delete_category` | `id`, `delete_links?` | |
-| `create_links` | `links: [{workspace_id, category_id?, title, url, description?, icon?, pinned?, health_check?}]` | 批量创建（自动抓图标）；`pinned:true` 的链接置顶（仍保留在分类中，排到置顶行末尾） |
+| `create_links` | `links: [{workspace_id, category_id?, title, url, description?, icon?, pinned?, health_check?}]` | 批量创建（自动抓图标）；`icon` 可为 `lucide:<name>`（52 个内置名之一，适合没有合适 favicon 的服务）；`pinned:true` 的链接置顶（仍保留在分类中，排到置顶行末尾） |
 | `update_link` | `id`, 任意可改字段（含移动 `workspace_id`/`category_id`） | |
 | `delete_links` | `ids: []` | 批量删除 |
 | `reorder` | `kind: workspaces\|categories\|links`, `ids`, `workspace_id?`, `category_id?` | 同 REST reorder 语义：`category_id:"__pinned"` 仅调整置顶行（`pin_sort`），其余按分类重写 `sort` |
@@ -244,7 +245,7 @@ ID 统一为 12 位随机 base32 小写字符串。时间为 RFC3339 字符串�
 - 搜索：`/` 或 `Ctrl/⌘+K` 聚焦；跨所有工作空间模糊匹配（title、url、description、分类名，子序列匹配并打分）；下拉结果列表最多 8 条，↑↓ 选择，Enter 打开，Esc 关闭；无结果时 Enter 用 `search_engine` 搜索网页（显示"在网络上搜索 xxx"项）。数字键 `1-9`（搜索框未聚焦时）切换工作空间。
 - 排序模式切换：设置中，或右上角主菜单的“排序”分组（频率 / 最近 / 自定义）。
 - **编辑模式**（仅 admin）：链接胶囊出现编辑/删除小按钮；每个分类末尾有"+"胶囊；"新建分类"按钮；分类标题可重命名/删除/拖动排序；链接可拖拽排序（含跨分类；把分类中的链接拖入置顶行 = 置顶：`PATCH pinned:true` 再 reorder `__pinned`；置顶行内拖拽只 reorder `__pinned`；从置顶行拖入分类无效果，取消置顶请用右键菜单/编辑弹窗）；拖拽时若排序模式不是 custom，自动切换为 custom 并提示。工作空间在下拉菜单里用上移/下移按钮排序，右键菜单项或点铅笔编辑。
-- 链接编辑弹窗字段：标题、URL、描述、工作空间、分类、图标（自动抓取 / emoji / 上传 / 图片 URL / 首字母）、置顶、健康检查。粘贴 URL 时若标题为空则自动用主机名填充。
+- 链接编辑弹窗字段：标题、URL、描述、工作空间、分类、图标（自动抓取 / emoji / 图标库(Lucide) / 上传 / 图片 URL / 首字母；“图标库”模式复用工作空间编辑器的可搜索 52 图标网格，手机底部弹窗中网格限高可滚动）、置顶、健康检查。粘贴 URL 时若标题为空则自动用主机名填充。
 - **右键菜单**（毛玻璃，`role=menu`，方向键导航，Esc / 点击外部 / 滚动 / 缩放关闭，位置限制在视口内）：
   - 页面背景右键（不含胶囊/输入框；输入框与文本选区保留原生菜单）：admin：新建链接、新建分类、更换壁纸（打开设置 → 外观）、编辑模式（带勾选状态）、AI、设置；访客仅“登录”。
   - 链接胶囊右键：打开、在新标签页打开、复制链接 —— 分隔线 —— 编辑、置顶 / 取消置顶、删除（红色，需确认）；访客只有前三项。

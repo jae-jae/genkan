@@ -457,3 +457,65 @@ func TestResetWallpaperUsers(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+// Link icons: lucide:<name> -----------------------------------------------------------
+
+func TestLinkLucideIcon(t *testing.T) {
+	s, _ := open(t)
+	ws := firstWS(t, s)
+	for _, n := range BuiltinIcons {
+		if _, err := s.CreateLink(LinkInput{WorkspaceID: ws.ID, Title: n, URL: "http://" + n + ".lan", Icon: "lucide:" + n}); err != nil {
+			t.Fatalf("lucide:%s rejected: %v", n, err)
+		}
+	}
+	for _, bad := range []string{"lucide:nope", "lucide:", "lucide:House", "lucide:house ", "lucide:../x"} {
+		in := LinkInput{WorkspaceID: ws.ID, Title: "x", URL: "http://x.lan", Icon: bad}
+		_, err := s.CreateLink(in)
+		if bad == "lucide:house " {
+			if err != nil { // trailing space is trimmed like every other icon
+				t.Errorf("%q: %v", bad, err)
+			}
+			continue
+		}
+		if ErrKind(err) != KindInvalid {
+			t.Errorf("create accepted %q: %v", bad, err)
+		}
+	}
+	l, err := s.CreateLink(LinkInput{WorkspaceID: ws.ID, Title: "U", URL: "http://u.lan", Icon: "emoji:🚀"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ic := "lucide:server"
+	if u, err := s.UpdateLink(l.ID, LinkPatch{Icon: &ic}); err != nil || u.Icon != "lucide:server" {
+		t.Fatalf("update: %+v %v", u, err)
+	}
+	bad := "lucide:nope"
+	if _, err := s.UpdateLink(l.ID, LinkPatch{Icon: &bad}); ErrKind(err) != KindInvalid {
+		t.Fatalf("update accepted unknown lucide: %v", err)
+	}
+	// other forms keep working after switching away
+	em := "emoji:🎬"
+	if u, err := s.UpdateLink(l.ID, LinkPatch{Icon: &em}); err != nil || u.Icon != em {
+		t.Fatalf("back to emoji: %+v %v", u, err)
+	}
+
+	// export/import round-trips and validates link icons
+	ex := s.Export()
+	s2, _ := open(t)
+	if _, _, err := s2.Import("replace", ex); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, l := range s2.Snapshot().Links {
+		if l.Icon == "lucide:rocket" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("lucide link icon lost on import")
+	}
+	ex.Links[0].Icon = "lucide:nope"
+	if _, _, err := s2.Import("replace", ex); ErrKind(err) != KindInvalid {
+		t.Fatalf("import accepted unknown lucide link icon: %v", err)
+	}
+}

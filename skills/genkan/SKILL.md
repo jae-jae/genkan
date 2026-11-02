@@ -39,19 +39,19 @@ Other MCP clients: endpoint `{{GENKAN_URL}}/mcp` (Streamable HTTP) with the head
 | `create_category` | `workspace_id`, `name`. |
 | `update_category` | `id`, `name` (rename). |
 | `delete_category` | `id`, optional `delete_links` (default false: links become uncategorized). |
-| `create_links` | `links: [{workspace_id, category_id?, title, url, description?, icon?, pinned?, health_check?}]`, up to 200 per call. Icons are fetched automatically when `icon` is empty. Duplicate URLs in the same workspace are skipped and reported. |
+| `create_links` | `links: [{workspace_id, category_id?, title, url, description?, icon?, pinned?, health_check?}]`, up to 200 per call. Icons are fetched automatically when `icon` is empty; `icon` may also be `lucide:<name>`. Duplicate URLs in the same workspace are skipped and reported. |
 | `update_link` | `id` plus any of `title`, `url`, `description`, `icon`, `pinned`, `health_check`, `workspace_id`, `category_id` (use `""` for uncategorized). Also used to move links. |
 | `delete_links` | `ids: []`. |
 | `reorder` | `kind` = `workspaces`, `categories` or `links`; `ids` in desired order; `workspace_id` (categories, links); `category_id` (links: `""` uncategorized, `"__pinned"` the pinned row). Listed links are moved into that category and ordered by `sort`; pinned links are ordinary members of their category. With `"__pinned"` only the pinned row order (`pin_sort`) changes: categories and `sort` are untouched and listed links become pinned. |
 | `update_settings` | Any of `title`, `sort_mode` (`frequency`, `recent`, `custom`), `guest_access`, `search_engine`, `open_in_new_tab`, `health_interval`, `show_clock`. |
 
-### Workspace icons
+### Lucide icons (workspaces and links)
 
 Workspace `icon` must be `lucide:<name>` with one of these 52 names (anything else is rejected; the MCP schema lists them as an enum):
 
 `house`, `layout-grid`, `folder`, `briefcase`, `code`, `terminal`, `server`, `database`, `hard-drive`, `cloud`, `network`, `router`, `wifi`, `globe`, `shield`, `lock`, `key-round`, `film`, `clapperboard`, `tv`, `music`, `headphones`, `image`, `camera`, `gamepad-2`, `book-open`, `graduation-cap`, `newspaper`, `shopping-cart`, `wallet`, `chart-line`, `activity`, `gauge`, `cpu`, `wrench`, `settings`, `bot`, `sparkles`, `heart`, `star`, `bookmark`, `users`, `message-circle`, `mail`, `calendar`, `download`, `flask-conical`, `leaf`, `coffee`, `plane`, `lightbulb`, `rocket`.
 
-Pick a fitting one per workspace (e.g. `lucide:house` for Home, `lucide:briefcase` for Work, `lucide:flask-conical` for Lab, `lucide:clapperboard` for Media). Link icons are separate (see Good practice).
+Pick a fitting one per workspace (e.g. `lucide:house` for Home, `lucide:briefcase` for Work, `lucide:flask-conical` for Lab, `lucide:clapperboard` for Media). Links accept the same names as `lucide:<name>` in their own `icon` field (see Good practice #7).
 
 ### Good practice
 
@@ -61,7 +61,7 @@ Pick a fitting one per workspace (e.g. `lucide:house` for Home, `lucide:briefcas
 4. **Use workspaces for contexts, not for types** (e.g. "Home" vs "Work" vs "Lab"), and keep the count small.
 5. **Pin sparingly.** Pin the handful of links the user opens daily (`pinned: true`); pinned links appear in the pinned row at the top AND stay in their category (pinning does not move them). New pins go to the end of the pinned row; use `reorder` with `category_id: "__pinned"` to change that order.
 6. **Turn on `health_check`** for self-hosted services on the LAN that the user wants status dots for (not for external sites unless asked).
-7. **Write full URLs** with scheme and port (`http://nas.lan:8096`). `javascript:` URLs are rejected. Leave `icon` empty to auto-fetch a favicon; use `emoji:🎬` only when asked or when the site has no icon.
+7. **Write full URLs** with scheme and port (`http://nas.lan:8096`). `javascript:` URLs are rejected. Leave `icon` empty to auto-fetch a favicon. For a service that has no good favicon (internal tools, bare IPs, generic dashboards) set `icon` to `lucide:<name>` using one of the 52 built-in names listed above (e.g. `lucide:server`, `lucide:database`, `lucide:film`, `lucide:router`); unknown names are rejected per item. Use `emoji:🎬` only when asked.
 8. **Titles are short** (service name), put detail in `description`.
 9. **Never delete without being asked.** Deleting links, categories or workspaces needs an explicit user request. To "clean up", propose a plan and confirm first, or move things (`update_link`, `reorder`) rather than delete. Prefer `delete_category` with `delete_links=false`.
 10. **Don't fight the sort mode.** With `sort_mode: "frequency"` or `"recent"`, link order is automatic; `reorder` only matters for `custom`. Do not change `sort_mode` unless the user asks. Categories and workspaces are always in custom order.

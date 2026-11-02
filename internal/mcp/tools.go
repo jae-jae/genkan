@@ -52,12 +52,15 @@ func obj(props M, required ...string) M {
 	return m
 }
 
+// lucideNames lists the built-in Lucide icon names for the link icon description.
+var lucideNames = strings.Join(store.BuiltinIcons, ", ")
+
 func linkProps() M {
 	return M{
 		"title":        str("Display name, e.g. \"Jellyfin\". 显示名称。"),
 		"url":          str("Full URL incl. scheme, e.g. http://nas.lan:8096. 完整地址，需含协议。"),
 		"description":  str("Short description shown in tooltip (optional). 简短描述（可选）。"),
-		"icon":         str("Empty = auto-fetch favicon (recommended). Or \"emoji:🎬\", \"url:https://…/icon.png\". 留空则自动抓取图标（推荐）。"),
+		"icon":         str("Empty = auto-fetch favicon (recommended). Or \"lucide:<name>\" (built-in Lucide glyph, e.g. lucide:server, lucide:database, lucide:film — for services without a good favicon; names: " + lucideNames + "), \"emoji:🎬\", \"url:https://…/icon.png\". 留空则自动抓取图标（推荐）；无合适图标时可用 lucide:<名称>（内置 Lucide 图标）。"),
 		"pinned":       boolean("Pin the link: it is shown in the pinned row at the top of the workspace AND stays in its category (pinning never moves it). New pins go to the end of the pinned row. 是否置顶：显示在工作空间顶部的置顶行，同时仍保留在所属分类中。"),
 		"health_check": boolean("Enable online/offline status dot for this service. 是否开启在线检测。"),
 	}

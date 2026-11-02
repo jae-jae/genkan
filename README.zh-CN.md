@@ -41,7 +41,7 @@ REST API 与 MCP 工具说明见 [`docs/SPEC.md`](docs/SPEC.md)（中文）。
 ## 特性
 
 - **AI 驱动**：通过内置 MCP 服务或一键 Skill 整理，改动实时生效
-- **多工作空间**：分类、置顶链接、Lucide 图标
+- **多工作空间**：分类、置顶链接、工作空间与链接均可选 Lucide 图标
 - **界面精美**：壁纸 + 毛玻璃胶囊，桌面与手机适配
 - **智能排序**：按使用频率（默认）、最近使用或自定义拖拽
 - **快捷搜索**：`/` 或 `Ctrl/⌘+K`，跨工作空间，可回退网页搜索
@@ -121,4 +121,4 @@ mock 服务、截图生成与 PR 约定见 [CONTRIBUTING.md](CONTRIBUTING.md)，
 
 [MIT](LICENSE) © 2026 jae-jae
 
-致谢：工作空间图标来自 [Lucide](https://lucide.dev)（ISC）。截图中的示例服务图标来自 [homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons)（Apache-2.0），商标归各自所有者。详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+致谢：工作空间与链接的内置图标来自 [Lucide](https://lucide.dev)（ISC）。截图中的示例服务图标来自 [homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons)（Apache-2.0），商标归各自所有者。详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

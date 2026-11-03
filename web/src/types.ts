@@ -136,7 +136,7 @@ export interface WidgetInstance {
   workspace_id: string
   config: Record<string, any> | null
   sort: number
-  /** columns of 6 (0 = default by manifest size: s 2, m 3, l 6) */
+  /** columns of 6 (0 = default by manifest size: s 2, m 4, l 6) */
   w?: number
   /** fixed height in px (80-1200); 0 / absent = auto (content height) */
   h?: number

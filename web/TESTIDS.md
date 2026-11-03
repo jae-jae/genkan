@@ -154,10 +154,11 @@ and so is an update of an enabled plugin whose permissions did not change. After
 
 **Source editor / preview / Develop with AI / Third-party** (docs/PLUGINS.md §11.2-11.4; all lazy chunks):
 - Row button `plugin-source-btn` opens `plugin-source-modal` (stacked over Settings): `plugin-source-editor` (textarea; line gutter `.ce-gut`; Tab = 2 spaces; Ctrl/Cmd+S saves; `plugin-source-editor-errline` is the red band when an error has `line:col`),
-  `plugin-source-lang` (js/ts), `plugin-source-error` (+ `plugin-source-goto`), `plugin-source-permnote`, `plugin-source-state` (`data-dirty=1|0`), `plugin-source-save`, `plugin-source-close`;
+  `plugin-source-lang` (js/ts), `plugin-source-error` (+ `plugin-source-goto`), `plugin-source-loaderror` (the source could not be loaded), `plugin-source-permnote`, `plugin-source-state` (`data-dirty=1|0`), `plugin-source-save`, `plugin-source-close`;
   closing with unsaved changes shows `plugin-source-confirm` with `plugin-source-keep` / `plugin-source-discard`. `plugin-source-test-toggle` shows the test panel `plugin-test-panel`:
   `plugin-test-hook`, `plugin-test-target`, `plugin-test-query`, `plugin-test-action`, `plugin-test-params`, `plugin-test-instance`, `plugin-test-config`, `plugin-test-run` (becomes "Save & run" when dirty),
   `plugin-test-localerror`, result `plugin-test-result` (`data-ok=1|0`) with `plugin-test-status`, `plugin-test-ms`, `plugin-test-error`, `plugin-test-json`, `plugin-test-logs`.
+- `plugin-permchips`: the compact capability / permission chips of a plugin (install dialogs).
 - Preview (nothing is installed): `plugin-catalog-preview` (per catalog item), `plugin-url-preview`, `plugin-source-preview` (paste tab; "Check & preview"), market `market-plugin-preview`. All toggle a panel
   (`plugin-preview` / `market-preview`) with `*-name`, `*-error`, the permission list `plugin-perms` and the read-only source `*-code` (textarea `readOnly`). In the permission dialog the button is `plugin-perm-source-btn`, the source `plugin-perm-source`.
 - Install flow decision: installs still POST with `enable:false` and the permission dialog is built from the *installed* manifest (preview is advisory; URL installs download again). `plugin-perm-none` is the "no permissions" row of `plugin-perms`.

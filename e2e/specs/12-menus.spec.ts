@@ -173,8 +173,9 @@ test.describe('main menu (top-right)', () => {
     const btn = page.getByTestId('menu-btn')
     await expect(btn).toHaveAttribute('aria-haspopup', 'menu')
     await expect(btn).toHaveAttribute('aria-expanded', 'false')
-    // the AI button sits immediately left of the menu button
-    const e = (await page.getByTestId('ai-btn').boundingBox())!
+    await expect(page.getByTestId('ai-btn')).toHaveCount(0) // AI moved into the menu
+    // the plugins button sits immediately left of the menu button
+    const e = (await page.getByTestId('plugins-btn').boundingBox())!
     const m = (await btn.boundingBox())!
     expect(e.x + e.width).toBeLessThanOrEqual(m.x)
     expect(m.x - (e.x + e.width)).toBeLessThan(20)
@@ -185,7 +186,8 @@ test.describe('main menu (top-right)', () => {
     await expect(page.getByTestId('sort-control')).toHaveAttribute('role', 'group')
     await expect(menu.locator('[role="menuitemradio"]')).toHaveCount(3)
     await expect(page.getByTestId('sort-frequency')).toHaveAttribute('aria-checked', 'true')
-    await expect(menu.locator('[role="menuitem"]')).toHaveCount(2)
+    await expect(menu.locator('[role="menuitem"]')).toHaveCount(3) // AI, settings, sign out
+    await expect(page.getByTestId('ai-btn')).toBeVisible()
     await expect(page.getByTestId('settings-btn')).toBeVisible()
     await expect(page.getByTestId('logout-btn')).toBeVisible()
 

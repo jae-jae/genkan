@@ -223,18 +223,21 @@ export async function search(ctx) { return [{ title: "perm:" + ctx.query }] }
     const [idClock, idCd] = ws2.map((w) => w.id)
     expect(await domOrder(page)).toEqual([idClock, idCd])
 
-    // ---- reorder ----
-    await expect(page.getByTestId(`widget-prev-${idClock}`)).toBeDisabled()
-    await expect(page.getByTestId(`widget-next-${idCd}`)).toBeDisabled()
-    await page.getByTestId(`widget-next-${idClock}`).click()
+    // ---- reorder (keyboard: arrows on the drag grip move the card one place; drag is covered in 21-widget-layout) ----
+    await expect(page.locator('[data-testid^="widget-prev-"], [data-testid^="widget-next-"]')).toHaveCount(0) // gone in v2
+    await page.getByTestId(`widget-grip-${idClock}`).focus()
+    await page.keyboard.press('ArrowRight')
     await expect.poll(() => domOrder(page)).toEqual([idCd, idClock])
     await expect.poll(async () => (await widgetsOf(api)).sort((a, b) => a.sort - b.sort).map((w) => w.id)).toEqual([idCd, idClock])
-    await expect(page.getByTestId(`widget-prev-${idCd}`)).toBeDisabled()
+    await expect(page.getByTestId(`widget-grip-${idClock}`)).toBeFocused() // focus stays on the moved card
+    await page.keyboard.press('ArrowRight') // already last: stays
+    expect(await domOrder(page)).toEqual([idCd, idClock])
     await page.reload()
     await toggleEdit(page)
     await expect(page.getByTestId('widget')).toHaveCount(2)
     expect(await domOrder(page)).toEqual([idCd, idClock])
-    await page.getByTestId(`widget-prev-${idClock}`).click() // and back
+    await page.getByTestId(`widget-grip-${idClock}`).focus()
+    await page.keyboard.press('ArrowLeft') // and back
     await expect.poll(() => domOrder(page)).toEqual([idClock, idCd])
 
     // ---- edit the countdown ----
@@ -260,7 +263,7 @@ export async function search(ctx) { return [{ title: "perm:" + ctx.query }] }
     await toggleEdit(page, false)
     await expect(clock).toBeVisible()
     await expect(page.getByTestId('widget-add')).toHaveCount(0)
-    await expect(page.locator('[data-testid^="widget-prev-"], [data-testid^="widget-next-"], [data-testid^="widget-edit-"], [data-testid^="widget-delete-"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid^="widget-grip-"], [data-testid^="widget-more-"], [data-testid^="widget-resize-"], [data-testid^="widget-edit-"], [data-testid^="widget-delete-"]')).toHaveCount(0)
     await expect(page.getByTestId('widget-area')).not.toHaveAttribute('data-editing', '1')
   })
 
@@ -376,10 +379,10 @@ export async function search(ctx) { return [{ title: "perm:" + ctx.query }] }
     await expect(g.locator('[data-testid="widget"][data-plugin="countdown"]')).toContainText('Guest view')
     await expect(g.locator('[data-testid="widget"][data-plugin="countdown"]').getByTestId('widget-stat')).toContainText('Days left')
     // no admin controls: edit toggle, settings, add / move / edit / delete / refresh / action buttons
-    for (const id of ['edit-toggle', 'settings-btn', 'ai-btn', 'widget-add', 'widget-refresh', 'widget-button', 'widget-modal', 'plugin-add-btn']) {
+    for (const id of ['edit-toggle', 'plugins-btn', 'settings-btn', 'ai-btn', 'widget-add', 'widget-refresh', 'widget-button', 'widget-modal', 'plugin-add-btn']) {
       await expect(g.getByTestId(id), id).toHaveCount(0)
     }
-    await expect(g.locator('[data-testid^="widget-prev-"], [data-testid^="widget-next-"], [data-testid^="widget-edit-"], [data-testid^="widget-delete-"]')).toHaveCount(0)
+    await expect(g.locator('[data-testid^="widget-grip-"], [data-testid^="widget-more-"], [data-testid^="widget-resize-"], [data-testid^="widget-edit-"], [data-testid^="widget-delete-"]')).toHaveCount(0)
     // plugin search works for guests
     await g.keyboard.press('/')
     await g.keyboard.type('1+2*3')

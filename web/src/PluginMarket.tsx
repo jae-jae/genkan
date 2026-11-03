@@ -2,9 +2,10 @@
 // State is module-level because the Settings modal is unmounted while the combined permission dialog is open on top of it.
 import { signal } from '@preact/signals'
 import { useEffect, useState } from 'preact/hooks'
-import { ApiError, get } from './api'
+import { ApiError, get, post } from './api'
 import { Icon } from './icons'
 import { t } from './i18n'
+import { toast, toastError } from './store'
 import type { MarketList, MarketPlugin, MarketRepo, MarketScan } from './types'
 import { hueOf, safeHref } from './util'
 import { Badges, PermChips, PlIcon, PreviewPanel, busy, installMany, progress, relTime } from './pluginKit'
@@ -30,6 +31,7 @@ const expanded = signal<Record<string, boolean>>({})
 const sel = signal<Record<string, boolean>>({}) // plugin raw URL -> selected
 const previews = signal<Record<string, boolean>>({}) // plugin raw URL -> source preview open
 const progRepo = signal('')
+const clearing = signal(false)
 
 const msgOf = (e: unknown) => (e instanceof ApiError ? (e.status === 0 ? t('err.network') : e.message) : t('err.generic'))
 
@@ -74,6 +76,23 @@ async function fetchScan(repo: string) {
     scans.value = { ...scans.value, [repo]: { loading: false, data: d, error: d.error } }
   } catch (e) {
     scans.value = { ...scans.value, [repo]: { loading: false, error: msgOf(e) } }
+  }
+}
+
+/** "Clear cache": empties the server's search and scan caches, then asks again for the current search and every repository that is expanded. */
+async function clearCache() {
+  if (clearing.value) return
+  clearing.value = true
+  try {
+    await post('/api/plugins/market/cache/clear')
+    await fetchRepos(true)
+    const open = Object.keys(expanded.value).filter((r) => expanded.value[r] && repos.value.some((x) => x.repo === r))
+    await Promise.all(open.map(fetchScan))
+    toast(t('mk.cacheCleared'), 'success')
+  } catch (e) {
+    toastError(e)
+  } finally {
+    clearing.value = false
   }
 }
 
@@ -337,6 +356,10 @@ export default function MarketTab() {
             </button>
           ))}
         </div>
+        <button type="button" class="btn sm" data-testid="market-clear-cache" title={t('mk.clearCacheHint')} disabled={clearing.value} aria-busy={clearing.value} onClick={clearCache}>
+          <Icon n="refresh-cw" size={14} />
+          {t('mk.clearCache')}
+        </button>
       </form>
       {errText.value && (
         <div class="form-error mk-err" role="alert" data-testid="market-error">

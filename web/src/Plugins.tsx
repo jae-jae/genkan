@@ -11,9 +11,11 @@ import type { CatalogItem, PluginInfo, PluginLog } from './types'
 import { copyText, safeHref } from './util'
 import {
   Badges,
+  CodeEditor,
   InstalledSource,
   PermList,
   PlIcon,
+  PluginDetails,
   PreviewPanel,
   addTab,
   batch,
@@ -29,6 +31,7 @@ import {
   schemaOf,
   setEnabled,
   usePreview,
+  usePreviewData,
   view,
 } from './pluginKit'
 
@@ -44,11 +47,12 @@ async function loadCatalog() {
 }
 
 // ---------- permission confirmation (stacked over Settings) ----------
-/** The one modal kind App.tsx renders for plugins: it dispatches on `dlg` (source editor / combined review / Develop with AI). */
+/** The one modal kind App.tsx renders for plugins: it dispatches on `dlg` (source editor / combined review / catalog source / Develop with AI). */
 export function PermModal({ state }: { state: PermState }) {
   if ('dlg' in state) {
     if (state.dlg === 'source') return <SourceHost plugin={state.plugin} />
     if (state.dlg === 'batch') return <BatchModal />
+    if (state.dlg === 'catalog') return <CatalogSourceModal id={state.id} />
     return <DevAiModal />
   }
   return <SingleModal state={state} />
@@ -198,6 +202,56 @@ function BatchModal() {
         })}
       </ul>
       <p class="hint">{t('perm.note')}</p>
+    </Modal>
+  )
+}
+
+/** Built-in catalog item: what the plugin is (manifest) and its highlighted read-only source, fetched with POST /api/plugins/preview {catalog}. */
+function CatalogSourceModal({ id }: { id: string }) {
+  const { data, err } = usePreviewData({ catalog: id })
+  const c = catalog.value?.find((x) => x.id === id)
+  const p = data?.plugin
+  const name = p?.name || c?.name || id
+  const installed = c ? c.installed : !!data?.installed
+  return (
+    <Modal
+      title={t('cat.srcTitle', { name })}
+      onClose={closeModal}
+      wide
+      cls="modal-src"
+      testid="plugin-catalog-source-modal"
+      focusFirst={false}
+      footer={
+        <>
+          <button class="btn" data-testid="plugin-catalog-source-close" onClick={closeModal}>
+            {t('common.close')}
+          </button>
+          <button
+            class={'btn' + (installed ? '' : ' primary')}
+            data-testid="plugin-catalog-source-install"
+            disabled={installed || !!busy.value}
+            onClick={() => (closeModal(), install({ catalog: id }, 'c-' + id))}
+          >
+            {installed ? t('plugin.installedLbl') : t('plugin.install')}
+          </button>
+        </>
+      }
+    >
+      <div class="src">
+        {!data && !err && <p class="hint">…</p>}
+        {err && (
+          <p class="form-error" role="alert" data-testid="plugin-catalog-source-error">
+            {err}
+          </p>
+        )}
+        {p && <PluginDetails p={p} testid="plugin-catalog-source-info" />}
+        {data && data.source !== '' && (
+          <>
+            <h4 class="pl-h">{t('pv.source')}</h4>
+            <CodeEditor value={data.source} readOnly fill testid="plugin-catalog-source-code" label={t('src.view')} height="420px" />
+          </>
+        )}
+      </div>
     </Modal>
   )
 }
@@ -462,18 +516,8 @@ function Row({ p }: { p: PluginInfo }) {
 }
 
 // ---------- add ----------
-function PreviewBtn({ on, onClick, testid }: { on: boolean; onClick: () => void; testid: string }) {
-  return (
-    <button type="button" class="btn sm" aria-expanded={on} data-testid={testid} onClick={onClick}>
-      <Icon n="eye" size={14} />
-      {on ? t('pv.hide') : t('pv.btn')}
-    </button>
-  )
-}
-
 function CatalogItemRow({ c }: { c: CatalogItem }) {
   const b = busy.value
-  const pv = usePreview()
   return (
     <li class="pl-cat-item" data-testid="plugin-catalog-item" data-plugin-id={c.id} data-installed={c.installed ? '1' : '0'}>
       <div class="pl-cat-row">
@@ -482,11 +526,19 @@ function CatalogItemRow({ c }: { c: CatalogItem }) {
           <div class="pl-name">
             <b>{c.name}</b>
             <small>v{c.version}</small>
+            <button
+              class="ib xs"
+              aria-label={t('cat.viewSrc', { name: c.name })}
+              title={t('cat.viewSrc', { name: c.name })}
+              data-testid="plugin-catalog-source"
+              onClick={() => showOver({ kind: 'plugin-perm', dlg: 'catalog', id: c.id })}
+            >
+              <Icon n="code" size={14} />
+            </button>
           </div>
           <div class="pl-desc">{c.description}</div>
         </div>
         <div class="pl-cat-btns">
-          <PreviewBtn on={!!pv.pv} testid="plugin-catalog-preview" onClick={() => pv.toggle({ catalog: c.id })} />
           <button
             class={'btn sm' + (c.installed ? '' : ' primary')}
             data-testid="plugin-catalog-install"
@@ -498,7 +550,6 @@ function CatalogItemRow({ c }: { c: CatalogItem }) {
           </button>
         </div>
       </div>
-      {pv.pv && <PreviewPanel key={pv.pv.n} body={pv.pv.body} />}
     </li>
   )
 }
@@ -522,7 +573,7 @@ function AddView() {
           {t('common.back')}
         </button>
         <div class="seg seg-sm glass-lite" role="group" aria-label={t('plugin.add')} data-testid="plugin-add-tabs">
-          {(['catalog', 'url', 'source', 'market'] as const).map((k) => (
+          {(['catalog', 'market', 'url', 'source'] as const).map((k) => (
             <button key={k} class="seg-b" aria-pressed={tab === k} data-testid={'plugin-add-tab-' + k} onClick={() => (addTab.value = k)}>
               {t('plugin.tab.' + k)}
             </button>

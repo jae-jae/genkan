@@ -421,6 +421,46 @@ func TestMarketConcurrentSingleflight(t *testing.T) {
 	}
 }
 
+func TestClearMarketCache(t *testing.T) {
+	e := newEnv(t)
+	g := newFakeGH(t)
+	g.mgr(e, "")
+	e.m.Market("stars", "", 1)
+	e.m.Market("stars", "", 1)
+	if n := g.hit("search"); n != 1 {
+		t.Fatalf("search hits before clear = %d", n)
+	}
+	e.m.ClearMarketCache()
+	e.m.Market("stars", "", 1)
+	if n := g.hit("search"); n != 2 {
+		t.Errorf("search hits after clear = %d", n)
+	}
+	e.m.ClearMarketCache()
+	e.m.ClearMarketCache() // an empty cache is fine
+
+	// a computation that started before the clear must not repopulate the cache
+	started, release := make(chan struct{}), make(chan struct{})
+	done := make(chan struct{})
+	calls := 0
+	go func() {
+		defer close(done)
+		e.m.marketCached("k", func(context.Context) (any, bool) {
+			calls++
+			close(started)
+			<-release
+			return "old", false
+		})
+	}()
+	<-started
+	e.m.ClearMarketCache()
+	close(release)
+	<-done
+	got := e.m.marketCached("k", func(context.Context) (any, bool) { calls++; return "new", false })
+	if got != "new" || calls != 2 {
+		t.Errorf("stale in-flight result was cached: got %v after %d calls", got, calls)
+	}
+}
+
 func TestPreview(t *testing.T) {
 	e := newEnv(t)
 	src := fmt.Sprintf(goodPlugin, "prev-one", "1.2.3")

@@ -620,6 +620,61 @@ func TestPluginMarketREST(t *testing.T) {
 	}
 }
 
+func TestPluginMarketClearCache(t *testing.T) {
+	var searches, trees atomic.Int32
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/search/repositories":
+			searches.Add(1)
+			w.Write([]byte(`{"total_count":1,"items":[{"full_name":"o/r","default_branch":"main","owner":{}}]}`))
+		case "/repos/o/r":
+			w.Write([]byte(`{"default_branch":"main"}`))
+		case "/repos/o/r/git/trees/main":
+			trees.Add(1)
+			w.Write([]byte(`{"tree":[]}`))
+		default:
+			w.WriteHeader(404)
+			w.Write([]byte(`{"message":"Not Found"}`))
+		}
+	}))
+	defer gh.Close()
+	e := setupCfg(t, func(c *Config) { c.GitHubAPI, c.GitHubRaw = gh.URL, gh.URL+"/raw" })
+	admin := e.admin()
+	fetch := func() {
+		admin.mustJSON("GET", "/api/plugins/market?q=x", "", nil)
+		admin.mustJSON("GET", "/api/plugins/market/repo?repo=o/r", "", nil)
+	}
+	fetch()
+	fetch() // served from the cache
+	if searches.Load() != 1 || trees.Load() != 1 {
+		t.Fatalf("expected one GitHub search and one scan before clearing, got %d / %d", searches.Load(), trees.Load())
+	}
+	var ok map[string]any
+	admin.mustJSON("POST", "/api/plugins/market/cache/clear", "", &ok)
+	if ok["ok"] != true {
+		t.Fatalf("clear response: %v", ok)
+	}
+	fetch()
+	if searches.Load() != 2 || trees.Load() != 2 {
+		t.Errorf("clearing did not empty both caches: %d / %d", searches.Load(), trees.Load())
+	}
+	admin.mustJSON("POST", "/api/plugins/market/cache/clear", "", nil) // idempotent on an empty cache
+	admin.mustJSON("POST", "/api/plugins/market/cache/clear", "", nil)
+
+	// admin only, CSRF header required for cookie sessions
+	noCSRF := &client{e: e, c: admin.c, csrf: false}
+	if code, _ := noCSRF.do("POST", "/api/plugins/market/cache/clear", ""); code != 403 {
+		t.Errorf("csrf: %d", code)
+	}
+	if code, _ := e.anon().do("POST", "/api/plugins/market/cache/clear", ""); code != 401 {
+		t.Errorf("anon: %d", code)
+	}
+	e.st.UpdateSettings(store.SettingsPatch{GuestAccess: ptr(true)})
+	if code, _ := e.anon().do("POST", "/api/plugins/market/cache/clear", ""); code != 403 {
+		t.Errorf("guest: %d", code)
+	}
+}
+
 func TestWidgetLayoutREST(t *testing.T) {
 	e := setup(t)
 	admin := e.admin()

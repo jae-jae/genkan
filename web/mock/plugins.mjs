@@ -311,6 +311,11 @@ export function createPluginsMock({ send, workspaces, bump }) {
       const SIZE = 6 // the real server returns 20 per page; small here so "load more" can be tried
       return send(res, 200, { items: items.slice((pg - 1) * SIZE, pg * SIZE), total: items.length, cached_at: Date.now() }), true
     }
+    if (p === '/api/plugins/market/cache/clear' && m === 'POST') {
+      if (!A()) return true
+      await new Promise((r) => setTimeout(r, 120))
+      return send(res, 200, { ok: true }), true
+    }
     if (p === '/api/plugins/market/repo' && m === 'GET') {
       if (!A()) return true
       const repo = url.searchParams.get('repo') || ''

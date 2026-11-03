@@ -397,6 +397,14 @@ Scans one repository (`?repo=owner/name`, strictly validated) for plugin files a
 gk GET "/api/plugins/market/repo?repo=owner/genkan-weather" | jq '.plugins[] | {path, id: .plugin.id, error, installed}'
 ```
 
+### POST /api/plugins/market/cache/clear
+
+Empties the server's third-party market caches (the search results and the repository scans, both cached for 10 minutes) so the next `GET /api/plugins/market` or `/market/repo` asks GitHub again. Admin only, no body. Response: `{"ok":true}`. The "Clear cache" button of the Third-party tab uses it.
+
+```bash
+gk POST /api/plugins/market/cache/clear
+```
+
 ### PATCH /api/plugins/{id}
 
 Body: `{"enabled":true}` and/or `{"config":{...}}`. `config` **replaces** the plugin-level config: send every field you want to keep. Unknown keys are dropped; invalid values or missing required fields give 400. Secret fields: `""` or omitting the key keeps the stored value, `null` clears it. Response: `PluginInfo`.

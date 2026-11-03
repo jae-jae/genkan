@@ -2,8 +2,10 @@
 // permission / editor dialog is stacked on top of it), the install flows, and small components (icons, permission list, code view, preview).
 import { signal } from '@preact/signals'
 import type { Ref } from 'preact'
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ApiError, get, patch, post } from './api'
+import { paint } from './highlight'
+import './plStrings'
 import { Icon } from './icons'
 import { LUCIDE } from './lucide'
 import { lang, t } from './i18n'
@@ -276,9 +278,14 @@ function indentKey(ta: HTMLTextAreaElement, shift: boolean) {
   ta.setSelectionRange(Math.max(from, s + sign * first), Math.max(from, e + sign * total))
 }
 
+const HL_SYNC = 60000 // up to this many characters the highlight is repainted before the browser paints (no frame where new text is invisible)
+const HL_MAX = 400000 // beyond this the overlay is dropped and the textarea shows its own text
+
 /**
- * Plain textarea with a line-number gutter kept in sync on scroll. No highlighting, no dependencies.
- * Editable: Tab = two spaces, Enter keeps the indentation, Ctrl/Cmd+S calls `onSave`. `errorLine` (1-based) marks a line.
+ * Code view: a transparent textarea laid over a highlighted <pre> (same font, padding and tab size; the pre is moved by the textarea's scroll
+ * offsets), plus a line-number gutter kept in sync on scroll. No dependencies; the source is only ever put into text nodes (highlight.ts).
+ * Editable: Tab = two spaces, Enter keeps the indentation, Ctrl/Cmd+S calls `onSave`. `errorLine` (1-based) marks a line. `fill` = flex to the
+ * height the parent gives it.
  */
 export function CodeEditor(p: {
   value: string
@@ -289,16 +296,29 @@ export function CodeEditor(p: {
   testid: string
   label: string
   height?: string
+  fill?: boolean
   inputRef?: Ref<HTMLTextAreaElement>
 }) {
   const gut = useRef<HTMLPreElement>(null)
   const box = useRef<HTMLDivElement>(null)
+  const hl = useRef<HTMLPreElement>(null)
+  const code = useRef<HTMLElement>(null)
   const n = useMemo(() => p.value.split('\n').length, [p.value])
   const nums = useMemo(() => Array.from({ length: n }, (_, i) => i + 1).join('\n'), [n])
+  const plain = p.value.length > HL_MAX
+  useLayoutEffect(() => {
+    const el = code.current
+    if (!el) return
+    if (plain) return void (el.textContent = '')
+    if (p.value.length <= HL_SYNC) return paint(el, p.value)
+    const id = requestAnimationFrame(() => paint(el, p.value)) // big file: at most one repaint per frame while typing
+    return () => cancelAnimationFrame(id)
+  }, [p.value, plain])
   const sync = (e: Event) => {
-    const st = (e.target as HTMLTextAreaElement).scrollTop
-    if (gut.current) gut.current.scrollTop = st
-    box.current?.style.setProperty('--st', st + 'px')
+    const ta = e.target as HTMLTextAreaElement
+    if (gut.current) gut.current.scrollTop = ta.scrollTop
+    if (hl.current) hl.current.style.transform = `translate(${-ta.scrollLeft}px,${-ta.scrollTop}px)`
+    box.current?.style.setProperty('--st', ta.scrollTop + 'px')
   }
   const onKey = (e: KeyboardEvent) => {
     const ta = e.currentTarget as HTMLTextAreaElement
@@ -322,26 +342,36 @@ export function CodeEditor(p: {
   }
   const el = p.errorLine && p.errorLine > 0 && p.errorLine <= n ? p.errorLine : 0
   return (
-    <div class={'ce' + (p.readOnly ? ' ro' : '')} ref={box} style={{ '--ce-h': p.readOnly ? `min(${p.height || '320px'}, ${n * LH + 22}px)` : p.height || '320px', '--ln': el, '--gw': String(n).length + 'ch', '--lh': LH + 'px' } as any} data-testid={p.testid + '-wrap'}>
+    <div
+      class={'ce' + (p.readOnly ? ' ro' : '') + (p.fill ? ' ce-fill' : '') + (plain ? ' ce-plain' : '')}
+      ref={box}
+      style={{ '--ce-h': p.readOnly ? `min(${p.height || '320px'}, ${n * LH + 22}px)` : p.height || '320px', '--ce-min': p.readOnly ? `min(${p.height || '320px'}, ${n * LH + 22}px)` : '240px', '--ln': el, '--gw': String(n).length + 'ch', '--lh': LH + 'px' } as any}
+      data-testid={p.testid + '-wrap'}
+    >
       {el > 0 && <div class="ce-band" data-testid={p.testid + '-errline'} />}
       <pre class="ce-gut" aria-hidden="true" ref={gut}>
         {nums}
       </pre>
-      <textarea
-        class="ce-ta"
-        ref={p.inputRef}
-        data-testid={p.testid}
-        aria-label={p.label}
-        wrap="off"
-        spellcheck={false}
-        autocapitalize="off"
-        autocomplete="off"
-        readOnly={p.readOnly}
-        value={p.value}
-        onInput={(e) => p.onChange?.((e.target as HTMLTextAreaElement).value)}
-        onScroll={sync}
-        onKeyDown={onKey}
-      />
+      <div class="ce-main">
+        <pre class="ce-hl" aria-hidden="true" ref={hl}>
+          <code ref={code} />
+        </pre>
+        <textarea
+          class="ce-ta"
+          ref={p.inputRef}
+          data-testid={p.testid}
+          aria-label={p.label}
+          wrap="off"
+          spellcheck={false}
+          autocapitalize="off"
+          autocomplete="off"
+          readOnly={p.readOnly}
+          value={p.value}
+          onInput={(e) => p.onChange?.((e.target as HTMLTextAreaElement).value)}
+          onScroll={sync}
+          onKeyDown={onKey}
+        />
+      </div>
     </div>
   )
 }
@@ -380,12 +410,8 @@ export function InstalledSource({ id, testid = 'plugin-src-view' }: { id: string
   return <CodeEditor value={src} readOnly testid={testid} label={t('src.view')} height="260px" />
 }
 
-/**
- * "Preview source" content for something that is not installed yet (`body` is the install body: catalog / url / source).
- * Mount it when the user asks; it fetches `POST /api/plugins/preview` once and shows what the plugin is, what it may access,
- * and its source read-only.
- */
-export function PreviewPanel({ body, testid = 'plugin-preview' }: { body: Record<string, unknown>; testid?: string }) {
+/** Fetches `POST /api/plugins/preview` once for `body` (the install body: catalog / url / source). Nothing is installed. */
+export function usePreviewData(body: Record<string, unknown>) {
   const [data, setData] = useState<PluginPreview | null>(null)
   const [err, setErr] = useState('')
   useEffect(() => {
@@ -396,6 +422,12 @@ export function PreviewPanel({ body, testid = 'plugin-preview' }: { body: Record
     )
     return () => void (dead = true)
   }, [])
+  return { data, err: err || data?.error || '' }
+}
+
+/** "Preview source" content for something that is not installed yet: what the plugin is, what it may access, and its source read-only. */
+export function PreviewPanel({ body, testid = 'plugin-preview' }: { body: Record<string, unknown>; testid?: string }) {
+  const { data, err } = usePreviewData(body)
   const p = data?.plugin
   return (
     <div class="pv" data-testid={testid}>
@@ -403,11 +435,6 @@ export function PreviewPanel({ body, testid = 'plugin-preview' }: { body: Record
       {err && (
         <p class="form-error" role="alert" data-testid={testid + '-error'}>
           {err}
-        </p>
-      )}
-      {data?.error && (
-        <p class="form-error" role="alert" data-testid={testid + '-error'}>
-          {data.error}
         </p>
       )}
       {p && (
@@ -433,6 +460,64 @@ export function PreviewPanel({ body, testid = 'plugin-preview' }: { body: Record
           <CodeEditor value={data.source} readOnly testid={testid + '-code'} label={t('src.view')} height="260px" />
         </>
       )}
+    </div>
+  )
+}
+
+/** Settings a plugin (and each of its widgets) asks the admin to fill in, read from the manifest. */
+function CfgList({ title, fields, testid }: { title?: string; fields: ConfigField[]; testid: string }) {
+  return (
+    <div class="pv-cfg" data-testid={testid}>
+      {title && <b class="pv-cfg-t">{title}</b>}
+      <ul>
+        {fields.map((f) => (
+          <li key={f.key} data-testid={testid + '-field'} data-key={f.key}>
+            <code>{f.key}</code>
+            <span class="pv-cfg-l">{f.label}</span>
+            <span class="pv-cfg-m">
+              {f.type}
+              {f.required ? ' · ' + t('cat.required') : ''}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Name, version, author, description, capabilities, permissions and settings of a plugin (from its manifest). */
+export function PluginDetails({ p, testid }: { p: PluginInfo; testid: string }) {
+  const groups = [{ title: '', fields: schemaOf(p) }, ...(p.widgets || []).map((w) => ({ title: w.name, fields: w.config || [] }))].filter((g) => g.fields.length)
+  return (
+    <div class="pv-det" data-testid={testid}>
+      <div class="pv-sum">
+        <PlIcon p={p} size={40} />
+        <div class="pl-main">
+          <div class="pl-name">
+            <b data-testid={testid + '-name'}>{p.name}</b>
+            <small data-testid={testid + '-version'}>v{p.version}</small>
+          </div>
+          {p.author && (
+            <small class="pl-by" data-testid={testid + '-author'}>
+              {t('plugin.by', { author: p.author })}
+            </small>
+          )}
+        </div>
+      </div>
+      {p.description && (
+        <p class="hint" data-testid={testid + '-desc'}>
+          {p.description}
+        </p>
+      )}
+      <h4 class="pl-h">{t('cat.caps')}</h4>
+      <div data-testid={testid + '-caps'}>
+        <Badges p={p} />
+        {!p.wallpapers?.length && !p.widgets?.length && !p.search && !p.schedules?.length && <span class="hint">—</span>}
+      </div>
+      <h4 class="pl-h">{t('perm.requests')}</h4>
+      <PermList p={p} />
+      <h4 class="pl-h">{t('cat.cfg')}</h4>
+      {groups.length ? groups.map((g, i) => <CfgList key={i} title={g.title} fields={g.fields} testid={testid + '-config'} />) : <p class="hint" data-testid={testid + '-config-none'}>{t('plugin.noConfig')}</p>}
     </div>
   )
 }

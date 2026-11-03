@@ -73,6 +73,7 @@ type Manager struct {
 
 	mkMu    sync.Mutex
 	mkCache map[string]*marketEntry // third-party market (market.go)
+	mkGen   uint64                  // bumped by ClearMarketCache so in-flight fetches do not repopulate it
 	ghOnce  sync.Once
 	ghc     *http.Client
 }

@@ -119,6 +119,7 @@ func (m *Manager) marketCached(key string, fn func(ctx context.Context) (val any
 		m.mkMu.Unlock()
 		return e.val
 	}
+	gen := m.mkGen
 	m.mkMu.Unlock()
 	v, _, _ := m.fl.do("mk|"+key, func() (any, error) {
 		ctx, cancel := context.WithTimeout(m.ctx, scanTimeout)
@@ -132,6 +133,10 @@ func (m *Manager) marketCached(key string, fn func(ctx context.Context) (val any
 			ttl = marketErrTTL
 		}
 		m.mkMu.Lock()
+		if gen != m.mkGen {
+			m.mkMu.Unlock()
+			return val, nil // the cache was cleared while this was in flight: do not store the stale result
+		}
 		if m.mkCache == nil {
 			m.mkCache = map[string]*marketEntry{}
 		}
@@ -154,6 +159,16 @@ func (m *Manager) marketCached(key string, fn func(ctx context.Context) (val any
 		return val, nil
 	})
 	return v
+}
+
+// ClearMarketCache empties the market search and repository-scan caches, so
+// the next request asks GitHub again. A fetch that was already in flight does
+// not repopulate the cache with its (older) result.
+func (m *Manager) ClearMarketCache() {
+	m.mkMu.Lock()
+	m.mkCache = nil
+	m.mkGen++
+	m.mkMu.Unlock()
 }
 
 // ghGet performs a GET against GitHub and returns the body (at most limit

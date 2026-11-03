@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 import { Api, CSRF, expect, openApp, openSettings, origin, test } from '../helpers'
 import { request as pwRequest } from '@playwright/test'
 
-// Plugin manager v2 (docs/PLUGINS.md 11.2 - 11.4): source editor + test panel, preview before install, "Develop with AI",
+// Plugin manager v2 (docs/PLUGINS.md 11.2 - 11.5): source editor (syntax highlighting) + always-visible test panel, catalog source dialog, preview before install, "Develop with AI",
 // third-party (GitHub) tab. Only offline catalog plugins (calculator, world-clock, countdown) plus tiny inline plugins.
 // The third-party tab talks to the real GitHub from the server and the server cannot be pointed elsewhere without code
 // changes, so those tests only check that the tab renders and ends in a clean list / empty / error state.
@@ -11,6 +11,12 @@ interface P { id: string; name: string; version: string; enabled: boolean; last_
 const pluginsOf = async (api: Api): Promise<P[]> => (await api.call('GET', '/api/plugins')) || []
 const install = (api: Api, id: string, enable = true) => api.call('POST', '/api/plugins', { catalog: id, enable })
 const row = (page: Page, id: string) => page.locator(`[data-testid="plugin-row"][data-plugin-id="${id}"]`)
+const panelGeometry = (page: Page) =>
+  page.evaluate(() => {
+    const p = document.querySelector('[data-testid="plugin-test-panel"]')!.getBoundingClientRect()
+    const e = document.querySelector('[data-testid="plugin-source-editor-wrap"]')!.getBoundingClientRect()
+    return { panelBottom: p.bottom, panelH: p.height, editorTop: e.top, editorH: e.height }
+  })
 const srcOf = async (api: Api, id: string) => (await api.call<{ source: string; lang: string }>('GET', `/api/plugins/${id}/source`)).source
 
 const LOGGER = `export const manifest = {
@@ -123,9 +129,12 @@ test.describe('plugin manager: source editor, test panel, preview, Develop with 
     await expect(row(page, 'calculator')).toHaveAttribute('data-enabled', '0')
     await row(page, 'calculator').getByTestId('plugin-source-btn').click()
     await expect(page.getByTestId('plugin-source-editor')).toHaveValue(/export const manifest/)
-    await expect(page.getByTestId('plugin-test-panel')).toHaveCount(0)
-    await page.getByTestId('plugin-source-test-toggle').click()
+    // the test panel is always there (no toggle), and it sits ABOVE the source
     await expect(page.getByTestId('plugin-test-panel')).toBeVisible()
+    await expect(page.getByTestId('plugin-source-test-toggle')).toHaveCount(0)
+    const g = await panelGeometry(page) // both rects read in one go (the dialog animates in)
+    expect(g.panelBottom).toBeLessThanOrEqual(g.editorTop + 1)
+    expect(g.editorH, 'the editor keeps most of the height').toBeGreaterThan(g.panelH)
     await expect(page.getByTestId('plugin-test-hook')).toHaveValue('search')
     await expect(page.getByTestId('plugin-test-result')).toHaveCount(0)
     await page.getByTestId('plugin-test-query').fill('1+2*3')
@@ -160,7 +169,6 @@ test.describe('plugin manager: source editor, test panel, preview, Develop with 
     await openApp(page)
     await openSettings(page, 'plugins')
     await row(page, 'e2e-logger').getByTestId('plugin-source-btn').click()
-    await page.getByTestId('plugin-source-test-toggle').click()
     await page.getByTestId('plugin-test-query').fill('zzz')
     await page.getByTestId('plugin-test-run').click()
     await expect(page.getByTestId('plugin-test-result')).toHaveAttribute('data-ok', '1')
@@ -198,7 +206,6 @@ test.describe('plugin manager: source editor, test panel, preview, Develop with 
     await openApp(page)
     await openSettings(page, 'plugins')
     await row(page, 'countdown').getByTestId('plugin-source-btn').click()
-    await page.getByTestId('plugin-source-test-toggle').click()
     await expect(page.getByTestId('plugin-test-hook')).toHaveValue('widget')
     await expect(page.getByTestId('plugin-test-target')).toHaveValue('timer')
     await expect(page.getByTestId('plugin-test-instance').locator('option')).toHaveCount(2) // "none" + the instance
@@ -213,29 +220,57 @@ test.describe('plugin manager: source editor, test panel, preview, Develop with 
     await expect(page.getByTestId('plugin-test-localerror')).toBeVisible()
   })
 
-  test('Preview source from the catalog before install: nothing is installed; invalid source shows the error with a line', async ({ page, api }) => {
+  test('catalog items have a source icon after the version: the dialog shows info + highlighted read-only source; nothing is installed until Install; the paste/URL previews still work', async ({ page, api }) => {
     await openApp(page)
     await openSettings(page, 'plugins')
     await page.getByTestId('plugin-empty-add').click()
     const item = page.locator('[data-testid="plugin-catalog-item"][data-plugin-id="countdown"]')
     await expect(item).toBeVisible()
-    await expect(item.getByTestId('plugin-preview')).toHaveCount(0) // collapsed by default: the source is not shown
-    await item.getByTestId('plugin-catalog-preview').click()
-    const pv = item.getByTestId('plugin-preview')
-    await expect(pv).toBeVisible()
-    await expect(pv.getByTestId('plugin-preview-name')).toHaveText('Countdown')
-    await expect(pv.getByTestId('plugin-perms')).toBeVisible()
-    await expect(pv.getByTestId('plugin-perm-none')).toBeVisible() // countdown asks for nothing
-    const code = pv.getByTestId('plugin-preview-code')
+    await expect(item.getByTestId('plugin-catalog-preview')).toHaveCount(0) // replaced by the icon
+    const icon = item.getByTestId('plugin-catalog-source')
+    await expect(icon).toBeVisible()
+    await expect(icon.locator('svg')).toHaveCount(1)
+    // it sits in the title row, right after the version number
+    const order = await item.locator('.pl-name').evaluate((el) => Array.from(el.children).map((c) => c.tagName + ':' + (c.getAttribute('data-testid') || '')))
+    expect(order).toEqual(['B:', 'SMALL:', 'BUTTON:plugin-catalog-source'])
+    await expect(item.locator('.pl-name small')).toHaveText('v1.0.0')
+
+    await icon.click()
+    const dlg = page.getByTestId('plugin-catalog-source-modal')
+    await expect(dlg).toBeVisible()
+    await expect(dlg.getByTestId('plugin-catalog-source-info-name')).toHaveText('Countdown')
+    await expect(dlg.getByTestId('plugin-catalog-source-info-version')).toHaveText('v1.0.0')
+    await expect(dlg.getByTestId('plugin-catalog-source-info-desc')).not.toBeEmpty()
+    await expect(dlg.getByTestId('plugin-catalog-source-info-author')).toBeVisible()
+    await expect(dlg.getByTestId('plugin-catalog-source-info-caps').getByTestId('plugin-badge')).not.toHaveCount(0) // capabilities
+    await expect(dlg.getByTestId('plugin-perms')).toBeVisible()
+    await expect(dlg.getByTestId('plugin-perm-none')).toBeVisible() // countdown asks for nothing
+    await expect(dlg.getByTestId('plugin-catalog-source-info-config-field').first()).toBeVisible() // its settings
+    const code = dlg.getByTestId('plugin-catalog-source-code')
     await expect(code).toHaveValue(/export const manifest/)
     await expect(code).toHaveJSProperty('readOnly', true)
-    await expect(pv.getByTestId('plugin-preview-error')).toHaveCount(0)
-    // ... and nothing was installed or enabled
-    expect(await pluginsOf(api)).toEqual([])
+    // the source is highlighted
+    await expect(dlg.locator('.ce-hl .h-k').first()).toHaveText('export')
+    await expect(dlg.locator('.ce-hl .h-s').first()).toBeVisible()
+    await expect(dlg.getByTestId('plugin-catalog-source-error')).toHaveCount(0)
+    await expect(dlg.getByTestId('plugin-catalog-source-install')).toBeEnabled()
+    expect(await pluginsOf(api)).toEqual([]) // looking is not installing
+    // Escape closes the dialog and returns to the list (still on the Add view)
+    await page.keyboard.press('Escape')
+    await expect(dlg).toHaveCount(0)
+    await expect(item).toBeVisible()
     await expect(item).toHaveAttribute('data-installed', '0')
-    // toggles closed again
-    await item.getByTestId('plugin-catalog-preview').click()
-    await expect(item.getByTestId('plugin-preview')).toHaveCount(0)
+    expect(await pluginsOf(api)).toEqual([])
+
+    // Install from the dialog
+    await icon.click()
+    await dlg.getByTestId('plugin-catalog-source-install').click()
+    await expect(dlg).toHaveCount(0)
+    await expect.poll(async () => (await pluginsOf(api)).map((p) => `${p.id}:${p.enabled}`)).toEqual(['countdown:true'])
+    await api.reset()
+    await openApp(page)
+    await openSettings(page, 'plugins')
+    await page.getByTestId('plugin-empty-add').click()
 
     // the paste tab: valid source with permissions
     await page.getByTestId('plugin-add-tab-source').click()
@@ -323,6 +358,7 @@ export async function search(ctx) { return [] }
       ['POST', '/api/plugins/countdown/test', { hook: 'widget', target: 'timer' }],
       ['GET', '/api/plugins/market', undefined],
       ['GET', '/api/plugins/market/repo?repo=a/b', undefined],
+      ['POST', '/api/plugins/market/cache/clear', {}],
     ] as const) {
       const r = await anon.fetch(p, { method: m, data: body as any })
       expect([401, 403], `${m} ${p}`).toContain(r.status())
@@ -547,6 +583,148 @@ export async function search(ctx) { return [] }
     await expect.poll(async () => (await pluginsOf(api)).map((p) => `${p.id}:${p.enabled}`).sort()).toEqual(['countdown:true', 'world-clock:true'])
   })
 
+  test('Add plugin tabs are ordered: built-in, third-party, URL, paste', async ({ page }) => {
+    await openApp(page)
+    await openSettings(page, 'plugins')
+    await page.getByTestId('plugin-add-btn').click()
+    const ids = await page.getByTestId('plugin-add-tabs').locator('button').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))
+    expect(ids).toEqual(['plugin-add-tab-catalog', 'plugin-add-tab-market', 'plugin-add-tab-url', 'plugin-add-tab-source'])
+    await expect(page.getByTestId('plugin-add-tab-catalog')).toHaveAttribute('aria-pressed', 'true') // still the default
+  })
+
+  test('Third-party "Clear cache": POSTs the clear first, then refetches the search and the expanded repos, then toasts; a failed clear refetches nothing', async ({ page }) => {
+    const log: string[] = []
+    const failClear = { on: false }
+    const repo = (n: string) => ({ repo: `acme/${n}`, description: `${n} plugins`, stars: 5, updated_at: '2026-10-01T12:00:00Z', html_url: `https://github.com/acme/${n}`, owner_avatar: '', default_branch: 'main' })
+    await page.route('**/api/plugins/market?**', (r) => {
+      log.push('search')
+      return r.fulfill({ json: { items: [repo('alpha'), repo('beta')], total: 2, cached_at: Date.now() } })
+    })
+    await page.route('**/api/plugins/market/repo?**', (r) => {
+      const name = new URL(r.request().url()).searchParams.get('repo')
+      log.push('scan:' + name)
+      return r.fulfill({ json: { repo: name, default_branch: 'main', cached_at: Date.now(), plugins: [] } })
+    })
+    await page.route('**/api/plugins/market/cache/clear', (r) => {
+      log.push('clear')
+      if (r.request().method() !== 'POST') return r.fallback()
+      return failClear.on ? r.fulfill({ status: 500, json: { error: 'boom' } }) : r.fulfill({ json: { ok: true } })
+    })
+    await openApp(page)
+    await openSettings(page, 'plugins')
+    await page.getByTestId('plugin-add-btn').click()
+    await page.getByTestId('plugin-add-tab-market').click()
+    await expect(page.getByTestId('market-repo')).toHaveCount(2)
+    const btn = page.getByTestId('market-clear-cache')
+    await expect(btn).toBeVisible()
+    await expect(btn).toHaveText(/clear cache/i)
+    const alpha = page.locator('[data-testid="market-repo"][data-repo="acme/alpha"]')
+    await alpha.getByTestId('market-repo-toggle').click() // only alpha is expanded
+    await expect(alpha.getByTestId('market-scan-empty')).toBeVisible()
+    expect(log).toEqual(['search', 'scan:acme/alpha'])
+
+    log.length = 0
+    await btn.click()
+    await expect(page.getByTestId('toast').filter({ hasText: /cache cleared/i }).last()).toBeVisible()
+    expect(log).toEqual(['clear', 'search', 'scan:acme/alpha']) // beta was not expanded: not rescanned
+    await expect(page.getByTestId('market-repo')).toHaveCount(2)
+    await expect(alpha).toHaveAttribute('data-open', '1')
+    await expect(btn).toBeEnabled()
+
+    // the server refuses: an error toast, and the lists are not refetched
+    log.length = 0
+    failClear.on = true
+    await btn.click()
+    await expect(page.getByTestId('toast').filter({ hasText: /boom/i }).last()).toBeVisible()
+    expect(log).toEqual(['clear'])
+    await expect(btn).toBeEnabled()
+  })
+
+  test('syntax highlighting: tokens are coloured, plugin source is never injected as HTML, and the overlay stays aligned with the textarea', async ({ page, api }) => {
+    await api.call('POST', '/api/plugins', { source: LOGGER, enable: false })
+    await openApp(page)
+    await openSettings(page, 'plugins')
+    await row(page, 'e2e-logger').getByTestId('plugin-source-btn').click()
+    const ed = page.getByTestId('plugin-source-editor')
+    const hl = page.locator('[data-testid="plugin-source-editor-wrap"] .ce-hl')
+    await expect(ed).toHaveValue(/export const manifest/)
+    await expect(hl.locator('.h-k').first()).toHaveText('export')
+    await expect(hl.locator('.h-s').first()).toBeVisible()
+
+    const TRICKY = `export const manifest = { id: "e2e-logger", name: "E2E Logger", version: "1.0.0", search: { name: "L", prefix: "l" } }
+// line comment <b id="pwn-comment">x</b>
+/* block <i>x</i> */
+const re = /<img src=x onerror="window.__pwn=1">/gi
+const s = "<img src=x onerror=window.__pwn=2>"
+const t = \`a \${1 + 2} <u>b</u> \${ \`n\${3}\` }\`
+const n = 0x1F + 1_000.5 + (true ? null : undefined) / 2
+export async function search(ctx) { return [] }
+`
+    await ed.fill(TRICKY)
+    const cls = async (c: string) => (await hl.locator('.h-' + c).allTextContents()).join('|')
+    expect(await cls('c')).toContain('// line comment <b id="pwn-comment">x</b>')
+    expect(await cls('c')).toContain('/* block <i>x</i> */')
+    expect(await cls('r')).toBe('/<img src=x onerror="window.__pwn=1">/gi')
+    expect(await cls('s')).toContain('"<img src=x onerror=window.__pwn=2>"')
+    expect(await cls('s')).toContain('`a ') // template text is a string ...
+    expect((await cls('e')).split('|').join('')).toContain('${') // ... and `${ }` are their own token
+    expect(await cls('n')).toContain('0x1F')
+    expect(await cls('n')).toContain('1_000.5')
+    expect(await cls('l')).toBe('true|null|undefined')
+    expect(await cls('f')).toContain('search')
+    expect(await cls('p')).toContain('id') // object keys
+    // text only: no element was created from the plugin's HTML-looking content
+    await expect(hl.locator('img, b, i, u')).toHaveCount(0)
+    expect(await page.evaluate(() => (window as any).__pwn)).toBeUndefined()
+    // the overlay shows exactly the textarea's text
+    expect(await hl.evaluate((el) => el.textContent)).toBe(TRICKY)
+    // dividing is not a regex: `/ 2` stays punctuation
+    expect(await cls('r')).not.toContain('2')
+
+    // typing, Tab and Enter auto-indent keep the two in step
+    await ed.press('Control+End')
+    await ed.pressSequentially('if (x) {')
+    await ed.press('Enter')
+    await ed.press('Tab')
+    await ed.pressSequentially('y = 1')
+    const v = await ed.inputValue()
+    expect(v.endsWith('if (x) {\n  y = 1')).toBe(true) // Enter kept the (empty) indent, Tab added two spaces
+    await expect.poll(() => hl.evaluate((el) => el.textContent)).toBe(v)
+
+    // alignment: a tall file with one very long line, scrolled both ways
+    const long = Array.from({ length: 160 }, (_, i) => (i === 100 ? 'const long = "' + 'abcdefghij'.repeat(80) + '"' : `const line${i} = ${i} // c`)).join('\n')
+    await ed.fill(long)
+    await expect.poll(() => hl.evaluate((el) => el.textContent)).toBe(long)
+    const probe = () =>
+      page.evaluate(() => {
+        const ta = document.querySelector<HTMLTextAreaElement>('[data-testid="plugin-source-editor"]')!
+        const pre = document.querySelector<HTMLElement>('[data-testid="plugin-source-editor-wrap"] .ce-hl')!
+        const r = ta.getBoundingClientRect()
+        const p = pre.getBoundingClientRect()
+        const first = pre.querySelector('code')!.firstChild as HTMLElement
+        const rg = document.createRange()
+        rg.setStart(first.firstChild!, 0)
+        rg.setEnd(first.firstChild!, 1)
+        return { dx: p.left - (r.left - ta.scrollLeft), dy: p.top - (r.top - ta.scrollTop), gx: rg.getBoundingClientRect().left - (r.left + 12 - ta.scrollLeft), sl: ta.scrollLeft, st: ta.scrollTop, dw: pre.offsetWidth - ta.scrollWidth, dh: pre.offsetHeight - ta.scrollHeight }
+      })
+    // the layer follows the textarea's scroll offsets on the scroll event (next frame): poll until it has caught up
+    const aligned = async () => {
+      await expect.poll(async () => { const o = await probe(); return Math.max(Math.abs(o.dx), Math.abs(o.dy), Math.abs(o.gx)) }).toBeLessThan(0.6)
+      return probe()
+    }
+    await aligned()
+    await ed.evaluate((el: HTMLTextAreaElement) => ((el.scrollTop = 1700), (el.scrollLeft = 900)))
+    const sc = await aligned()
+    expect(sc.st).toBeGreaterThan(1000)
+    expect(sc.sl).toBeGreaterThan(300)
+    // same text extent in both layers, i.e. the same glyph advance and line height
+    // (the pre box includes its right / bottom padding, which the textarea's scroll extent leaves out: 14px / 10px or 0)
+    expect(Math.min(Math.abs(sc.dw), Math.abs(sc.dw - 14))).toBeLessThanOrEqual(1)
+    expect(Math.min(Math.abs(sc.dh), Math.abs(sc.dh - 10))).toBeLessThanOrEqual(1)
+    // the gutter follows too
+    await expect.poll(() => page.locator('[data-testid="plugin-source-editor-wrap"] .ce-gut').evaluate((el) => el.scrollTop)).toBeGreaterThan(1000)
+  })
+
   test('REST market endpoints: validation, and a well-formed answer for any GitHub outcome', async ({ api }) => {
     await expect(api.call('GET', '/api/plugins/market?sort=bogus')).rejects.toThrow(/400/)
     await expect(api.call('GET', '/api/plugins/market?page=abc')).rejects.toThrow(/400/)
@@ -569,5 +747,67 @@ export async function search(ctx) { return [] }
     // an unknown repo cannot have plugins; if GitHub answered at all, it says why
     expect(scan.plugins).toEqual([])
     expect(typeof (scan.error ?? '')).toBe('string')
+  })
+
+  test('REST: POST /api/plugins/market/cache/clear answers {ok:true} (and is idempotent)', async ({ api }) => {
+    expect(await api.call('POST', '/api/plugins/market/cache/clear')).toEqual({ ok: true })
+    expect(await api.call('POST', '/api/plugins/market/cache/clear')).toEqual({ ok: true })
+  })
+})
+
+// phone width: the test panel stays on top and compact, the editor keeps a usable height, nothing overflows sideways
+test.describe('plugin manager on a phone (390px)', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 })
+  test.afterAll(async ({ admin }) => {
+    await new Api(admin).reset()
+  })
+
+  test('source editor: the always-visible test panel is above the source; optional fields fold; the editor is still tall', async ({ page, api, ws }) => {
+    void ws
+    await install(api, 'countdown')
+    await openApp(page)
+    await openSettings(page, 'plugins')
+    await row(page, 'countdown').getByTestId('plugin-source-btn').click()
+    const modal = page.getByTestId('plugin-source-modal')
+    await expect(page.getByTestId('plugin-source-editor')).toHaveValue(/export const manifest/)
+    const panel = page.getByTestId('plugin-test-panel')
+    await expect(panel).toBeVisible()
+    await page.waitForTimeout(500) // the sheet slides in
+    const g = await panelGeometry(page)
+    expect(g.panelBottom).toBeLessThanOrEqual(g.editorTop + 1)
+    expect(g.panelH, 'compact').toBeLessThan(190)
+    expect(g.editorH).toBeGreaterThanOrEqual(230)
+    // widget plugin: the instance / settings fields are folded away at phone width, one tap opens them
+    await expect(page.getByTestId('plugin-test-hook')).toBeVisible()
+    await expect(page.getByTestId('plugin-test-config')).toBeHidden()
+    await panel.locator('summary').click()
+    await expect(page.getByTestId('plugin-test-config')).toBeVisible()
+    // run works from here too
+    await page.getByTestId('plugin-test-run').click()
+    await expect(page.getByTestId('plugin-test-result')).toHaveAttribute('data-ok', '1')
+    // no sideways overflow in the dialog or the page
+    const over = await page.evaluate(() => {
+      const m = document.querySelector('[data-testid="plugin-source-modal"] .modal-body')!
+      return { body: m.scrollWidth - m.clientWidth, doc: document.documentElement.scrollWidth - window.innerWidth }
+    })
+    expect(over.body).toBeLessThanOrEqual(0)
+    expect(over.doc).toBeLessThanOrEqual(0)
+    await expect(modal).toBeVisible()
+  })
+
+  test('catalog source dialog fits the phone', async ({ page }) => {
+    await openApp(page)
+    await openSettings(page, 'plugins')
+    await page.getByTestId('plugin-empty-add').click()
+    const item = page.locator('[data-testid="plugin-catalog-item"][data-plugin-id="countdown"]')
+    await item.getByTestId('plugin-catalog-source').click()
+    const dlg = page.getByTestId('plugin-catalog-source-modal')
+    await expect(dlg.getByTestId('plugin-catalog-source-code')).toHaveValue(/export const manifest/)
+    const over = await page.evaluate(() => {
+      const m = document.querySelector('[data-testid="plugin-catalog-source-modal"] .modal-body')!
+      return { body: m.scrollWidth - m.clientWidth, doc: document.documentElement.scrollWidth - window.innerWidth }
+    })
+    expect(over.body).toBeLessThanOrEqual(0)
+    expect(over.doc).toBeLessThanOrEqual(0)
   })
 })

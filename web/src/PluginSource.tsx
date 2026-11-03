@@ -1,5 +1,5 @@
-// Source editor for an installed plugin, with a "Test run" panel. Lazy chunk: only loaded when someone clicks "Source".
-import { useEffect, useRef, useState } from 'preact/hooks'
+// Source editor for an installed plugin, with a "Test run" panel above the source. Lazy chunk: only loaded when someone clicks "Source".
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ApiError, get, post, put } from './api'
 import { Icon } from './icons'
 import { lang, t } from './i18n'
@@ -39,6 +39,18 @@ function pretty(v: unknown): string {
   return s.length > MAX ? s.slice(0, MAX) + '\n… ' + t('src.truncated') : s
 }
 
+/** True at phone width (the same breakpoint as the stylesheet's mobile rules). */
+function useNarrow(): boolean {
+  const mq = useMemo(() => matchMedia('(max-width: 640px)'), [])
+  const [on, setOn] = useState(mq.matches)
+  useEffect(() => {
+    const f = () => setOn(mq.matches)
+    mq.addEventListener('change', f)
+    return () => mq.removeEventListener('change', f)
+  }, [mq])
+  return on
+}
+
 function TestPanel({ p, dirty, save }: { p: PluginInfo; dirty: boolean; save: () => Promise<boolean> }) {
   const hooks = hooksOf(p)
   const [hook, setHook] = useState<Hook>(hooks[0] || 'widget')
@@ -55,6 +67,7 @@ function TestPanel({ p, dirty, save }: { p: PluginInfo; dirty: boolean; save: ()
   const tgt = targets.find((x) => x.id === target)?.id || targets[0]?.id || ''
   const usesInstance = hook === 'widget' || hook === 'action'
   const insts = usesInstance ? widgets.value.filter((w) => w.plugin === p.id && w.widget === tgt) : []
+  const narrow = useNarrow()
   const wsName = (id: string) => (id ? sortedWs.value.find((w) => w.id === id)?.name || id : t('widget.allWs'))
 
   const parseObj = (s: string, field: string): Record<string, unknown> | undefined | null => {
@@ -98,12 +111,56 @@ function TestPanel({ p, dirty, save }: { p: PluginInfo; dirty: boolean; save: ()
   if (!hooks.length)
     return (
       <div class="tp" data-testid="plugin-test-panel">
-        <p class="hint first">{t('src.noHooks')}</p>
+        <div class="tp-head">
+          <b>
+            <Icon n="play" size={13} />
+            {t('src.test')}
+          </b>
+          <span class="hint">{t('src.noHooks')}</span>
+        </div>
       </div>
     )
   const logs = (res?.logs || []).map(logLine)
+  const more = [
+    usesInstance && (
+      <div class="field" key="inst">
+        <label for="tp-inst">{t('src.instance')}</label>
+        <select id="tp-inst" data-testid="plugin-test-instance" value={instance} onChange={(e) => setInstance((e.target as HTMLSelectElement).value)}>
+          <option value="">{t('src.instNone')}</option>
+          {insts.map((i, n) => {
+            const first = Object.values(i.config || {}).find((v) => typeof v === 'string' && v && v.length < 30)
+            return (
+              <option key={i.id} value={i.id}>
+                #{n + 1} · {wsName(i.workspace_id)}
+                {first ? ' · ' + first : ''}
+              </option>
+            )
+          })}
+        </select>
+      </div>
+    ),
+    hook === 'action' && (
+      <div class="field" key="params">
+        <label for="tp-params">{t('src.params')}</label>
+        <input id="tp-params" type="text" data-testid="plugin-test-params" autocomplete="off" spellcheck={false} placeholder='{"minutes": 5}' value={params} onInput={(e) => setParams((e.target as HTMLInputElement).value)} />
+      </div>
+    ),
+    usesInstance && (
+      <div class="field" key="cfg">
+        <label for="tp-cfg">{t('src.config')}</label>
+        <input id="tp-cfg" type="text" data-testid="plugin-test-config" autocomplete="off" spellcheck={false} placeholder='{"city": "Tokyo"}' value={cfg} onInput={(e) => setCfg((e.target as HTMLInputElement).value)} />
+      </div>
+    ),
+  ].filter(Boolean)
   return (
     <div class="tp" data-testid="plugin-test-panel">
+      <div class="tp-head">
+        <b>
+          <Icon n="play" size={13} />
+          {t('src.test')}
+        </b>
+        <span class="hint">{dirty ? t('src.saveRunHint') : t('src.runsSaved')}</span>
+      </div>
       <div class="tp-grid">
         <div class="field">
           <label for="tp-hook">{t('src.hook')}</label>
@@ -128,53 +185,32 @@ function TestPanel({ p, dirty, save }: { p: PluginInfo; dirty: boolean; save: ()
           </div>
         )}
         {hook === 'search' && (
-          <div class="field">
+          <div class="field tp-wide">
             <label for="tp-q">{t('src.query')}</label>
             <input id="tp-q" type="text" data-testid="plugin-test-query" autocomplete="off" value={query} onInput={(e) => setQuery((e.target as HTMLInputElement).value)} />
           </div>
         )}
         {hook === 'action' && (
-          <div class="field">
+          <div class="field tp-wide">
             <label for="tp-action">{t('src.action')}</label>
             <input id="tp-action" type="text" data-testid="plugin-test-action" autocomplete="off" spellcheck={false} placeholder="refresh" value={action} onInput={(e) => setAction((e.target as HTMLInputElement).value)} />
           </div>
         )}
-        {usesInstance && (
-          <div class="field">
-            <label for="tp-inst">{t('src.instance')}</label>
-            <select id="tp-inst" data-testid="plugin-test-instance" value={instance} onChange={(e) => setInstance((e.target as HTMLSelectElement).value)}>
-              <option value="">{t('src.instNone')}</option>
-              {insts.map((i, n) => {
-                const first = Object.values(i.config || {}).find((v) => typeof v === 'string' && v && v.length < 30)
-                return (
-                  <option key={i.id} value={i.id}>
-                    #{n + 1} · {wsName(i.workspace_id)}
-                    {first ? ' · ' + first : ''}
-                  </option>
-                )
-              })}
-            </select>
-          </div>
+        {/* phone width: the optional fields fold away so the editor keeps its height */}
+        {narrow && more.length ? (
+          <details class="tp-more">
+            <summary>{t('src.more')}</summary>
+            <div class="tp-grid">{more}</div>
+          </details>
+        ) : (
+          more
         )}
-      </div>
-      {hook === 'action' && (
-        <div class="field">
-          <label for="tp-params">{t('src.params')}</label>
-          <input id="tp-params" type="text" data-testid="plugin-test-params" autocomplete="off" spellcheck={false} placeholder='{"minutes": 5}' value={params} onInput={(e) => setParams((e.target as HTMLInputElement).value)} />
+        <div class="tp-run">
+          <button class="btn primary sm" data-testid="plugin-test-run" disabled={running} aria-busy={running} onClick={run}>
+            <Icon n="play" size={13} />
+            {running ? t('src.running') : dirty ? t('src.saveRun') : t('src.run')}
+          </button>
         </div>
-      )}
-      {usesInstance && (
-        <div class="field">
-          <label for="tp-cfg">{t('src.config')}</label>
-          <input id="tp-cfg" type="text" data-testid="plugin-test-config" autocomplete="off" spellcheck={false} placeholder='{"city": "Tokyo"}' value={cfg} onInput={(e) => setCfg((e.target as HTMLInputElement).value)} />
-        </div>
-      )}
-      <div class="tp-bar">
-        <button class="btn primary sm" data-testid="plugin-test-run" disabled={running} aria-busy={running} onClick={run}>
-          <Icon n="play" size={13} />
-          {running ? t('src.running') : dirty ? t('src.saveRun') : t('src.run')}
-        </button>
-        <span class="hint">{dirty ? t('src.saveRunHint') : t('src.runsSaved')}</span>
       </div>
       {localErr && (
         <p class="form-error" role="alert" data-testid="plugin-test-localerror">
@@ -199,18 +235,22 @@ function TestPanel({ p, dirty, save }: { p: PluginInfo; dirty: boolean; save: ()
               {res.error}
             </p>
           )}
-          {res.result !== undefined && res.result !== null && (
-            <>
-              <h4 class="pl-h">{t('src.result')}</h4>
-              <pre class="pl-logs" data-testid="plugin-test-json" tabIndex={0}>
-                {pretty(res.result)}
+          <div class="tr-out">
+            {res.result !== undefined && res.result !== null && (
+              <div>
+                <h4 class="pl-h">{t('src.result')}</h4>
+                <pre class="pl-logs" data-testid="plugin-test-json" tabIndex={0}>
+                  {pretty(res.result)}
+                </pre>
+              </div>
+            )}
+            <div>
+              <h4 class="pl-h">{t('src.logs')}</h4>
+              <pre class="pl-logs" data-testid="plugin-test-logs" tabIndex={0}>
+                {logs.length ? logs.join('\n') : t('src.noLogs')}
               </pre>
-            </>
-          )}
-          <h4 class="pl-h">{t('src.logs')}</h4>
-          <pre class="pl-logs" data-testid="plugin-test-logs" tabIndex={0}>
-            {logs.length ? logs.join('\n') : t('src.noLogs')}
-          </pre>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -229,7 +269,6 @@ export default function SourceModal({ plugin, onSaved }: { plugin: PluginInfo; o
   const [errLine, setErrLine] = useState(0)
   const [note, setNote] = useState('')
   const [confirm, setConfirm] = useState(false)
-  const [test, setTest] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
   const inflight = useRef(false)
   useEffect(() => {
@@ -239,7 +278,10 @@ export default function SourceModal({ plugin, onSaved }: { plugin: PluginInfo; o
         setOrig({ text: r.source, lang: l })
         setText(r.source)
         setLg(l)
-        requestAnimationFrame(() => ta.current?.focus())
+        requestAnimationFrame(() => {
+          ta.current?.setSelectionRange(0, 0) // a fresh value puts the caret at the end, which would scroll the editor to the bottom
+          ta.current?.focus()
+        })
       },
       (e) => setLoadErr(errMsg(e)),
     )
@@ -318,10 +360,6 @@ export default function SourceModal({ plugin, onSaved }: { plugin: PluginInfo; o
             <span class="src-state" data-testid="plugin-source-state" data-dirty={dirty ? '1' : '0'}>
               {dirty ? <><i class="src-dot" />{t('src.unsaved')}</> : orig ? t('src.clean') : ''}
             </span>
-            <button class="btn" data-testid="plugin-source-test-toggle" aria-pressed={test} onClick={() => setTest(!test)}>
-              <Icon n="play" size={14} />
-              {t('src.test')}
-            </button>
             <button class="btn" data-testid="plugin-source-close" onClick={requestClose}>
               {t('common.close')}
             </button>
@@ -350,6 +388,7 @@ export default function SourceModal({ plugin, onSaved }: { plugin: PluginInfo; o
               <option value="ts">TypeScript</option>
             </select>
           </div>
+          <TestPanel p={info} dirty={dirty} save={save} />
           {err && (
             <p class="form-error src-err" role="alert" data-testid="plugin-source-error">
               <span>{err}</span>
@@ -373,16 +412,11 @@ export default function SourceModal({ plugin, onSaved }: { plugin: PluginInfo; o
             errorLine={errLine}
             testid="plugin-source-editor"
             label={t('src.edit')}
-            height="clamp(240px, 46dvh, 480px)"
+            height="320px"
+            fill
             inputRef={ta}
           />
           <p class="hint src-keys">{t('src.keys')}</p>
-          {test && (
-            <>
-              <h3 class="sub">{t('src.test')}</h3>
-              <TestPanel p={info} dirty={dirty} save={save} />
-            </>
-          )}
         </div>
       )}
     </Modal>

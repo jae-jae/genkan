@@ -314,8 +314,10 @@ type Block =
 - `POST /api/plugins/preview`（admin）：body 与安装相同（`{source,lang}` | `{url}` | `{catalog}`），**不安装**，返回
   `{ plugin: PluginInfo | null /* 仅 manifest 派生字段 */, source, lang, installed: bool, installed_version?: string, error?: string }`。用于安装前查看源码与权限。
 - 前端：
-  - 已安装插件行增加"源码"按钮 → 源码编辑器弹窗（纯 textarea + 行号栏，等宽字体，Tab 插入两个空格，Ctrl/⌘+S 保存；无新依赖，懒加载）。保存调用 `PUT .../source`，显示错误；附"试运行"面板（选择钩子/目标，调用 `/test`，展示 JSON 结果、错误、日志、耗时）。
-  - 安装流程（内置目录、URL、粘贴、第三方）都提供"预览源码"按钮（默认折叠不展示源码），权限确认弹窗中也有该按钮。
+  - 已安装插件行增加"源码"按钮 → 源码编辑器弹窗（textarea + 行号栏，等宽字体，Tab 插入两个空格，Ctrl/⌘+S 保存；无新依赖，懒加载）。保存调用 `PUT .../source`，显示错误；"试运行"面板（选择钩子/目标，调用 `/test`，展示 JSON 结果、错误、日志、耗时）**始终显示在源码上方**，布局紧凑，源码编辑器仍占据大部分高度。
+  - **语法高亮**：可编辑编辑器与所有只读源码视图都做 JS/TS 高亮。实现是自带的小型分词器（`web/src/highlight.ts`，无依赖，仅在懒加载块中）：关键字、字符串、模板字符串（`${}` 内按代码处理）、注释、数字、正则字面量（按前一个有效 token 判断）、`true/false/null/undefined`、属性名/函数名、标点。可编辑模式使用"透明 textarea 叠在高亮 `<pre>` 上"的技术（字体、字号、行高、内边距、tab 宽度、不换行与滚动位置严格同步）；token 以转义文本节点/`<span>` 渲染，插件源码从不作为 HTML 注入。
+  - 安装流程（URL、粘贴、第三方）提供"预览源码"按钮（默认折叠不展示源码），权限确认弹窗中也有该按钮。内置目录的每一项在名称/版本号之后有一个小的 `code` 图标按钮（`data-testid="plugin-catalog-source"`），点击打开对话框：插件信息（名称、版本、描述、作者、能力、权限、配置项）+ 高亮的只读源码（`POST /api/plugins/preview {catalog}`）。
+  - 添加插件的标签顺序：内置目录、第三方、URL、粘贴。
 
 ### 11.3 AI 开发插件
 
@@ -347,6 +349,7 @@ JSON 形状与 11.1–11.4 一致，以下为实现时确定的细节。
 - `GET /api/plugins/market/repo`：`repo` 不符合 `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`（或某段为 `.`/`..`）→ 400。GitHub 失败 → 200，`plugins: []`、`error` 非空。响应额外含 `cached_at` 和（失败时）`error`。`installed`/`installed_version` 每次请求按当前已安装插件实时计算（扫描结果本身才缓存）。
 - 扫描：默认分支取自 `GET /repos/{o}/{r}`；先读根目录 `genkan-plugins.json`（存在则只用其中列出的文件，路径必须是安全的相对路径、扩展名 `.js`/`.ts`，列出的文件即使无法通过校验也会以 `error` 条目返回）；否则用 git trees API（`recursive=1`）列出 `.js`/`.ts` 文件，跳过 `.d.ts`、`.min.js`、> 512 KiB、任一目录段是 `node_modules`/`test`/`tests`/`dist`/`__tests__` 或以 `.` 开头的路径，按目录深度再按路径排序，最多取 40 个。自动扫描模式下内容里不同时含 `manifest` 与 `export` 的文件被静默忽略（不是插件，如普通脚本）；含有的文件如编译/校验失败则返回 `plugin: null` 与 `error`。下载并发 ≤ 4。
 - 缓存 10 分钟（成功），失败结果缓存 30 秒；缓存最多 128 项；并发相同请求合并为一次。令牌只发送给 API 主机，不发送给 raw 主机，并从错误信息中抹除。
+- `POST /api/plugins/market/cache/clear`（admin，与其他写操作一样，Cookie 会话需要 `X-Requested-With: genkan` 头）：清空搜索与仓库扫描两类缓存（含失败结果的短缓存），返回 `{ "ok": true }`；清空时已在进行中的 GitHub 请求即使稍后完成也不会再写回缓存。随后的 `GET` 会重新访问 GitHub。前端"第三方"标签的"清除缓存"按钮调用它，然后重新拉取当前搜索以及已展开的仓库扫描，并弹出提示。
 - 配置：环境变量 `GENKAN_GITHUB_TOKEN`；`plugin.Config`/`server.Config` 的 `GitHubToken`、`GitHubAPI`、`GitHubRaw`、`GitHubClient`（后三者供测试覆盖）。
 
 **MCP**：新增 `preview_plugin`、`get_plugin_source`、`update_plugin_source`（共 26 个工具）。`preview_plugin` 在 `error` 非空时以 `isError` 返回结构化结果。MCP 不提供市场工具（第三方浏览只在 UI/REST 中）。

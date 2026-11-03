@@ -22,6 +22,7 @@ func (s *Server) pluginRoutes() {
 	m.HandleFunc("POST /api/plugins/preview", s.guard(permAdmin, s.handlePluginPreview))
 	m.HandleFunc("GET /api/plugins/market", s.guard(permAdmin, s.handlePluginMarket))
 	m.HandleFunc("GET /api/plugins/market/repo", s.guard(permAdmin, s.handlePluginMarketRepo))
+	m.HandleFunc("POST /api/plugins/market/cache/clear", s.guard(permAdmin, s.handlePluginMarketClear))
 	m.HandleFunc("GET /api/plugins/search", s.guard(permRead, s.handlePluginSearch))
 	m.HandleFunc("GET /api/plugins/wallpaper/{plugin}/{source}", s.guard(permRead, s.handlePluginWallpaper))
 	m.HandleFunc("GET /api/plugins/{id}/source", s.guard(permAdmin, s.handlePluginSource))
@@ -154,6 +155,11 @@ func (s *Server) handlePluginMarketRepo(w http.ResponseWriter, r *http.Request, 
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, r, http.StatusOK, res)
+}
+
+func (s *Server) handlePluginMarketClear(w http.ResponseWriter, r *http.Request, _ Role) {
+	s.plugins.ClearMarketCache()
+	writeJSON(w, r, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handlePluginPatch(w http.ResponseWriter, r *http.Request, _ Role) {

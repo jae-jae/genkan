@@ -41,6 +41,7 @@ export type ModalState =
   // other plugin dialogs reuse this kind: it is the one App.tsx already renders (via the lazy Plugins chunk)
   | { kind: 'plugin-perm'; dlg: 'source'; plugin: PluginInfo }
   | { kind: 'plugin-perm'; dlg: 'batch' | 'ai' }
+  | { kind: 'plugin-perm'; dlg: 'catalog'; id: string }
   | {
       kind: 'confirm'
       title: string
@@ -132,15 +133,15 @@ export function toastError(e: unknown) {
 
 // ---------- bootstrap ----------
 let inflight = false
-let again = false
+let want = 0 // bumped by every load() call
 export async function load(): Promise<void> {
-  if (inflight) {
-    again = true
-    return
-  }
+  const mine = ++want
+  if (inflight) return // the running request is now stale (want moved on): its answer is dropped and the finally block fetches again
   inflight = true
   try {
     const b = await get<Bootstrap>('/api/bootstrap')
+    // a reload was requested while this one was in flight (an SSE change racing a PATCH): this response may predate the change
+    if (mine !== want) return
     batch(() => {
       role.value = b.auth.role
       setupRequired.value = b.auth.setup_required
@@ -165,10 +166,7 @@ export async function load(): Promise<void> {
     if (!loaded.value) loadError.value = true
   } finally {
     inflight = false
-    if (again) {
-      again = false
-      load()
-    }
+    if (mine !== want) load()
   }
 }
 

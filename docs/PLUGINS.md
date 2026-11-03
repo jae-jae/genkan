@@ -293,3 +293,40 @@ type Block =
 - 数据文件里的 `plugins[]` 记录多一个 `lang`（`js`|`ts`）字段。
 - 运行时池：每次调用独占一个运行时，成功结束的运行时放回池（每插件最多 2 个空闲，5 分钟无调用释放）；超时、出错或钩子完成后仍有残留定时器的运行时直接丢弃。插件不应依赖 JS 全局变量保存状态（请用 `genkan.storage`）。
 - Docker 镜像是 `FROM scratch`：二进制内置了 `time/tzdata`（约 450 KB），world-clock 才能使用 IANA 时区。
+
+## 11. 第二轮需求（v2）
+
+### 11.1 小组件布局（拖拽、自由尺寸、紧凑排列）
+
+- `WidgetInstance` 新增 **`w`**（列宽，整数 0–6；0 = 按 manifest `size` 取默认：s→2、m→3、l→6）与 **`h`**（高度，像素整数；0 = 自动按内容高度；否则 80–1200）。`POST /api/widgets`、`PATCH /api/widgets/{id}`、MCP `add_widget`/`update_widget`、导出导入都支持这两个字段；越界值钳制到范围内。
+- 前端网格：桌面 6 列；≤ 1100px 4 列；≤ 700px 2 列；≤ 480px 1 列。窄屏下 `w` 按比例换算并钳制（`ceil(w * cols / 6)`）。采用"瀑布流"紧凑排列：`grid-auto-flow: row dense` + 细粒度行单位（例如 8px 行 + 行间距），每张卡片 row-span 由 `h`（固定高度）或 ResizeObserver 测得的内容高度（`h=0`）计算，消除卡片下方空洞。固定高度时内容超出可在卡片内滚动。
+- 编辑模式：
+  - "添加小组件"卡片放在**最前面**。
+  - 拖拽卡片改变顺序（Pointer Events，参考 `dnd.ts` 现有实现，支持触屏），松手后 `POST /api/widgets/reorder`。
+  - 卡片右下角有缩放手柄：横向按列吸附、纵向按行单位吸附，拖动时实时预览，松手 `PATCH {w,h}`。双击手柄 = 恢复自动高度（`h:0`）。
+- 小组件**右键菜单**（复用 `ContextMenu.tsx`；触屏长按）：刷新、打开链接（view 有 link 时）、配置、尺寸（小/中/大/整行 + 自动高度）、显示范围（当前工作区 / 所有工作区）、删除。访客只有"刷新""打开链接"。
+- **页面右键菜单**新增"添加小组件"（管理员）。
+- 顶栏右上角：用**插件图标**（`puzzle`）替换 AI 图标，点击打开 设置→插件；AI 入口移入设置按钮的下拉菜单（MainMenu，位于"设置"上方）。
+
+### 11.2 源码查看/编辑与安装前预览
+
+- `PUT /api/plugins/{id}/source`（admin）：`{ source, lang? }` 更新已安装插件源码；manifest.id 必须等于 `{id}`；保留启用状态、配置与实例；返回 `PluginInfo`；校验失败 400，错误信息尽量带行列号。
+- `POST /api/plugins/preview`（admin）：body 与安装相同（`{source,lang}` | `{url}` | `{catalog}`），**不安装**，返回
+  `{ plugin: PluginInfo | null /* 仅 manifest 派生字段 */, source, lang, installed: bool, installed_version?: string, error?: string }`。用于安装前查看源码与权限。
+- 前端：
+  - 已安装插件行增加"源码"按钮 → 源码编辑器弹窗（纯 textarea + 行号栏，等宽字体，Tab 插入两个空格，Ctrl/⌘+S 保存；无新依赖，懒加载）。保存调用 `PUT .../source`，显示错误；附"试运行"面板（选择钩子/目标，调用 `/test`，展示 JSON 结果、错误、日志、耗时）。
+  - 安装流程（内置目录、URL、粘贴、第三方）都提供"预览源码"按钮（默认折叠不展示源码），权限确认弹窗中也有该按钮。
+
+### 11.3 AI 开发插件
+
+- 新文档 **`docs/PLUGIN_DEV.md`**（英文为主，面向 AI 编码助手）：插件开发完整指南——文件格式、manifest、ctx、宿主 API、返回值、限制、通过 REST 的"编写 → 安装(`enable:false`) → test → 看日志 → 修改 → 启用 → 添加小组件"闭环、调试技巧、常见错误、完整示例、发布到 GitHub 的约定（11.4）。GitHub 地址：`https://github.com/jae-jae/genkan/blob/main/docs/PLUGIN_DEV.md`，原始文件：`https://raw.githubusercontent.com/jae-jae/genkan/main/docs/PLUGIN_DEV.md`。Skill（`skills/genkan/SKILL.md`、`reference.md`）中加入指向它的说明。
+- 插件页"添加插件"旁边新增"用 AI 开发"按钮 → 弹窗三步：① 先到 设置→AI 按提示安装 Genkan Skill（带跳转按钮）；② 复制提示词（中/英随界面语言，包含上面的文档地址、要求先读文档、用 Skill 的 REST API 安装为禁用状态并 test 通过后再启用、完成后告诉我插件 id）；③ 在提示词末尾的占位处写上你的需求，发给 AI。
+
+### 11.4 第三方插件（GitHub）
+
+- 约定：仓库加 topic **`genkan-plugin`**。插件文件为仓库内任意 `.js`/`.ts`（≤ 512 KiB，含 `export const manifest`），扫描时跳过 `node_modules/`、`.github/`、`test(s)/`、`dist/` 以外的隐藏目录；若仓库根目录有 `genkan-plugins.json`（`{ "plugins": ["path/a.js", ...] }`）则只用其中列出的文件。最多 40 个候选文件。
+- `GET /api/plugins/market?sort=stars|updated&q=&page=`（admin）：服务端调用 GitHub Search API（`topic:genkan-plugin` + 可选关键字），缓存 10 分钟。返回 `{ items: { repo, description, stars, updated_at, html_url, owner_avatar, default_branch }[], total, cached_at, error? }`。
+- `GET /api/plugins/market/repo?repo=owner/name`（admin）：扫描仓库（git trees API + raw.githubusercontent.com，并发 ≤ 4），对每个候选文件编译并校验 manifest，缓存 10 分钟。返回 `{ repo, default_branch, plugins: { path, url /* raw URL，作为安装用的 source_url */, plugin: PluginInfo | null, error?, installed: bool, installed_version?: string }[] }`。
+- 安装沿用 `POST /api/plugins {url}`（因此记录 `source_url`，可"检查更新"）。前端支持勾选多个/全部安装，逐个安装并汇总结果；安装前同样走权限确认（可合并为一次确认，列出所有插件的权限）。
+- 可选环境变量 `GENKAN_GITHUB_TOKEN` 提高 GitHub API 限额。只有打开"第三方"标签时服务端才访问 GitHub；GitHub 不可达时返回 `error` 而非 5xx 页面。
+- 前端：添加插件弹窗新增"第三方"标签：搜索框、排序（Star / 最近更新）、仓库卡片（头像、名称、描述、star、更新时间、GitHub 链接）、"查看插件"→ 展开扫描结果列表（复选框、名称、能力徽章、版本、已安装状态、预览源码）→"安装选中 / 全部安装"。显著标注"第三方插件未经审核，请检查权限和源码"。

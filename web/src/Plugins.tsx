@@ -1,31 +1,40 @@
 import { signal } from '@preact/signals'
 import { useEffect, useState } from 'preact/hooks'
-import { del, get, patch, post } from './api'
+import { del, get, patch } from './api'
 import { ConfigFields, useConfigForm } from './ConfigForm'
 import { Icon } from './icons'
-import { LUCIDE } from './lucide'
+import { loadPluginMarket, loadPluginSource, useChunk } from './lazy'
 import { Modal, Switch } from './parts'
-import { t } from './i18n'
-import { closeModal, load, showOver, toast, toastError, version, type ModalState } from './store'
-import type { CatalogItem, ConfigField, PluginInfo, PluginLog } from './types'
-import { hueOf, safeHref } from './util'
+import { lang, t } from './i18n'
+import { closeModal, load, modal, openSettings, settingsTab, showOver, toast, toastError, version, type ModalState } from './store'
+import type { CatalogItem, PluginInfo, PluginLog } from './types'
+import { copyText, safeHref } from './util'
+import {
+  Badges,
+  InstalledSource,
+  PermList,
+  PlIcon,
+  PreviewPanel,
+  addTab,
+  batch,
+  busy,
+  hosts,
+  install,
+  linksPerm,
+  list,
+  loadList,
+  needsConfig,
+  open,
+  progress,
+  schemaOf,
+  setEnabled,
+  usePreview,
+  view,
+} from './pluginKit'
 
-// ---- state lives at module level: the Settings modal is unmounted while a confirm / permission dialog is stacked on top ----
-const list = signal<PluginInfo[] | null>(null)
+type PermState = Extract<ModalState, { kind: 'plugin-perm' }>
+
 const catalog = signal<CatalogItem[] | null>(null)
-const view = signal<'list' | 'add'>('list')
-const addTab = signal<'catalog' | 'url' | 'source'>('catalog')
-const open = signal<{ id: string; panel: 'config' | 'logs' } | null>(null)
-const busy = signal('')
-
-async function loadList() {
-  try {
-    list.value = (await get<PluginInfo[] | null>('/api/plugins')) || []
-  } catch (e) {
-    list.value ??= []
-    toastError(e)
-  }
-}
 async function loadCatalog() {
   try {
     catalog.value = (await get<CatalogItem[] | null>('/api/plugins/catalog')) || []
@@ -34,65 +43,25 @@ async function loadCatalog() {
   }
 }
 
-const plIcon = (n?: string) => (n && LUCIDE[n] ? n : 'puzzle')
-const hosts = (p: PluginInfo) => p.permissions?.fetch || []
-const linksPerm = (p: PluginInfo) => p.permissions?.links || ''
-const schemaOf = (p: PluginInfo) => p.config_schema || []
-const hasUrlFetch = (p: PluginInfo) => [...schemaOf(p), ...(p.widgets || []).flatMap((w) => w.config || [])].some((f) => f.type === 'url' && f.allowFetch)
-const permKey = (p: PluginInfo) => JSON.stringify([hosts(p).slice().sort(), linksPerm(p), hasUrlFetch(p)])
-const needsConfig = (p: PluginInfo) => schemaOf(p).some((f: ConfigField) => f.required && f.type !== 'boolean')
-
-async function setEnabled(p: PluginInfo, enabled: boolean) {
-  busy.value = p.id
-  try {
-    await patch('/api/plugins/' + p.id, { enabled })
-    await loadList()
-    load()
-    return true
-  } catch (e) {
-    toastError(e)
-    return false
-  } finally {
-    busy.value = ''
-  }
-}
-
-/**
- * Install flow (documented in web/TESTIDS.md): the source is POSTed with `enable:false` so that no plugin code can run before
- * the admin has seen what it may access. The response carries the manifest, so we then show a permission dialog
- * (fetch hosts, links access) and PATCH `enabled:true` on confirm. Plugins that request nothing, and updates of an already
- * enabled plugin whose permissions did not change, are enabled right away.
- */
-async function install(body: Record<string, unknown>, key: string): Promise<boolean> {
-  busy.value = key
-  try {
-    const before = list.value || (await get<PluginInfo[] | null>('/api/plugins').catch(() => null)) || []
-    const info = await post<PluginInfo>('/api/plugins', { ...body, enable: false })
-    const prev = before.find((x) => x.id === info.id)
-    await loadList()
-    load()
-    view.value = 'list'
-    const risky = hosts(info).length > 0 || !!linksPerm(info) || hasUrlFetch(info)
-    if (!risky || (prev?.enabled && permKey(prev) === permKey(info))) {
-      if (await setEnabled(info, true)) {
-        toast(t(prev ? 'plugin.updated' : 'plugin.installed', { name: info.name }), 'success')
-        if (needsConfig(info)) open.value = { id: info.id, panel: 'config' }
-      }
-    } else showOver({ kind: 'plugin-perm', plugin: info, fresh: !prev })
-    return true
-  } catch (e) {
-    toastError(e)
-    return false
-  } finally {
-    busy.value = ''
-  }
-}
-
 // ---------- permission confirmation (stacked over Settings) ----------
-export function PermModal({ state }: { state: Extract<ModalState, { kind: 'plugin-perm' }> }) {
+/** The one modal kind App.tsx renders for plugins: it dispatches on `dlg` (source editor / combined review / Develop with AI). */
+export function PermModal({ state }: { state: PermState }) {
+  if ('dlg' in state) {
+    if (state.dlg === 'source') return <SourceHost plugin={state.plugin} />
+    if (state.dlg === 'batch') return <BatchModal />
+    return <DevAiModal />
+  }
+  return <SingleModal state={state} />
+}
+
+function SourceHost({ plugin }: { plugin: PluginInfo }) {
+  const m = useChunk(loadPluginSource)
+  return m ? <m.default plugin={plugin} onSaved={() => void (loadList(), load())} /> : null
+}
+
+function SingleModal({ state }: { state: Extract<PermState, { fresh: boolean }> }) {
   const p = state.plugin
-  const hs = hosts(p)
-  const lp = linksPerm(p)
+  const [src, setSrc] = useState(false)
   const allow = async () => {
     closeModal()
     if (await setEnabled(p, true)) {
@@ -106,6 +75,7 @@ export function PermModal({ state }: { state: Extract<ModalState, { kind: 'plugi
       onClose={closeModal}
       testid="plugin-perm-modal"
       focusFirst={false}
+      wide={src}
       footer={
         <>
           <button class="btn" data-testid="plugin-perm-cancel" onClick={closeModal}>
@@ -128,69 +98,216 @@ export function PermModal({ state }: { state: Extract<ModalState, { kind: 'plugi
       </div>
       {p.description && <p class="hint">{p.description}</p>}
       <h3 class="sub first">{t('perm.requests')}</h3>
-      <ul class="pl-perms" data-testid="plugin-perms">
-        {hs.map((h) =>
-          h === '*' ? (
-            <li key={h} class="pl-perm warn" data-testid="plugin-perm-any">
-              <Icon n="triangle-alert" size={16} />
-              <span>
-                <code class="warn-code">*</code> {t('perm.fetchAny')}
-              </span>
-            </li>
-          ) : (
-            <li key={h} class="pl-perm" data-testid="plugin-perm-host">
-              <Icon n="globe" size={16} />
-              <span>
-                {t('perm.fetchHost')} <code>{h}</code>
-              </span>
-            </li>
-          ),
-        )}
-        {hasUrlFetch(p) && (
-          <li class="pl-perm" data-testid="plugin-perm-urlfields">
-            <Icon n="network" size={16} />
-            <span>{t('perm.fetchUser')}</span>
-          </li>
-        )}
-        {lp && (
-          <li class={'pl-perm' + (lp === 'write' ? ' warn' : '')} data-testid="plugin-perm-links" data-level={lp}>
-            <Icon n={lp === 'write' ? 'triangle-alert' : 'bookmark'} size={16} />
-            <span>{t(lp === 'write' ? 'perm.linksWrite' : 'perm.linksRead')}</span>
-          </li>
-        )}
-      </ul>
+      <PermList p={p} />
       <p class="hint">{t('perm.note')}</p>
       {!state.fresh && <p class="hint">{t('perm.updateNote')}</p>}
+      <button class="btn sm" aria-expanded={src} data-testid="plugin-perm-source-btn" onClick={() => setSrc(!src)}>
+        <Icon n="eye" size={14} />
+        {src ? t('pv.hide') : t('pv.btn')}
+      </button>
+      {src && (
+        <div class="pv-inline" data-testid="plugin-perm-source">
+          <InstalledSource id={p.id} />
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+/** One combined review for everything a multi-install put on the server (disabled). The admin can leave individual plugins disabled. */
+function BatchModal() {
+  const items = batch.value
+  const [chosen, setChosen] = useState<Record<string, boolean>>(() => Object.fromEntries(items.map((i) => [i.info.id, true])))
+  const [srcOpen, setSrcOpen] = useState<Record<string, boolean>>({})
+  const n = items.filter((i) => chosen[i.info.id]).length
+  const allow = async () => {
+    const todo = items.filter((i) => chosen[i.info.id])
+    closeModal()
+    let ok = 0
+    let cfg: PluginInfo | undefined
+    for (const it of todo) {
+      if (await setEnabled(it.info, true)) {
+        ok++
+        if (!cfg && needsConfig(it.info)) cfg = it.info
+      }
+    }
+    if (ok) toast(t('mk.enabledN', { n: ok }), 'success')
+    if (!progress.value?.failed.length) view.value = 'list'
+    if (cfg) open.value = { id: cfg.id, panel: 'config' }
+  }
+  return (
+    <Modal
+      title={t('batch.title', { n: items.length })}
+      onClose={closeModal}
+      wide
+      testid="plugin-batch-modal"
+      focusFirst={false}
+      footer={
+        <>
+          <button class="btn" data-testid="plugin-batch-cancel" onClick={closeModal}>
+            {t('perm.keepAll')}
+          </button>
+          <button class="btn primary" data-testid="plugin-batch-allow" disabled={!n} onClick={allow}>
+            {t('batch.allow', { n })}
+          </button>
+        </>
+      }
+    >
+      <p class="warn-box" role="note">
+        <Icon n="triangle-alert" size={16} />
+        <span>{t('mk.warn')}</span>
+      </p>
+      <p class="hint">{t('batch.hint')}</p>
+      <ul class="pl-batch" data-testid="plugin-batch-list">
+        {items.map(({ info: p, fresh }) => {
+          const so = !!srcOpen[p.id]
+          return (
+            <li key={p.id} class="pl-bitem" data-testid="plugin-perm-item" data-plugin-id={p.id}>
+              <div class="pl-bhead">
+                <input
+                  type="checkbox"
+                  class="mk-chk"
+                  aria-label={t('plugin.enable', { name: p.name })}
+                  data-testid="plugin-perm-check"
+                  checked={!!chosen[p.id]}
+                  onChange={(e) => setChosen({ ...chosen, [p.id]: (e.target as HTMLInputElement).checked })}
+                />
+                <PlIcon p={p} size={32} />
+                <div class="pl-main">
+                  <div class="pl-name">
+                    <b>{p.name}</b>
+                    <small>v{p.version}</small>
+                    {!fresh && <span class="pl-tag">{t('batch.update')}</span>}
+                    <Badges p={p} />
+                  </div>
+                  {p.author && <small class="pl-by">{t('plugin.by', { author: p.author })}</small>}
+                </div>
+                <button class="btn sm" aria-expanded={so} data-testid="plugin-perm-source-btn" onClick={() => setSrcOpen({ ...srcOpen, [p.id]: !so })}>
+                  <Icon n="eye" size={14} />
+                  {so ? t('pv.hide') : t('pv.btn')}
+                </button>
+              </div>
+              <PermList p={p} />
+              {so && (
+                <div class="pv-inline" data-testid="plugin-perm-source">
+                  <InstalledSource id={p.id} />
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      <p class="hint">{t('perm.note')}</p>
+    </Modal>
+  )
+}
+
+// ---------- Develop with AI (docs/PLUGINS.md §11.3) ----------
+const GUIDE_RAW = 'https://raw.githubusercontent.com/jae-jae/genkan/main/docs/PLUGIN_DEV.md'
+const GUIDE_WEB = 'https://github.com/jae-jae/genkan/blob/main/docs/PLUGIN_DEV.md'
+
+/** The prompt the user sends to their AI assistant; the last line is a placeholder for the requirement. */
+export function devPrompt(l: 'zh' | 'en'): string {
+  return l === 'zh'
+    ? [
+        '我想开发一个 Genkan 插件，请按以下步骤做：',
+        '',
+        `1. 先阅读插件开发指南，并严格遵循：${GUIDE_RAW}`,
+        '2. 使用 Genkan Skill（通过它的 REST API 操作我的 Genkan 实例）循环开发：以禁用状态安装插件（POST /api/plugins，enable:false），反复调用 POST /api/plugins/{id}/test 直到通过，并查看 GET /api/plugins/{id}/logs；出错就修改后重新安装。',
+        '3. 测试通过后再启用插件（PATCH /api/plugins/{id}，{"enabled":true}）；如果是小组件插件，再把小组件添加到我的页面（POST /api/widgets）。',
+        '4. 完成后告诉我插件 id。不要输出 API token。',
+        '',
+        '我的需求：',
+        DEV_PLACEHOLDER.zh,
+      ].join('\n')
+    : [
+        'I want to develop a Genkan plugin. Please do the following:',
+        '',
+        `1. Read the plugin development guide first and follow it exactly: ${GUIDE_RAW}`,
+        '2. Use the Genkan Skill (its REST API against my Genkan instance) to build it in a loop: install the plugin DISABLED (POST /api/plugins with enable:false), run POST /api/plugins/{id}/test until it passes, check GET /api/plugins/{id}/logs, and fix and reinstall whenever something fails.',
+        '3. Only once the test passes, enable it (PATCH /api/plugins/{id} with {"enabled":true}). If it is a widget plugin, also add the widget to my page (POST /api/widgets).',
+        '4. When you are done, tell me the plugin id. Never print the API token.',
+        '',
+        'My requirement:',
+        DEV_PLACEHOLDER.en,
+      ].join('\n')
+}
+const DEV_PLACEHOLDER = {
+  zh: '【在这里写下你想要的插件，例如：一个显示比特币价格的小组件】',
+  en: '[Describe the plugin you want here, e.g. a widget that shows the Bitcoin price]',
+}
+
+function DevAiModal() {
+  const l = lang.value
+  const prompt = devPrompt(l)
+  const [ok, setOk] = useState(false)
+  const copy = () =>
+    copyText(prompt).then((r) => {
+      if (!r) return toast(t('err.copy'), 'error')
+      toast(t('common.copied'), 'success')
+      setOk(true)
+      setTimeout(() => setOk(false), 1800)
+    })
+  const toAi = () => {
+    closeModal()
+    settingsTab.value = 'ai'
+    if (modal.value?.kind !== 'settings') openSettings('ai')
+  }
+  const ph = DEV_PLACEHOLDER[l]
+  const body = prompt.slice(0, prompt.length - ph.length)
+  return (
+    <Modal title={t('dev.title')} onClose={closeModal} testid="plugin-dev-modal" focusFirst={false} footer={<button class="btn" data-testid="plugin-dev-close" onClick={closeModal}>{t('common.close')}</button>}>
+      <p class="hint first">{t('dev.intro')}</p>
+      <ol class="dev-steps">
+        <li data-testid="dev-step-1">
+          <span class="dev-n">1</span>
+          <div class="dev-c">
+            <b>{t('dev.s1')}</b>
+            <p class="hint">{t('dev.s1d')}</p>
+            <button class="btn sm" data-testid="dev-open-ai" onClick={toAi}>
+              <Icon n="bot" size={14} />
+              {t('dev.openAi')}
+            </button>
+          </div>
+        </li>
+        <li data-testid="dev-step-2">
+          <span class="dev-n">2</span>
+          <div class="dev-c">
+            <b>{t('dev.s2')}</b>
+            <p class="hint">
+              {t('dev.s2d')}{' '}
+              <a href={GUIDE_WEB} target="_blank" rel="noopener noreferrer">
+                {t('dev.guide')}
+              </a>
+            </p>
+            <div class="code wrap">
+              <pre data-testid="dev-prompt" tabIndex={0}>
+                {body}
+                <mark class="dev-ph" data-testid="dev-placeholder">{ph}</mark>
+              </pre>
+              <button type="button" class="code-copy" aria-label={t('common.copy')} title={ok ? t('common.copied') : t('common.copy')} data-testid="dev-copy" onClick={copy}>
+                <Icon n={ok ? 'check' : 'copy'} size={15} />
+              </button>
+            </div>
+            <button class="btn primary sm dev-copybtn" data-testid="dev-copy-btn" onClick={copy}>
+              <Icon n={ok ? 'check' : 'copy'} size={14} />
+              {t('dev.copyPrompt')}
+            </button>
+          </div>
+        </li>
+        <li data-testid="dev-step-3">
+          <span class="dev-n">3</span>
+          <div class="dev-c">
+            <b>{t('dev.s3')}</b>
+            <p class="hint">{t('dev.s3d')}</p>
+          </div>
+        </li>
+      </ol>
     </Modal>
   )
 }
 
 // ---------- list ----------
-function PlIcon({ p, size = 36 }: { p: { id: string; icon?: string; name: string }; size?: number }) {
-  return (
-    <span class="ico ico-lucide pl-ico" style={{ '--s': size + 'px', '--h': hueOf(p.id) } as any}>
-      <Icon n={plIcon(p.icon)} size={Math.round(size * 0.55)} />
-    </span>
-  )
-}
-
-function Badges({ p }: { p: PluginInfo }) {
-  const b: [string, number][] = []
-  if (p.wallpapers?.length) b.push(['wallpaper', p.wallpapers.length])
-  if (p.widgets?.length) b.push(['widget', p.widgets.length])
-  if (p.search) b.push(['search', 1])
-  if (p.schedules?.length) b.push(['schedule', p.schedules.length])
-  return (
-    <span class="pl-badges">
-      {b.map(([k]) => (
-        <span key={k} class="pl-badge" data-kind={k} data-testid="plugin-badge">
-          {t('cap.' + k)}
-        </span>
-      ))}
-    </span>
-  )
-}
-
 function ConfigPanel({ p }: { p: PluginInfo }) {
   const schema = schemaOf(p)
   const form = useConfigForm(schema, p.config, p.secrets_set || [])
@@ -324,6 +441,9 @@ function Row({ p }: { p: PluginInfo }) {
           <button class="ib" aria-pressed={o === 'logs'} aria-label={t('plugin.logs')} title={t('plugin.logs')} data-testid="plugin-logs-btn" onClick={() => toggle('logs')}>
             <Icon n="scroll-text" size={16} />
           </button>
+          <button class="ib" aria-label={t('src.btn')} title={t('src.btn')} data-testid="plugin-source-btn" onClick={() => showOver({ kind: 'plugin-perm', dlg: 'source', plugin: p })}>
+            <Icon n="code" size={16} />
+          </button>
           {p.source_url && (
             <button class="ib" disabled={busy.value === 'u-' + p.id} aria-label={t('plugin.update')} title={t('plugin.update')} data-testid="plugin-update" onClick={() => install({ url: p.source_url }, 'u-' + p.id)}>
               <Icon n="refresh-cw" size={16} />
@@ -342,12 +462,56 @@ function Row({ p }: { p: PluginInfo }) {
 }
 
 // ---------- add ----------
+function PreviewBtn({ on, onClick, testid }: { on: boolean; onClick: () => void; testid: string }) {
+  return (
+    <button type="button" class="btn sm" aria-expanded={on} data-testid={testid} onClick={onClick}>
+      <Icon n="eye" size={14} />
+      {on ? t('pv.hide') : t('pv.btn')}
+    </button>
+  )
+}
+
+function CatalogItemRow({ c }: { c: CatalogItem }) {
+  const b = busy.value
+  const pv = usePreview()
+  return (
+    <li class="pl-cat-item" data-testid="plugin-catalog-item" data-plugin-id={c.id} data-installed={c.installed ? '1' : '0'}>
+      <div class="pl-cat-row">
+        <PlIcon p={c} size={34} />
+        <div class="pl-main">
+          <div class="pl-name">
+            <b>{c.name}</b>
+            <small>v{c.version}</small>
+          </div>
+          <div class="pl-desc">{c.description}</div>
+        </div>
+        <div class="pl-cat-btns">
+          <PreviewBtn on={!!pv.pv} testid="plugin-catalog-preview" onClick={() => pv.toggle({ catalog: c.id })} />
+          <button
+            class={'btn sm' + (c.installed ? '' : ' primary')}
+            data-testid="plugin-catalog-install"
+            disabled={c.installed || !!b}
+            aria-busy={b === 'c-' + c.id}
+            onClick={() => install({ catalog: c.id }, 'c-' + c.id)}
+          >
+            {c.installed ? t('plugin.installedLbl') : t('plugin.install')}
+          </button>
+        </div>
+      </div>
+      {pv.pv && <PreviewPanel key={pv.pv.n} body={pv.pv.body} />}
+    </li>
+  )
+}
+
 function AddView() {
   const tab = addTab.value
   const [url, setUrl] = useState('')
   const [src, setSrc] = useState('')
-  const [lang, setLang] = useState<'js' | 'ts'>('js')
+  const [lg, setLg] = useState<'js' | 'ts'>('js')
+  const urlPv = usePreview()
+  const srcPv = usePreview()
   const cat = catalog.value
+  const market = useChunk(loadPluginMarket, tab === 'market')
   useEffect(() => void loadCatalog(), [version.value])
   const b = busy.value
   return (
@@ -358,7 +522,7 @@ function AddView() {
           {t('common.back')}
         </button>
         <div class="seg seg-sm glass-lite" role="group" aria-label={t('plugin.add')} data-testid="plugin-add-tabs">
-          {(['catalog', 'url', 'source'] as const).map((k) => (
+          {(['catalog', 'url', 'source', 'market'] as const).map((k) => (
             <button key={k} class="seg-b" aria-pressed={tab === k} data-testid={'plugin-add-tab-' + k} onClick={() => (addTab.value = k)}>
               {t('plugin.tab.' + k)}
             </button>
@@ -371,25 +535,7 @@ function AddView() {
           {cat === null && <p class="hint">…</p>}
           <ul class="pl-cat">
             {(cat || []).map((c) => (
-              <li key={c.id} class="pl-cat-item" data-testid="plugin-catalog-item" data-plugin-id={c.id} data-installed={c.installed ? '1' : '0'}>
-                <PlIcon p={c} size={34} />
-                <div class="pl-main">
-                  <div class="pl-name">
-                    <b>{c.name}</b>
-                    <small>v{c.version}</small>
-                  </div>
-                  <div class="pl-desc">{c.description}</div>
-                </div>
-                <button
-                  class={'btn sm' + (c.installed ? '' : ' primary')}
-                  data-testid="plugin-catalog-install"
-                  disabled={c.installed || !!b}
-                  aria-busy={b === 'c-' + c.id}
-                  onClick={() => install({ catalog: c.id }, 'c-' + c.id)}
-                >
-                  {c.installed ? t('plugin.installedLbl') : t('plugin.install')}
-                </button>
-              </li>
+              <CatalogItemRow key={c.id} c={c} />
             ))}
           </ul>
         </div>
@@ -404,28 +550,57 @@ function AddView() {
         >
           <p class="hint">{t('plugin.urlHint')}</p>
           <div class="inline-form">
-            <input type="url" inputMode="url" autocomplete="off" spellcheck={false} placeholder="https://example.com/plugin.js" aria-label={t('plugin.tab.url')} data-testid="plugin-url-input" value={url} onInput={(e) => setUrl((e.target as HTMLInputElement).value)} />
+            <input
+              type="url"
+              inputMode="url"
+              autocomplete="off"
+              spellcheck={false}
+              placeholder="https://example.com/plugin.js"
+              aria-label={t('plugin.tab.url')}
+              data-testid="plugin-url-input"
+              value={url}
+              onInput={(e) => (setUrl((e.target as HTMLInputElement).value), urlPv.close())}
+            />
+            <button class="btn" type="button" aria-expanded={!!urlPv.pv} data-testid="plugin-url-preview" disabled={!url.trim()} onClick={() => urlPv.toggle({ url: url.trim() })}>
+              <Icon n="eye" size={14} />
+              {urlPv.pv ? t('pv.hide') : t('pv.btn')}
+            </button>
             <button class="btn primary" type="submit" data-testid="plugin-url-install" disabled={!url.trim() || !!b}>
               {t('plugin.install')}
             </button>
           </div>
+          {urlPv.pv && <PreviewPanel key={urlPv.pv.n} body={urlPv.pv.body} />}
         </form>
       )}
       {tab === 'source' && (
         <div class="form">
           <p class="hint">{t('plugin.sourceHint')}</p>
-          <textarea class="pl-src" spellcheck={false} placeholder={'export const manifest = {\n  id: "my-plugin", name: "My plugin", version: "1.0.0",\n  search: { name: "Demo" },\n}\nexport async function search(ctx) { return [] }'} aria-label={t('plugin.tab.source')} data-testid="plugin-source-input" value={src} onInput={(e) => setSrc((e.target as HTMLTextAreaElement).value)} />
+          <textarea
+            class="pl-src"
+            spellcheck={false}
+            placeholder={'export const manifest = {\n  id: "my-plugin", name: "My plugin", version: "1.0.0",\n  search: { name: "Demo" },\n}\nexport async function search(ctx) { return [] }'}
+            aria-label={t('plugin.tab.source')}
+            data-testid="plugin-source-input"
+            value={src}
+            onInput={(e) => (setSrc((e.target as HTMLTextAreaElement).value), srcPv.close())}
+          />
           <div class="inline-form">
-            <select aria-label={t('plugin.lang')} data-testid="plugin-source-lang" value={lang} onChange={(e) => setLang((e.target as HTMLSelectElement).value as 'js' | 'ts')} style={{ width: 'auto' }}>
+            <select aria-label={t('plugin.lang')} data-testid="plugin-source-lang" value={lg} onChange={(e) => (setLg((e.target as HTMLSelectElement).value as 'js' | 'ts'), srcPv.close())} style={{ width: 'auto' }}>
               <option value="js">JavaScript</option>
               <option value="ts">TypeScript</option>
             </select>
-            <button class="btn primary" data-testid="plugin-source-install" disabled={!src.trim() || !!b} onClick={() => install({ source: src, lang }, 'src')}>
+            <button class="btn" type="button" aria-expanded={!!srcPv.pv} data-testid="plugin-source-preview" disabled={!src.trim()} onClick={() => srcPv.toggle({ source: src, lang: lg })}>
+              <Icon n="eye" size={14} />
+              {srcPv.pv ? t('pv.hide') : t('pv.check')}
+            </button>
+            <button class="btn primary" data-testid="plugin-source-install" disabled={!src.trim() || !!b} onClick={() => install({ source: src, lang: lg }, 'src')}>
               {t('plugin.install')}
             </button>
           </div>
+          {srcPv.pv && <PreviewPanel key={srcPv.pv.n} body={srcPv.pv.body} />}
         </div>
       )}
+      {tab === 'market' && (market ? <market.default /> : <p class="hint">…</p>)}
     </div>
   )
 }
@@ -438,10 +613,16 @@ export function PluginsTab() {
     <div data-testid="plugins-tab">
       <div class="gal-top">
         <p class="hint top">{t('plugin.intro')}</p>
-        <button class="btn primary sm" data-testid="plugin-add-btn" onClick={() => (view.value = 'add')}>
-          <Icon n="plus" size={14} />
-          {t('plugin.add')}
-        </button>
+        <div class="pl-top-btns">
+          <button class="btn sm" data-testid="plugin-dev-ai-btn" onClick={() => showOver({ kind: 'plugin-perm', dlg: 'ai' })}>
+            <Icon n="sparkles" size={14} />
+            {t('dev.btn')}
+          </button>
+          <button class="btn primary sm" data-testid="plugin-add-btn" onClick={() => (view.value = 'add')}>
+            <Icon n="plus" size={14} />
+            {t('plugin.add')}
+          </button>
+        </div>
       </div>
       {l && !l.length && (
         <div class="pl-empty" data-testid="plugin-empty">

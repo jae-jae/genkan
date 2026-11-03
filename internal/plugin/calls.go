@@ -82,6 +82,8 @@ type WidgetOut struct {
 	WorkspaceID string         `json:"workspace_id"`
 	Config      map[string]any `json:"config"`
 	Sort        int            `json:"sort"`
+	W           int            `json:"w"`
+	H           int            `json:"h"`
 	SecretsSet  []string       `json:"secrets_set,omitempty"`
 }
 
@@ -98,7 +100,7 @@ func (m *Manager) Present(ws []store.WidgetInstance, admin bool) []WidgetOut {
 			}
 			schemas[w.Plugin] = e
 		}
-		o := WidgetOut{ID: w.ID, Plugin: w.Plugin, Widget: w.Widget, WorkspaceID: w.WorkspaceID, Sort: w.Sort, Config: map[string]any{}}
+		o := WidgetOut{ID: w.ID, Plugin: w.Plugin, Widget: w.Widget, WorkspaceID: w.WorkspaceID, Sort: w.Sort, W: w.W, H: w.H, Config: map[string]any{}}
 		if e != nil && e.man != nil {
 			if d := e.man.widget(w.Widget); d != nil {
 				var set []string
@@ -119,6 +121,8 @@ type WidgetAdd struct {
 	Widget      string         `json:"widget"`
 	WorkspaceID string         `json:"workspace_id"`
 	Config      map[string]any `json:"config"`
+	W           int            `json:"w"` // columns 0..6 (clamped)
+	H           int            `json:"h"` // pixels, 0 = auto, else 80..1200 (clamped)
 }
 
 func (m *Manager) widgetDecl(plugin, widget string) (*entry, *WidgetDecl, error) {
@@ -146,7 +150,7 @@ func (m *Manager) AddWidget(in WidgetAdd) (WidgetOut, error) {
 	if err != nil {
 		return WidgetOut{}, invalidf("%v", err)
 	}
-	w, err := m.st.CreateWidget(store.WidgetInput{Plugin: in.Plugin, Widget: in.Widget, WorkspaceID: in.WorkspaceID, Config: cfg})
+	w, err := m.st.CreateWidget(store.WidgetInput{Plugin: in.Plugin, Widget: in.Widget, WorkspaceID: in.WorkspaceID, Config: cfg, W: in.W, H: in.H})
 	if err != nil {
 		return WidgetOut{}, err
 	}
@@ -158,6 +162,8 @@ type WidgetPatch struct {
 	WorkspaceID *string        `json:"workspace_id"`
 	Config      map[string]any `json:"config"`
 	Sort        *int           `json:"sort"`
+	W           *int           `json:"w"`
+	H           *int           `json:"h"`
 	Merge       bool           `json:"-"`
 }
 
@@ -166,7 +172,7 @@ func (m *Manager) UpdateWidget(id string, p WidgetPatch) (WidgetOut, error) {
 	if !ok {
 		return WidgetOut{}, notFoundf("widget not found: %s", id)
 	}
-	sp := store.WidgetPatch{WorkspaceID: p.WorkspaceID, Sort: p.Sort}
+	sp := store.WidgetPatch{WorkspaceID: p.WorkspaceID, Sort: p.Sort, W: p.W, H: p.H}
 	if p.Config != nil {
 		_, d, err := m.widgetDecl(w.Plugin, w.Widget)
 		if err != nil {

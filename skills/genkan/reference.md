@@ -363,6 +363,40 @@ gk POST /api/plugins '{"catalog":"calculator"}' | jq '{id, enabled}'
 gk GET /api/plugins/calculator/source | jq -r .source | head -5
 ```
 
+### PUT /api/plugins/{id}/source
+
+Replaces the source of an installed plugin (edit, fix, upgrade). Body: `{"source":"<code>","lang":"js"|"ts"}` (`lang` defaults to the plugin's current language). `manifest.id` must stay `{id}`; enabled state, config, widget instances and `source_url` are kept. Validation errors are 400 and include `line:column` for syntax errors (for example `compile error: plugin.js:3:8: SyntaxError: ...`). Response: `PluginInfo`. Run `POST /api/plugins/{id}/test` afterwards.
+
+```bash
+gk GET /api/plugins/my-plugin/source | jq -r .source > my-plugin.js   # edit the file, then:
+jq -n --rawfile src my-plugin.js '{source:$src}' > edit.json
+gk PUT /api/plugins/my-plugin/source @edit.json | jq '{id, version, last_error}'
+```
+
+### POST /api/plugins/preview
+
+Validates a plugin **without installing it**: nothing is written and no hook runs. Body as for install: exactly one of `{"source","lang"}`, `{"url"}` or `{"catalog"}`. Response: `{"plugin":<PluginInfo without config, secrets_set, source_url, last_error and timestamps> | null,"source":"...","lang":"js","installed":false,"installed_version":"1.0.0","error":"..."}`. `plugin` is null and `error` says what is wrong (with `line:column`) when the code does not validate or the URL cannot be downloaded; `installed_version` is only present when the same id is installed. Use it to check permissions (`plugin.permissions`) and code before installing a third-party plugin.
+
+```bash
+gk POST /api/plugins/preview '{"url":"https://raw.githubusercontent.com/owner/repo/main/plugin.js"}' | jq '{error, id: .plugin.id, permissions: .plugin.permissions, installed}'
+```
+
+### GET /api/plugins/market
+
+Searches GitHub repositories with the topic `genkan-plugin` (third-party plugins). Query: `sort=stars|updated` (default `stars`), `q=<keywords>`, `page=<n>` (20 per page). Response: `{"items":[{repo,description,stars,updated_at,html_url,owner_avatar,default_branch}],"total":57,"cached_at":<ms>,"error":"..."}`. Cached for 10 minutes. GitHub failures (rate limit, network) come back as 200 with `error` set and no items; set the `GENKAN_GITHUB_TOKEN` environment variable on the server to raise the GitHub rate limit.
+
+```bash
+gk GET "/api/plugins/market?sort=stars&q=weather" | jq -r '.items[] | "\(.repo)\t\(.stars)\t\(.description)"'
+```
+
+### GET /api/plugins/market/repo
+
+Scans one repository (`?repo=owner/name`, strictly validated) for plugin files and validates each one. A root `genkan-plugins.json` (`{"plugins":["path/a.js"]}`) lists the files; without it every `.js`/`.ts` file that looks like a plugin is checked (not under `node_modules`, `test(s)`, `dist` or hidden directories; at most 40). Response: `{"repo","default_branch","plugins":[{path,url,plugin:<PluginInfo>|null,error,installed,installed_version}],"cached_at":<ms>,"error":"..."}`. `url` is the raw file URL: install it with `POST /api/plugins {"url": ...}` (this records `source_url`), after reviewing it with `POST /api/plugins/preview`. Third-party code is not reviewed: check the permissions first. Cached for 10 minutes; failures set `error`.
+
+```bash
+gk GET "/api/plugins/market/repo?repo=owner/genkan-weather" | jq '.plugins[] | {path, id: .plugin.id, error, installed}'
+```
+
 ### PATCH /api/plugins/{id}
 
 Body: `{"enabled":true}` and/or `{"config":{...}}`. `config` **replaces** the plugin-level config: send every field you want to keep. Unknown keys are dropped; invalid values or missing required fields give 400. Secret fields: `""` or omitting the key keeps the stored value, `null` clears it. Response: `PluginInfo`.
@@ -399,7 +433,7 @@ gk POST /api/plugins/world-clock/test '{"hook":"widget","config":{"zones":"Asia/
 
 ### POST /api/widgets
 
-Places a widget instance. Body: `{"plugin":"weather","widget":"current","workspace_id":"","config":{...}}` (`workspace_id` empty = shown in every workspace; `config` follows the widget's schema). Response: `{id, plugin, widget, workspace_id, config, sort, secrets_set?}` (secret values blanked).
+Places a widget instance. Body: `{"plugin":"weather","widget":"current","workspace_id":"","config":{...},"w":0,"h":0}` (`workspace_id` empty = shown in every workspace; `config` follows the widget's schema). Optional layout: `w` is the width in columns of a 6-column grid (integer 0-6, `0` = default from the manifest size: s=2, m=4, l=6), `h` the height in pixels (`0` = automatic by content, otherwise 80-1200); out-of-range values are clamped. Response: `{id, plugin, widget, workspace_id, config, sort, w, h, secrets_set?}` (secret values blanked).
 
 ```bash
 gk POST /api/plugins '{"catalog":"world-clock"}' > /dev/null
@@ -408,7 +442,7 @@ W=$(gk POST /api/widgets '{"plugin":"world-clock","widget":"clock","config":{"zo
 
 ### PATCH /api/widgets/{id}
 
-Body: any of `workspace_id`, `sort`, `config` (replaces the instance config; secrets: `""` keeps, `null` clears). Response: the instance.
+Body: any of `workspace_id`, `sort`, `w`, `h` (layout, see POST /api/widgets), `config` (replaces the instance config; secrets: `""` keeps, `null` clears). Response: the instance.
 
 ```bash
 gk PATCH /api/widgets/$W '{"config":{"zones":"UTC, Europe/Berlin"}}' | jq .config

@@ -29,11 +29,12 @@ Both are glass dropdowns: trigger button `aria-haspopup="menu"` + `aria-expanded
 | `ws-add` | "New workspace" (admin, ALWAYS present: not only in edit mode) |
 | `ws-manage` | "Manage workspaces…" (admin, last item; opens Settings → 内容 tab) |
 | `edit-toggle` | edit mode toggle, leftmost of the top-right group (`aria-pressed`; admin only) |
-| `ai-btn` | AI button (bot icon, `aria-label="AI"`, admin only): opens Settings on the AI tab; between the edit toggle and the main menu button |
+| `plugins-btn` | plugins button (puzzle icon, admin only): opens Settings on the Plugins tab; between the edit toggle and the main menu button (replaces the former AI icon button) |
 | `menu-btn` | main menu button (sliders icon) |
 | `main-menu` | the open main menu |
 | `sort-control` | the "Sort" `role=group` inside the main menu (admin only) |
 | `sort-frequency`, `sort-recent`, `sort-custom` | sort items (`role=menuitemradio`, `aria-checked`) |
+| `ai-btn` | "AI" item of the main menu (admin; was a top-bar icon button before v2): opens Settings on the AI tab; sits above `settings-btn` |
 | `settings-btn`, `logout-btn` | settings / sign out items (admin); guests get `login-btn` only |
 | `clock` | clock block |
 
@@ -96,7 +97,7 @@ Uploading exactly one file also applies it; several files only add them to the g
 | testid | element |
 |---|---|
 | `ctx-menu-page` | right-click on the page background (not on inputs / text selections / capsules) |
-| `ctx-new-link`, `ctx-new-category`, `ctx-wallpaper` (→ Settings 外观), `ctx-edit-mode` (`menuitemcheckbox`, `aria-checked`), `ctx-ai` (→ Settings AI), `ctx-settings` | admin items of the page menu |
+| `ctx-new-link`, `ctx-new-category`, `ctx-add-widget` (opens `widget-modal`), `ctx-wallpaper` (→ Settings 外观), `ctx-edit-mode` (`menuitemcheckbox`, `aria-checked`), `ctx-ai` (→ Settings AI), `ctx-settings` | admin items of the page menu |
 | `ctx-login` | the only item a guest gets on the page menu |
 | `ctx-menu-link` | right-click on a capsule (desktop popup) / long-press ≈500 ms on touch (bottom sheet at ≤640px, which has no focused item); long-press does not navigate; in edit mode touch long-press is drag |
 | `ctx-open` (same tab), `ctx-open-new`, `ctx-copy-link` | everyone |
@@ -151,12 +152,38 @@ fetch hosts, `links` access or has `url` fields with `allowFetch`, the `plugin-p
 `plugin-perm-allow` PATCHes `enabled:true`, `plugin-perm-cancel` leaves it installed but disabled. Plugins requesting nothing (e.g. calculator) are enabled immediately with a toast,
 and so is an update of an enabled plugin whose permissions did not change. After enabling a plugin with required settings its config panel opens.
 
+**Source editor / preview / Develop with AI / Third-party** (docs/PLUGINS.md §11.2-11.4; all lazy chunks):
+- Row button `plugin-source-btn` opens `plugin-source-modal` (stacked over Settings): `plugin-source-editor` (textarea; line gutter `.ce-gut`; Tab = 2 spaces; Ctrl/Cmd+S saves; `plugin-source-editor-errline` is the red band when an error has `line:col`),
+  `plugin-source-lang` (js/ts), `plugin-source-error` (+ `plugin-source-goto`), `plugin-source-permnote`, `plugin-source-state` (`data-dirty=1|0`), `plugin-source-save`, `plugin-source-close`;
+  closing with unsaved changes shows `plugin-source-confirm` with `plugin-source-keep` / `plugin-source-discard`. `plugin-source-test-toggle` shows the test panel `plugin-test-panel`:
+  `plugin-test-hook`, `plugin-test-target`, `plugin-test-query`, `plugin-test-action`, `plugin-test-params`, `plugin-test-instance`, `plugin-test-config`, `plugin-test-run` (becomes "Save & run" when dirty),
+  `plugin-test-localerror`, result `plugin-test-result` (`data-ok=1|0`) with `plugin-test-status`, `plugin-test-ms`, `plugin-test-error`, `plugin-test-json`, `plugin-test-logs`.
+- Preview (nothing is installed): `plugin-catalog-preview` (per catalog item), `plugin-url-preview`, `plugin-source-preview` (paste tab; "Check & preview"), market `market-plugin-preview`. All toggle a panel
+  (`plugin-preview` / `market-preview`) with `*-name`, `*-error`, the permission list `plugin-perms` and the read-only source `*-code` (textarea `readOnly`). In the permission dialog the button is `plugin-perm-source-btn`, the source `plugin-perm-source`.
+- Install flow decision: installs still POST with `enable:false` and the permission dialog is built from the *installed* manifest (preview is advisory; URL installs download again). `plugin-perm-none` is the "no permissions" row of `plugin-perms`.
+- Develop with AI: `plugin-dev-ai-btn` (next to `plugin-add-btn`) opens `plugin-dev-modal` with `dev-step-1|2|3`, `dev-open-ai` (switches to Settings -> AI), `dev-prompt` (`<pre>`, contains the guide URL; `dev-placeholder` is the requirement placeholder), `dev-copy` / `dev-copy-btn` (copy + toast), `plugin-dev-close`.
+- Third-party: add tab `plugin-add-tab-market` -> `plugin-market` with `market-warning`, `market-search`, sort `market-sort-stars|updated` (`aria-pressed`), `market-error` + `market-retry`, `market-loading`, `market-empty`,
+  `market-list` of `market-repo` (attr `data-repo`, `data-open`) with `market-repo-name`, `market-repo-stars`, `market-repo-updated`, `market-repo-link`, `market-repo-toggle` ("View plugins"), `market-more` (load more).
+  Expanded: `market-scan` (or `market-scan-loading` / `market-scan-error` / `market-scan-empty`) with `market-plugin` rows (attrs `data-path`, `data-installed`, `data-valid`): `market-plugin-check`, `market-plugin-name`, `market-plugin-error`, `market-plugin-installed`, `market-plugin-preview`;
+  `market-select-all`, `market-install-selected`, `market-install-all`, progress `market-progress` (`data-finished`) with `market-progress-text` / `market-progress-summary` / `market-progress-failed` / `market-progress-dismiss`.
+  Installing runs sequentially (`POST /api/plugins {url, enable:false}`) and then ONE `plugin-batch-modal`: `plugin-batch-list` of `plugin-perm-item` (attr `data-plugin-id`) each with `plugin-perm-check`, `plugin-perms`, `plugin-perm-source-btn`; `plugin-batch-allow` enables the ticked ones, `plugin-batch-cancel` leaves all disabled.
+
 **Widget area** (`widget-area`, between the hero and `board`; absent when the workspace has no visible widget, unless admin edit mode; `data-editing=1` in edit mode):
 `widget` (attrs `data-widget-id`, `data-plugin`, `data-widget`, `data-size=s|m|l`, `aria-busy`), `widget-title`, `widget-skeleton` (while the first load runs),
-`widget-error` + `widget-retry`, `widget-refresh` (admin, hover). Instances of disabled plugins are hidden (edit mode: shown dashed with an error, only move/delete).
+`widget-error` + `widget-retry`, `widget-refresh` (admin, hover). Instances of disabled plugins are hidden (edit mode: shown dashed with an error; no edit button).
 Block testids: `widget-text`, `widget-stat`, `widget-stats`, `widget-list` / `widget-list-item`, `widget-kv`, `widget-progress`, `widget-image`, `widget-chart` (attr `data-kind=spark|bar`),
 `widget-row`, `widget-button` (admin only, attr `data-action`; calls the action endpoint, toasts the result, `refresh:true` forces a reload). A divider is a bare `hr.wg-hr`.
-Edit mode (admin): `widget-add` (dashed card), per card `widget-prev-<id>`, `widget-next-<id>` (reorder, no dragging), `widget-edit-<id>`, `widget-delete-<id>` (opens `confirm-modal`).
+Layout (docs/PLUGINS.md 11.1): masonry grid, 6 / 4 / 2 / 1 columns (<=1100 / 700 / 480px), `grid-auto-flow: row dense`, 4px rows. The card `section[data-testid=widget]` sits in a cell `.wgi[data-wid=<id>]`
+(the card plus the gap below it); the card also carries `data-w` (effective columns of 6) and `data-h` (fixed px, 0 = auto). Fixed height: `data-fixed=1`, the `.wg-body` scrolls inside.
+Edit mode (admin): `widget-add` is the FIRST card of the area (dashed); per card `widget-grip-<id>` (drag handle; arrow keys move the card one place, focus stays; a polite live region announces the new position),
+`widget-edit-<id>`, `widget-more-<id>` (opens the widget context menu at the button), `widget-delete-<id>` (opens `confirm-modal`), `widget-resize-<id>` (bottom-right handle).
+The old `widget-prev-<id>` / `widget-next-<id>` arrow buttons are gone. Drag: pointer events (mouse after 5px, touch after a 260ms long press; Esc cancels) on the whole card; while dragging the card stays as a dashed
+placeholder (`.wgi[data-ph]`, area `data-dragging=1`), a ghost (`.dnd-ghost`) follows the pointer and the others re-flow; release POSTs `/api/widgets/reorder`.
+Resize: columns snap horizontally, 8px steps vertically (80-1200), live preview with a size tip (`.wg-size-tip`, cell `data-resizing=1`), release PATCHes `{w,h}`; double-click = `h:0`;
+keys on the handle: Left/Right = one column, Up/Down = 40px, Home/Delete = auto height. Links and buttons inside cards are inert in edit mode.
+`ctx-menu-widget` (right-click on a card; long-press ~500ms on touch outside edit mode, bottom sheet at <=640px): `ctx-widget-refresh`, `ctx-widget-open` (only when the view has a `link`; opens a new tab);
+admin only: `ctx-widget-config` (-> `widget-modal`; not for disabled plugins), `ctx-widget-size-s|m|l|full` (w = 2 / 3 / 4 / 6, `menuitemcheckbox` with `aria-checked`), `ctx-widget-height-auto` (`h:0`),
+`ctx-widget-scope-ws` / `ctx-widget-scope-all` (PATCH `workspace_id` = current workspace / ''), `ctx-widget-delete` (-> `confirm-modal`). Guests only get refresh + open link.
 Data polling: each instance refetches at the widget's `refresh` seconds (min 30); paused while `document.hidden`, refetched on return when stale.
 
 `widget-modal`: picker `widget-picker` with `widget-pick-<pluginId>-<widgetId>` (or `widget-none` + `widget-open-plugins` when no plugin provides widgets) -> form `widget-form`:

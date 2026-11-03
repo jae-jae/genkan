@@ -131,7 +131,16 @@ gk PATCH /api/links/$LINK '{"icon":"lucide:download","health_check":true}' | jq 
 
 ## Plugins
 
-The page can be extended with JavaScript plugins (widgets, wallpaper sources, search providers, scheduled jobs). To add one: `POST /api/plugins` with a built-in `{"catalog":"<id>"}` (see `GET /api/plugins/catalog`), a `{"url":...}` or your own `{"source":...}`; check it with `POST /api/plugins/{id}/test` and the plugin's logs; then place widgets with `POST /api/widgets`. Plugins only reach the hosts they declare, so tell the user which hosts and permissions a plugin asks for (`permissions` in the install response) before enabling one that uses `"*"`. Never put secrets into plugin source; use `secret` config fields. Writing a plugin: see the Plugins section of [reference.md](reference.md) and `docs/PLUGINS.md` in the Genkan repository.
+The page can be extended with JavaScript plugins (widgets, wallpaper sources, search providers, scheduled jobs). To add one: `POST /api/plugins` with a built-in `{"catalog":"<id>"}` (see `GET /api/plugins/catalog`), a `{"url":...}` or your own `{"source":...}`; check it with `POST /api/plugins/{id}/test` and the plugin's logs; then place widgets with `POST /api/widgets`. Plugins only reach the hosts they declare, so tell the user which hosts and permissions a plugin asks for (`permissions` in the install response) before enabling one that uses `"*"`. Never put secrets into plugin source; use `secret` config fields.
+
+### Developing plugins
+
+Before writing a plugin, **read the development guide** (manifest, `ctx`, host API, block types, limits, recipes, error list): `curl -sL https://raw.githubusercontent.com/jae-jae/genkan/main/docs/PLUGIN_DEV.md`. Endpoints are in the Plugins section of [reference.md](reference.md). The loop is always:
+
+1. Install **disabled**: `jq -Rs '{source: ., enable: false}' my-plugin.js > body.json`, then `gk POST /api/plugins @body.json` (new plugins are enabled by default, so never omit `enable`).
+2. `POST /api/plugins/{id}/test` for every hook; read `ok`, `error`, `result.error` and `logs` (and `GET /api/plugins/{id}/logs`). Fix with `PUT /api/plugins/{id}/source`.
+3. Only when the tests pass: `PATCH /api/plugins/{id}` `{"enabled":true}`, add the widget with `POST /api/widgets`, check `GET /api/widgets/{id}/data?force=1`.
+4. When it works, offer to publish it: a public GitHub repo with the topic `genkan-plugin` appears in Genkan's plugin market for everyone. Never publish without asking; the guide has the safe procedure (remove secrets and LAN hosts first).
 
 ## Next
 

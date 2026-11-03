@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jae-jae/genkan/internal/store"
@@ -449,5 +450,227 @@ func TestPluginBootstrapEmptyForVisitors(t *testing.T) {
 	e.anon().mustJSON("GET", "/api/bootstrap", "", &bs)
 	if bs.Plugins == nil || bs.Widgets == nil || len(bs.Plugins) != 0 {
 		t.Fatalf("%+v", bs)
+	}
+}
+
+func TestPluginSourceEditAndPreviewREST(t *testing.T) {
+	e := setup(t)
+	admin := e.admin()
+	admin.mustJSON("POST", "/api/plugins", jsonBody(map[string]any{"source": demoPlugin, "enable": false}), nil)
+	admin.mustJSON("PATCH", "/api/plugins/demo", `{"config":{"note":"keep"}}`, nil)
+	admin.mustJSON("POST", "/api/widgets", `{"plugin":"demo","widget":"w"}`, nil)
+
+	v2 := strings.Replace(demoPlugin, `version: "1.0.0"`, `version: "2.0.0"`, 1)
+	var inf map[string]any
+	admin.mustJSON("PUT", "/api/plugins/demo/source", jsonBody(map[string]any{"source": v2}), &inf)
+	if inf["version"] != "2.0.0" || inf["enabled"] != false || inf["config"].(map[string]any)["note"] != "keep" {
+		t.Fatalf("%v", inf)
+	}
+	var src map[string]string
+	admin.mustJSON("GET", "/api/plugins/demo/source", "", &src)
+	if src["source"] != v2 || src["lang"] != "js" {
+		t.Fatalf("%v", src)
+	}
+	if ws := e.st.Widgets(); len(ws) != 1 {
+		t.Error("widgets must be kept")
+	}
+	// errors
+	code, b := admin.do("PUT", "/api/plugins/demo/source", jsonBody(map[string]any{"source": "export const manifest = {\n  id: \"demo\",\n  name: ;\n};"}))
+	if code != 400 || !strings.Contains(string(b), "3:") {
+		t.Errorf("syntax: %d %s", code, b)
+	}
+	if code, b := admin.do("PUT", "/api/plugins/demo/source", jsonBody(map[string]any{"source": strings.Replace(v2, `id: "demo"`, `id: "zzz"`, 1)})); code != 400 || !strings.Contains(string(b), "demo") {
+		t.Errorf("id: %d %s", code, b)
+	}
+	if code, _ := admin.do("PUT", "/api/plugins/nope/source", jsonBody(map[string]any{"source": v2})); code != 404 {
+		t.Errorf("404: %d", code)
+	}
+	if code, _ := admin.do("PUT", "/api/plugins/demo/source", `{"source":`); code != 400 {
+		t.Errorf("bad json: %d", code)
+	}
+
+	// preview: nothing installed
+	var pv map[string]any
+	admin.mustJSON("POST", "/api/plugins/preview", jsonBody(map[string]any{"source": strings.Replace(demoPlugin, `id: "demo"`, `id: "fresh"`, 1)}), &pv)
+	pl := pv["plugin"].(map[string]any)
+	if pl["id"] != "fresh" || pv["installed"] != false || pv["lang"] != "js" || !strings.Contains(pv["source"].(string), "fresh") || pl["permissions"] == nil {
+		t.Fatalf("%v", pv)
+	}
+	if _, has := pl["config"]; has {
+		t.Errorf("preview exposes admin fields: %v", pl)
+	}
+	admin.mustJSON("POST", "/api/plugins/preview", jsonBody(map[string]any{"source": v2}), &pv)
+	if pv["installed"] != true || pv["installed_version"] != "2.0.0" {
+		t.Errorf("%v", pv)
+	}
+	admin.mustJSON("POST", "/api/plugins/preview", jsonBody(map[string]any{"source": "export const manifest = {"}), &pv)
+	if pv["plugin"] != nil || pv["error"] == "" || pv["source"] == "" {
+		t.Errorf("%v", pv)
+	}
+	admin.mustJSON("POST", "/api/plugins/preview", `{"catalog":"calculator"}`, &pv)
+	if pv["plugin"].(map[string]any)["id"] != "calculator" {
+		t.Errorf("%v", pv)
+	}
+	if code, _ := admin.do("POST", "/api/plugins/preview", `{}`); code != 400 {
+		t.Errorf("empty: %d", code)
+	}
+	if got := len(e.st.Plugins()); got != 1 {
+		t.Errorf("preview installed something: %d plugins", got)
+	}
+}
+
+func TestPluginMarketREST(t *testing.T) {
+	var searches atomic.Int32
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/search/repositories":
+			searches.Add(1)
+			if r.Header.Get("Authorization") != "Bearer ghp_test" {
+				t.Errorf("token not sent: %q", r.Header.Get("Authorization"))
+			}
+			w.Write([]byte(`{"total_count":1,"items":[{"full_name":"o/r","description":"d","stargazers_count":5,"updated_at":"2026-01-01T00:00:00Z","html_url":"https://github.com/o/r","default_branch":"main","owner":{"avatar_url":"https://a/x.png"}}]}`))
+		case r.URL.Path == "/repos/o/r":
+			w.Write([]byte(`{"default_branch":"main"}`))
+		case r.URL.Path == "/repos/o/r/git/trees/main":
+			w.Write([]byte(`{"tree":[{"path":"p.js","type":"blob","size":100}]}`))
+		case r.URL.Path == "/raw/o/r/main/p.js":
+			w.Write([]byte(strings.Replace(demoPlugin, `id: "demo"`, `id: "market-one"`, 1)))
+		case strings.HasPrefix(r.URL.Path, "/raw/"):
+			http.NotFound(w, r)
+		default:
+			w.WriteHeader(404)
+			w.Write([]byte(`{"message":"Not Found"}`))
+		}
+	}))
+	defer gh.Close()
+	e := setupCfg(t, func(c *Config) { c.GitHubAPI, c.GitHubRaw, c.GitHubToken = gh.URL, gh.URL+"/raw", "ghp_test" })
+	admin := e.admin()
+
+	var mk struct {
+		Items []map[string]any `json:"items"`
+		Total int
+		Error string
+	}
+	admin.mustJSON("GET", "/api/plugins/market?sort=updated&q=foo&page=1", "", &mk)
+	if mk.Total != 1 || len(mk.Items) != 1 || mk.Items[0]["repo"] != "o/r" || mk.Items[0]["owner_avatar"] != "https://a/x.png" || mk.Items[0]["stars"] != 5.0 || mk.Error != "" {
+		t.Fatalf("%+v", mk)
+	}
+	if code, _ := admin.do("GET", "/api/plugins/market?sort=bogus", ""); code != 400 {
+		t.Errorf("sort: %d", code)
+	}
+	if code, _ := admin.do("GET", "/api/plugins/market?page=x", ""); code != 400 {
+		t.Errorf("page: %d", code)
+	}
+	var sc struct {
+		Repo          string
+		DefaultBranch string `json:"default_branch"`
+		Plugins       []struct {
+			Path, URL string
+			Plugin    map[string]any
+			Installed bool
+		}
+	}
+	admin.mustJSON("GET", "/api/plugins/market/repo?repo=o/r", "", &sc)
+	if len(sc.Plugins) != 1 || sc.Plugins[0].Plugin["id"] != "market-one" || sc.Plugins[0].URL != gh.URL+"/raw/o/r/main/p.js" || sc.Plugins[0].Installed {
+		t.Fatalf("%+v", sc)
+	}
+	// installing from the scanned URL records source_url and flips "installed"
+	var inf map[string]any
+	admin.mustJSON("POST", "/api/plugins", jsonBody(map[string]any{"url": sc.Plugins[0].URL}), &inf)
+	if inf["source_url"] != sc.Plugins[0].URL {
+		t.Errorf("%v", inf)
+	}
+	var sc2 struct{ Plugins []struct{ Installed bool } }
+	admin.mustJSON("GET", "/api/plugins/market/repo?repo=o/r", "", &sc2)
+	if !sc2.Plugins[0].Installed {
+		t.Error("installed flag")
+	}
+	for _, bad := range []string{"", "x", "../../etc", "a/b/c", "a/b%3Fx"} {
+		if code, _ := admin.do("GET", "/api/plugins/market/repo?repo="+bad, ""); code != 400 {
+			t.Errorf("repo=%q: %d", bad, code)
+		}
+	}
+	// GitHub failures are 200 with an error, not a 5xx
+	var sr map[string]any
+	admin.mustJSON("GET", "/api/plugins/market/repo?repo=o/unknown", "", &sr)
+	if sr["error"] == nil || sr["error"] == "" {
+		t.Errorf("%v", sr)
+	}
+	gh.Close()
+	admin.mustJSON("GET", "/api/plugins/market?q=down", "", &mk)
+	if mk.Error == "" || mk.Items == nil {
+		t.Errorf("%+v", mk)
+	}
+
+	// admin only
+	for _, p := range []string{"/api/plugins/market", "/api/plugins/market/repo?repo=o/r"} {
+		if code, _ := e.anon().do("GET", p, ""); code != 401 {
+			t.Errorf("anon %s: %d", p, code)
+		}
+	}
+	if code, _ := e.anon().do("PUT", "/api/plugins/demo/source", `{"source":"x"}`); code != 401 {
+		t.Errorf("anon put: %d", code)
+	}
+	e.st.UpdateSettings(store.SettingsPatch{GuestAccess: ptr(true)})
+	g := e.anon()
+	for _, rq := range [][3]string{{"GET", "/api/plugins/market", ""}, {"GET", "/api/plugins/market/repo?repo=o/r", ""}, {"POST", "/api/plugins/preview", `{"catalog":"calculator"}`}, {"PUT", "/api/plugins/demo/source", `{"source":"x"}`}} {
+		if code, _ := g.do(rq[0], rq[1], rq[2]); code != 403 {
+			t.Errorf("guest %s %s: %d", rq[0], rq[1], code)
+		}
+	}
+}
+
+func TestWidgetLayoutREST(t *testing.T) {
+	e := setup(t)
+	admin := e.admin()
+	admin.mustJSON("POST", "/api/plugins", jsonBody(map[string]any{"source": demoPlugin}), nil)
+	var w map[string]any
+	admin.mustJSON("POST", "/api/widgets", `{"plugin":"demo","widget":"w","w":4,"h":300}`, &w)
+	if w["w"] != 4.0 || w["h"] != 300.0 {
+		t.Fatalf("%v", w)
+	}
+	id := w["id"].(string)
+	admin.mustJSON("PATCH", "/api/widgets/"+id, `{"w":99,"h":5}`, &w)
+	if w["w"] != 6.0 || w["h"] != 80.0 {
+		t.Fatalf("clamp: %v", w)
+	}
+	admin.mustJSON("PATCH", "/api/widgets/"+id, `{"h":0}`, &w)
+	if w["w"] != 6.0 || w["h"] != 0.0 {
+		t.Fatalf("auto height keeps w: %v", w)
+	}
+	admin.mustJSON("PATCH", "/api/widgets/"+id, `{"w":3,"h":400}`, nil)
+	// bootstrap (guests too) carries w/h
+	e.st.UpdateSettings(store.SettingsPatch{GuestAccess: ptr(true)})
+	var bs struct{ Widgets []map[string]any }
+	e.anon().mustJSON("GET", "/api/bootstrap", "", &bs)
+	if len(bs.Widgets) != 1 || bs.Widgets[0]["w"] != 3.0 || bs.Widgets[0]["h"] != 400.0 {
+		t.Fatalf("%v", bs.Widgets)
+	}
+	// export/import keep the layout (and clamp hand-edited values)
+	_, exp := admin.do("GET", "/api/export", "")
+	e2 := setup(t)
+	a2 := e2.admin()
+	a2.mustJSON("POST", "/api/import", `{"mode":"replace","data":`+string(exp)+`}`, nil)
+	ws := e2.st.Widgets()
+	if len(ws) != 1 || ws[0].W != 3 || ws[0].H != 400 {
+		t.Fatalf("%+v", ws)
+	}
+	var x map[string]any
+	json.Unmarshal(exp, &x)
+	x["widgets"].([]any)[0].(map[string]any)["w"] = 50
+	x["widgets"].([]any)[0].(map[string]any)["h"] = 3
+	mod, _ := json.Marshal(x)
+	a2.mustJSON("POST", "/api/import", `{"mode":"replace","data":`+string(mod)+`}`, nil)
+	if ws := e2.st.Widgets(); ws[0].W != 6 || ws[0].H != 80 {
+		t.Fatalf("%+v", ws)
+	}
+	// old data without w/h reads as 0/0
+	delete(x["widgets"].([]any)[0].(map[string]any), "w")
+	delete(x["widgets"].([]any)[0].(map[string]any), "h")
+	oldData, _ := json.Marshal(x)
+	old := `{"mode":"replace","data":` + string(oldData) + `}`
+	a2.mustJSON("POST", "/api/import", old, nil)
+	if ws := e2.st.Widgets(); len(ws) != 1 || ws[0].W != 0 || ws[0].H != 0 {
+		t.Fatalf("%+v", ws)
 	}
 }

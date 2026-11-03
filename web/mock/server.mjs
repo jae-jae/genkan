@@ -9,7 +9,7 @@ import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { createPluginsMock } from './plugins.mjs'
 
-const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
+const dist = process.env.MOCK_DIST || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 const PORT = Number(process.env.PORT || 8080)
 const upDir = fs.mkdtempSync(path.join(os.tmpdir(), 'genkan-mock-'))
 fs.mkdirSync(path.join(upDir, 'wallpapers'), { recursive: true })

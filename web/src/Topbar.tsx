@@ -163,6 +163,12 @@ function MainMenu() {
               ))}
             </div>
             <div class="mi-sep" role="separator" />
+            <button class="mi" role="menuitem" data-testid="ai-btn" onClick={() => (close(), openSettings('ai'))}>
+              <span class="mi-ico">
+                <Icon n="bot" size={16} />
+              </span>
+              <span class="mi-name">{t('tab.ai')}</span>
+            </button>
             <button class="mi" role="menuitem" data-testid="settings-btn" onClick={() => (close(), openSettings())}>
               <span class="mi-ico">
                 <Icon n="settings" size={16} />
@@ -210,8 +216,8 @@ export function Topbar() {
           </button>
         )}
         {admin && (
-          <button class="icon-btn glass-lite" aria-label="AI" title="AI" data-testid="ai-btn" onClick={() => openSettings('ai')}>
-            <Icon n="bot" />
+          <button class="icon-btn glass-lite" aria-label={t('tab.plugins')} title={t('tab.plugins')} data-testid="plugins-btn" onClick={() => openSettings('plugins')}>
+            <Icon n="puzzle" />
           </button>
         )}
         {(admin || role.value === 'guest') && <MainMenu />}

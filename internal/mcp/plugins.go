@@ -68,6 +68,86 @@ func (s *Server) pluginTools() []tool {
 			},
 		},
 		{
+			name: "preview_plugin", title: "Preview plugin", readOnly: true, idempotent: true,
+			desc: "Validate plugin source (or an http(s) URL / built-in catalog id) WITHOUT installing it: nothing is written and no hook runs. Returns {plugin (manifest derived info: permissions, widgets, config schema...), source, lang, installed, installed_version, error}. Use it to check a draft or to review a third-party plugin's permissions and code before install_plugin." + pluginDocs,
+			schema: obj(M{
+				"source":  str("Plugin source code (ES module)."),
+				"lang":    enumStr("Language of source/url: js (default) or ts.", []string{"js", "ts"}),
+				"url":     str("Download the source from this http(s) URL."),
+				"catalog": str("Id of a built-in example plugin."),
+			}),
+			fn: func(args json.RawMessage) (any, error) {
+				m, err := mgr()
+				if err != nil {
+					return nil, err
+				}
+				var req plugin.InstallRequest
+				if err := decode(args, &req); err != nil {
+					return nil, err
+				}
+				c, cancel := ctx(30 * time.Second)
+				defer cancel()
+				res, err := m.Preview(c, req)
+				if err != nil {
+					return nil, err
+				}
+				if res.Error != "" {
+					return isErr{res}, nil
+				}
+				return res, nil
+			},
+		},
+		{
+			name: "get_plugin_source", title: "Get plugin source", readOnly: true, idempotent: true,
+			desc:   "Return the source code and language of an installed plugin ({source, lang}). Pair with update_plugin_source to edit it. 读取已安装插件的源码。",
+			schema: obj(M{"id": str("Plugin id.")}, "id"),
+			fn: func(args json.RawMessage) (any, error) {
+				m, err := mgr()
+				if err != nil {
+					return nil, err
+				}
+				var a struct {
+					ID string `json:"id"`
+				}
+				if err := decode(args, &a); err != nil {
+					return nil, err
+				}
+				src, lang, err := m.Source(a.ID)
+				if err != nil {
+					return nil, err
+				}
+				return M{"source": src, "lang": lang}, nil
+			},
+		},
+		{
+			name: "update_plugin_source", title: "Update plugin source", idempotent: true,
+			desc: "Replace the source of an installed plugin. manifest.id must stay the same; enabled state, config and widget instances are kept. Validation errors include line:column. Run test_plugin afterwards. 更新已安装插件的源码。",
+			schema: obj(M{
+				"id":     str("Plugin id."),
+				"source": str("New plugin source code (ES module)."),
+				"lang":   enumStr("js or ts (default: keep the current language).", []string{"js", "ts"}),
+			}, "id", "source"),
+			fn: func(args json.RawMessage) (any, error) {
+				m, err := mgr()
+				if err != nil {
+					return nil, err
+				}
+				var a struct {
+					ID     string `json:"id"`
+					Source string `json:"source"`
+					Lang   string `json:"lang"`
+				}
+				if err := decode(args, &a); err != nil {
+					return nil, err
+				}
+				inf, err := m.UpdateSource(a.ID, a.Source, a.Lang)
+				if err != nil {
+					return nil, err
+				}
+				return M{"plugin": inf}, nil
+			},
+		},
+		{
 			name: "update_plugin", title: "Update plugin", idempotent: true,
 			desc: "Enable/disable a plugin or change its configuration. config is merged into the current config: given keys change, null removes a key (for secret fields null clears the secret, an empty string keeps it). Only keys declared in the manifest config are stored. 启用/禁用插件或修改配置（合并更新）。",
 			schema: obj(M{
@@ -177,7 +257,7 @@ func (s *Server) pluginTools() []tool {
 		},
 		{
 			name: "list_widgets", title: "List widgets", readOnly: true, idempotent: true,
-			desc:   "List widget instances placed on the start page (id, plugin, widget kind, workspace_id (\"\" = all workspaces), config with secrets blanked, sort). 小组件实例列表。",
+			desc:   "List widget instances placed on the start page (id, plugin, widget kind, workspace_id (\"\" = all workspaces), config with secrets blanked, sort, w columns, h pixels). 小组件实例列表。",
 			schema: obj(M{}),
 			fn: func(json.RawMessage) (any, error) {
 				m, err := mgr()
@@ -195,6 +275,8 @@ func (s *Server) pluginTools() []tool {
 				"widget":       str("Widget id declared by the plugin."),
 				"workspace_id": str("Workspace to show it in (optional, default all)."),
 				"config":       cfgObj("Instance config values."),
+				"w":            M{"type": "integer", "minimum": 0, "maximum": 6, "description": "Width in grid columns of 6 (0 = default from the widget's size: s=2, m=4, l=6)."},
+				"h":            M{"type": "integer", "minimum": 0, "maximum": 1200, "description": "Height in pixels (0 = automatic by content, else 80..1200)."},
 			}, "plugin", "widget"),
 			fn: func(args json.RawMessage) (any, error) {
 				m, err := mgr()
@@ -214,12 +296,14 @@ func (s *Server) pluginTools() []tool {
 		},
 		{
 			name: "update_widget", title: "Update widget", idempotent: true,
-			desc: "Change a widget instance: workspace, order or config (merged: given keys change, null removes a key). 修改小组件。",
+			desc: "Change a widget instance: workspace, order, size (w columns 0-6, h pixels) or config (merged: given keys change, null removes a key). 修改小组件。",
 			schema: obj(M{
 				"id":           str("Widget instance id."),
 				"workspace_id": str("Workspace id, or \"\" for all workspaces."),
 				"config":       cfgObj("Instance config values to change."),
 				"sort":         M{"type": "integer", "description": "Display order."},
+				"w":            M{"type": "integer", "minimum": 0, "maximum": 6, "description": "Width in grid columns of 6 (0 = default from the widget's size)."},
+				"h":            M{"type": "integer", "minimum": 0, "maximum": 1200, "description": "Height in pixels (0 = automatic, else 80..1200)."},
 			}, "id"),
 			fn: func(args json.RawMessage) (any, error) {
 				m, err := mgr()

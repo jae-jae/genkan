@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,9 +19,13 @@ func (s *Server) pluginRoutes() {
 	m.HandleFunc("GET /api/plugins", s.guard(permAdmin, s.handlePluginList))
 	m.HandleFunc("POST /api/plugins", s.guard(permAdmin, s.handlePluginInstall))
 	m.HandleFunc("GET /api/plugins/catalog", s.guard(permAdmin, s.handlePluginCatalog))
+	m.HandleFunc("POST /api/plugins/preview", s.guard(permAdmin, s.handlePluginPreview))
+	m.HandleFunc("GET /api/plugins/market", s.guard(permAdmin, s.handlePluginMarket))
+	m.HandleFunc("GET /api/plugins/market/repo", s.guard(permAdmin, s.handlePluginMarketRepo))
 	m.HandleFunc("GET /api/plugins/search", s.guard(permRead, s.handlePluginSearch))
 	m.HandleFunc("GET /api/plugins/wallpaper/{plugin}/{source}", s.guard(permRead, s.handlePluginWallpaper))
 	m.HandleFunc("GET /api/plugins/{id}/source", s.guard(permAdmin, s.handlePluginSource))
+	m.HandleFunc("PUT /api/plugins/{id}/source", s.guard(permAdmin, s.handlePluginSourcePut))
 	m.HandleFunc("GET /api/plugins/{id}/logs", s.guard(permAdmin, s.handlePluginLogs))
 	m.HandleFunc("POST /api/plugins/{id}/test", s.guard(permAdmin, s.handlePluginTest))
 	m.HandleFunc("PATCH /api/plugins/{id}", s.guard(permAdmin, s.handlePluginPatch))
@@ -88,6 +93,67 @@ func (s *Server) handlePluginSource(w http.ResponseWriter, r *http.Request, _ Ro
 		return
 	}
 	writeJSON(w, r, http.StatusOK, map[string]string{"source": src, "lang": lang})
+}
+
+func (s *Server) handlePluginSourcePut(w http.ResponseWriter, r *http.Request, _ Role) {
+	var req struct {
+		Source string `json:"source"`
+		Lang   string `json:"lang"`
+	}
+	if !readJSON(w, r, &req, maxJSONBody) {
+		return
+	}
+	inf, err := s.plugins.UpdateSource(r.PathValue("id"), req.Source, req.Lang)
+	if err != nil {
+		failPlugin(w, err)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, inf)
+}
+
+func (s *Server) handlePluginPreview(w http.ResponseWriter, r *http.Request, _ Role) {
+	var req plugin.InstallRequest
+	if !readJSON(w, r, &req, maxJSONBody) {
+		return
+	}
+	res, err := s.plugins.Preview(r.Context(), req)
+	if err != nil {
+		failPlugin(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, r, http.StatusOK, res)
+}
+
+func (s *Server) handlePluginMarket(w http.ResponseWriter, r *http.Request, _ Role) {
+	q := r.URL.Query()
+	page := 1
+	if v := q.Get("page"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "page must be a number")
+			return
+		}
+		page = n
+	}
+	res, err := s.plugins.Market(q.Get("sort"), q.Get("q"), page)
+	if err != nil {
+		failPlugin(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, r, http.StatusOK, res)
+}
+
+func (s *Server) handlePluginMarketRepo(w http.ResponseWriter, r *http.Request, _ Role) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(80 * time.Second)) // a scan may take a minute
+	res, err := s.plugins.MarketRepo(r.URL.Query().Get("repo"))
+	if err != nil {
+		failPlugin(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, r, http.StatusOK, res)
 }
 
 func (s *Server) handlePluginPatch(w http.ResponseWriter, r *http.Request, _ Role) {

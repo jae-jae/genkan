@@ -298,3 +298,16 @@ func TestImportPluginValidation(t *testing.T) {
 		t.Errorf("plugin: %+v", p)
 	}
 }
+
+func TestWidgetLayoutClamp(t *testing.T) {
+	for _, tc := range []struct{ in, w, h int }{{-1, 0, 0}, {0, 0, 0}, {6, 6, 80}, {7, 6, 1200}, {3, 3, 5000}} {
+		if got := ClampWidgetW(tc.in); got != tc.w {
+			t.Errorf("w(%d) = %d", tc.in, got)
+		}
+	}
+	for in, want := range map[int]int{-9: 0, 0: 0, 1: 80, 79: 80, 80: 80, 640: 640, 1200: 1200, 1201: 1200} {
+		if got := ClampWidgetH(in); got != want {
+			t.Errorf("h(%d) = %d, want %d", in, got, want)
+		}
+	}
+}

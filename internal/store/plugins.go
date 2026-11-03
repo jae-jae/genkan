@@ -61,6 +61,40 @@ type WidgetInstance struct {
 	WorkspaceID string         `json:"workspace_id"`
 	Config      map[string]any `json:"config"`
 	Sort        int            `json:"sort"`
+	W           int            `json:"w"` // columns 0..6 (0 = manifest size default)
+	H           int            `json:"h"` // pixels, 0 = auto height, else 80..1200
+}
+
+// Widget layout limits (docs/PLUGINS.md §11.1).
+const (
+	MaxWidgetW = 6
+	MinWidgetH = 80
+	MaxWidgetH = 1200
+)
+
+// ClampWidgetW limits a widget width to 0..6 columns.
+func ClampWidgetW(w int) int {
+	if w < 0 {
+		return 0
+	}
+	if w > MaxWidgetW {
+		return MaxWidgetW
+	}
+	return w
+}
+
+// ClampWidgetH limits a widget height: <= 0 means auto (0), else 80..1200 px.
+func ClampWidgetH(h int) int {
+	if h <= 0 {
+		return 0
+	}
+	if h < MinWidgetH {
+		return MinWidgetH
+	}
+	if h > MaxWidgetH {
+		return MaxWidgetH
+	}
+	return h
 }
 
 // ExportPlugin is a plugin in the portable export: state plus source, without
@@ -228,6 +262,9 @@ func cleanSource(src, lang string) (string, error) {
 	}
 	return lang, validateSourceText(src)
 }
+
+// ValidateSourceText checks a plugin source's size and encoding.
+func ValidateSourceText(src string) error { return validateSourceText(src) }
 
 func validateSourceText(src string) error {
 	if strings.TrimSpace(src) == "" {
@@ -446,12 +483,16 @@ type WidgetInput struct {
 	Widget      string         `json:"widget"`
 	WorkspaceID string         `json:"workspace_id"`
 	Config      map[string]any `json:"config"`
+	W           int            `json:"w"`
+	H           int            `json:"h"`
 }
 
 type WidgetPatch struct {
 	WorkspaceID *string         `json:"workspace_id"`
 	Config      *map[string]any `json:"config"`
 	Sort        *int            `json:"sort"`
+	W           *int            `json:"w"`
+	H           *int            `json:"h"`
 }
 
 func (s *Store) checkWidgetWorkspace(ws string) error {
@@ -486,7 +527,7 @@ func (s *Store) CreateWidget(in WidgetInput) (WidgetInstance, error) {
 				next = x.Sort + 1
 			}
 		}
-		w = WidgetInstance{ID: NewID(), Plugin: in.Plugin, Widget: in.Widget, WorkspaceID: in.WorkspaceID, Config: cfg, Sort: next}
+		w = WidgetInstance{ID: NewID(), Plugin: in.Plugin, Widget: in.Widget, WorkspaceID: in.WorkspaceID, Config: cfg, Sort: next, W: ClampWidgetW(in.W), H: ClampWidgetH(in.H)}
 		s.d.Widgets = append(s.d.Widgets, w)
 		w = cloneWidget(w)
 		return true, nil
@@ -520,6 +561,12 @@ func (s *Store) UpdateWidget(id string, p WidgetPatch) (WidgetInstance, error) {
 		}
 		if p.Sort != nil {
 			w.Sort = *p.Sort
+		}
+		if p.W != nil {
+			w.W = ClampWidgetW(*p.W)
+		}
+		if p.H != nil {
+			w.H = ClampWidgetH(*p.H)
 		}
 		s.d.Widgets[i] = w
 		out = cloneWidget(w)

@@ -136,11 +136,64 @@ export interface WidgetInstance {
   workspace_id: string
   config: Record<string, any> | null
   sort: number
+  /** columns of 6 (0 = default by manifest size: s 2, m 3, l 6) */
+  w?: number
+  /** fixed height in px (80-1200); 0 / absent = auto (content height) */
+  h?: number
 }
 export interface PluginLog {
   ts: string | number
   level: string
   msg: string
+}
+/** POST /api/plugins/preview (docs/PLUGINS.md §11.2): nothing is installed. */
+export interface PluginPreview {
+  plugin: PluginInfo | null
+  source: string
+  lang?: 'js' | 'ts'
+  installed: boolean
+  installed_version?: string
+  error?: string
+}
+/** POST /api/plugins/{id}/test */
+export interface PluginTestResult {
+  ok: boolean
+  result?: unknown
+  error?: string
+  logs?: (PluginLog | string)[] | null
+  ms?: number
+}
+/** GET /api/plugins/market (docs/PLUGINS.md §11.4) */
+export interface MarketRepo {
+  repo: string
+  description?: string
+  stars: number
+  updated_at: string
+  html_url: string
+  owner_avatar?: string
+  default_branch?: string
+}
+export interface MarketList {
+  items?: MarketRepo[] | null
+  total?: number
+  /** Unix milliseconds */
+  cached_at?: number
+  error?: string
+}
+export interface MarketPlugin {
+  path: string
+  url: string
+  plugin: PluginInfo | null
+  error?: string
+  installed: boolean
+  installed_version?: string
+}
+export interface MarketScan {
+  repo: string
+  default_branch?: string
+  cached_at?: number
+  plugins?: MarketPlugin[] | null
+  error?: string
 }
 
 export type Trend = 'up' | 'down' | 'flat'

@@ -33,6 +33,11 @@ type Config struct {
 	DataDir string
 	Web     fs.FS
 	Version string
+	// GitHubToken (GENKAN_GITHUB_TOKEN) is optional; it raises the GitHub API
+	// rate limit of the third-party plugin market.
+	GitHubToken string
+	// GitHubAPI / GitHubRaw override the GitHub base URLs (tests).
+	GitHubAPI, GitHubRaw string
 }
 
 type Role int
@@ -109,7 +114,7 @@ func New(cfg Config) *Server {
 	s.bgCtx, s.bgCancel = context.WithCancel(context.Background())
 	s.plugins = plugin.New(plugin.Config{
 		Store: cfg.Store, DataDir: cfg.DataDir, Version: cfg.Version,
-		Catalog: plugins.Catalog(), OnLinksCreated: s.fetchIcons,
+		Catalog: plugins.Catalog(), OnLinksCreated: s.fetchIcons, GitHubToken: cfg.GitHubToken, GitHubAPI: cfg.GitHubAPI, GitHubRaw: cfg.GitHubRaw,
 	})
 	s.mcp = mcp.New(cfg.Store, cfg.Version)
 	s.mcp.Plugins = s.plugins

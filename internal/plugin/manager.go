@@ -41,6 +41,13 @@ type Config struct {
 	OnLinksCreated func([]store.Link)
 	// HTTPClient downloads plugin sources for install-from-URL (default: 15 s timeout).
 	HTTPClient *http.Client
+	// GitHubToken (GENKAN_GITHUB_TOKEN) raises the GitHub API rate limit of the
+	// third-party plugin market (optional).
+	GitHubToken string
+	// GitHubAPI / GitHubRaw override https://api.github.com and
+	// https://raw.githubusercontent.com (tests); GitHubClient the HTTP client.
+	GitHubAPI, GitHubRaw string
+	GitHubClient         *http.Client
 }
 
 // Manager owns all plugin runtime state.
@@ -63,6 +70,11 @@ type Manager struct {
 	catSrc  map[string]string
 
 	sched *scheduler
+
+	mkMu    sync.Mutex
+	mkCache map[string]*marketEntry // third-party market (market.go)
+	ghOnce  sync.Once
+	ghc     *http.Client
 }
 
 // New creates the manager. It does no work until a plugin is used.
@@ -361,38 +373,9 @@ const maxDownload = store.MaxPluginSource
 // Install installs or updates a plugin. An existing plugin (same manifest id)
 // keeps its configuration, widget instances and enabled state.
 func (m *Manager) Install(ctx context.Context, req InstallRequest) (Info, error) {
-	n := 0
-	for _, s := range []string{req.Source, req.URL, req.Catalog} {
-		if s != "" {
-			n++
-		}
-	}
-	if n != 1 {
-		return Info{}, invalidf("provide exactly one of source, url or catalog")
-	}
-	source, lang, srcURL := req.Source, req.Lang, ""
-	switch {
-	case req.URL != "":
-		var err error
-		if source, lang, err = m.download(ctx, req.URL, lang); err != nil {
-			return Info{}, err
-		}
-		srcURL = req.URL
-	case req.Catalog != "":
-		src, ok := m.catalogSource(req.Catalog)
-		if !ok {
-			return Info{}, notFoundf("no such catalog plugin: %s", req.Catalog)
-		}
-		source, lang = src, "js"
-	}
-	if lang == "" {
-		lang = "js"
-	}
-	if lang != "js" && lang != "ts" {
-		return Info{}, invalidf(`lang must be "js" or "ts"`)
-	}
-	if len(source) > store.MaxPluginSource {
-		return Info{}, invalidf("plugin source is too large (max %d KiB)", store.MaxPluginSource>>10)
+	source, lang, srcURL, err := m.resolve(ctx, req)
+	if err != nil {
+		return Info{}, err
 	}
 	man, mod, err := m.inspect(source, lang)
 	if err != nil {
@@ -405,6 +388,45 @@ func (m *Manager) Install(ctx context.Context, req InstallRequest) (Info, error)
 	m.prime(rec, man, mod)
 	m.sched.kick()
 	return m.info(rec, true), nil
+}
+
+// resolve turns an install/preview request into source text, its language
+// and the URL it came from (for "check for updates"). Exactly one of source,
+// url or catalog must be given; size and language are checked.
+func (m *Manager) resolve(ctx context.Context, req InstallRequest) (source, lang, srcURL string, err error) {
+	n := 0
+	for _, s := range []string{req.Source, req.URL, req.Catalog} {
+		if s != "" {
+			n++
+		}
+	}
+	if n != 1 {
+		return "", "", "", invalidf("provide exactly one of source, url or catalog")
+	}
+	source, lang = req.Source, req.Lang
+	switch {
+	case req.URL != "":
+		if source, lang, err = m.download(ctx, req.URL, lang); err != nil {
+			return "", "", "", err
+		}
+		srcURL = req.URL
+	case req.Catalog != "":
+		src, ok := m.catalogSource(req.Catalog)
+		if !ok {
+			return "", "", "", notFoundf("no such catalog plugin: %s", req.Catalog)
+		}
+		source, lang = src, "js"
+	}
+	if lang == "" {
+		lang = "js"
+	}
+	if lang != "js" && lang != "ts" {
+		return "", "", "", invalidf(`lang must be "js" or "ts"`)
+	}
+	if len(source) > store.MaxPluginSource {
+		return "", "", "", invalidf("plugin source is too large (max %d KiB)", store.MaxPluginSource>>10)
+	}
+	return source, lang, srcURL, nil
 }
 
 // Validate checks that source is a valid plugin and returns its manifest id

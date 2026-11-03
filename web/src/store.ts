@@ -38,6 +38,9 @@ export type ModalState =
   | { kind: 'settings'; tab?: string }
   | { kind: 'widget'; id?: string }
   | { kind: 'plugin-perm'; plugin: PluginInfo; fresh: boolean }
+  // other plugin dialogs reuse this kind: it is the one App.tsx already renders (via the lazy Plugins chunk)
+  | { kind: 'plugin-perm'; dlg: 'source'; plugin: PluginInfo }
+  | { kind: 'plugin-perm'; dlg: 'batch' | 'ai' }
   | {
       kind: 'confirm'
       title: string

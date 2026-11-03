@@ -47,4 +47,5 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
 export const get = <T = any>(p: string, headers?: Record<string, string>) => api<T>('GET', p, undefined, headers)
 export const post = <T = any>(p: string, b?: unknown) => api<T>('POST', p, b ?? {})
 export const patch = <T = any>(p: string, b: unknown) => api<T>('PATCH', p, b)
+export const put = <T = any>(p: string, b: unknown) => api<T>('PUT', p, b)
 export const del = <T = any>(p: string) => api<T>('DELETE', p)

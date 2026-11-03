@@ -298,7 +298,7 @@ type Block =
 
 ### 11.1 小组件布局（拖拽、自由尺寸、紧凑排列）
 
-- `WidgetInstance` 新增 **`w`**（列宽，整数 0–6；0 = 按 manifest `size` 取默认：s→2、m→3、l→6）与 **`h`**（高度，像素整数；0 = 自动按内容高度；否则 80–1200）。`POST /api/widgets`、`PATCH /api/widgets/{id}`、MCP `add_widget`/`update_widget`、导出导入都支持这两个字段；越界值钳制到范围内。
+- `WidgetInstance` 新增 **`w`**（列宽，整数 0–6；0 = 按 manifest `size` 取默认：s→2、m→4、l→6）与 **`h`**（高度，像素整数；0 = 自动按内容高度；否则 80–1200）。`POST /api/widgets`、`PATCH /api/widgets/{id}`、MCP `add_widget`/`update_widget`、导出导入都支持这两个字段；越界值钳制到范围内。
 - 前端网格：桌面 6 列；≤ 1100px 4 列；≤ 700px 2 列；≤ 480px 1 列。窄屏下 `w` 按比例换算并钳制（`ceil(w * cols / 6)`）。采用"瀑布流"紧凑排列：`grid-auto-flow: row dense` + 细粒度行单位（例如 8px 行 + 行间距），每张卡片 row-span 由 `h`（固定高度）或 ResizeObserver 测得的内容高度（`h=0`）计算，消除卡片下方空洞。固定高度时内容超出可在卡片内滚动。
 - 编辑模式：
   - "添加小组件"卡片放在**最前面**。
@@ -330,3 +330,23 @@ type Block =
 - 安装沿用 `POST /api/plugins {url}`（因此记录 `source_url`，可"检查更新"）。前端支持勾选多个/全部安装，逐个安装并汇总结果；安装前同样走权限确认（可合并为一次确认，列出所有插件的权限）。
 - 可选环境变量 `GENKAN_GITHUB_TOKEN` 提高 GitHub API 限额。只有打开"第三方"标签时服务端才访问 GitHub；GitHub 不可达时返回 `error` 而非 5xx 页面。
 - 前端：添加插件弹窗新增"第三方"标签：搜索框、排序（Star / 最近更新）、仓库卡片（头像、名称、描述、star、更新时间、GitHub 链接）、"查看插件"→ 展开扫描结果列表（复选框、名称、能力徽章、版本、已安装状态、预览源码）→"安装选中 / 全部安装"。显著标注"第三方插件未经审核，请检查权限和源码"。
+
+### 11.5 后端实现补充（v2）
+
+JSON 形状与 11.1–11.4 一致，以下为实现时确定的细节。
+
+**小组件布局**：`w`、`h` 始终出现在 `WidgetInstance` JSON 中（不省略 0）。`w` 钳制到 0–6；`h` ≤ 0 → 0（自动），1–79 → 80，> 1200 → 1200。`PATCH` 只改传入的字段（省略的保持原值）；旧数据文件/导入文件中缺失时视为 0/0，导入时同样钳制。MCP `add_widget`/`update_widget` 接受 `w`、`h`，`list_widgets` 返回它们。
+
+**`PUT /api/plugins/{id}/source`**：`lang` 省略时沿用该插件当前语言（可切换 js↔ts，旧文件被删除）；保留启用状态、配置、实例与 `source_url`；失败时磁盘与内存状态都不变。语法错误信息形如 `invalid plugin: compile error: plugin.js:3:8: SyntaxError: ...`（TS 为 `plugin.ts`）。manifest.id 不一致 → 400；插件不存在 → 404。即使已安装的插件源码损坏（`last_error`），也可以通过它修复。
+
+**`POST /api/plugins/preview`**：请求形状错误（不是恰好一个来源、`lang` 非法、源码 > 512 KiB、URL 非 http(s)）→ 400，内置目录项不存在 → 404；URL 下载失败 → 200，`error` 为下载错误，`plugin: null`，`source: ""`；源码无法通过校验 → 200，`plugin: null`，`error` 为 `invalid plugin: ...`（带行列号），仍返回 `source`/`lang`。`plugin` 是 `PluginInfo` 的 manifest 派生部分（`enabled` 恒为 `false`，没有 `config`/`secrets_set`/`source_url`/`last_error`/`installed_at`/`updated_at`）。`installed_version` 仅在 `installed: true` 且已安装版本可读时出现。不写文件、不写 store、不运行任何钩子（与安装一样，会在无网络/无存储的探测运行时里执行模块顶层以读取 manifest）。
+
+**第三方市场**：
+- 时间戳 `cached_at` 为 Unix 毫秒（与 §10 一致）；`items[].updated_at` 为 GitHub 返回的 RFC3339 字符串。
+- `GET /api/plugins/market`：`sort` 只接受 `stars`（默认）/`updated`，否则 400；`page` 非数字 → 400，范围钳制到 1–30；每页 20；`q` 去除控制字符、合并空白、截断到 100 字节。GitHub 失败（限流、网络、非 200）→ **200**，`items: []`、`total: 0`、`error` 为可读信息（限流时提示设置 `GENKAN_GITHUB_TOKEN`）。
+- `GET /api/plugins/market/repo`：`repo` 不符合 `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`（或某段为 `.`/`..`）→ 400。GitHub 失败 → 200，`plugins: []`、`error` 非空。响应额外含 `cached_at` 和（失败时）`error`。`installed`/`installed_version` 每次请求按当前已安装插件实时计算（扫描结果本身才缓存）。
+- 扫描：默认分支取自 `GET /repos/{o}/{r}`；先读根目录 `genkan-plugins.json`（存在则只用其中列出的文件，路径必须是安全的相对路径、扩展名 `.js`/`.ts`，列出的文件即使无法通过校验也会以 `error` 条目返回）；否则用 git trees API（`recursive=1`）列出 `.js`/`.ts` 文件，跳过 `.d.ts`、`.min.js`、> 512 KiB、任一目录段是 `node_modules`/`test`/`tests`/`dist`/`__tests__` 或以 `.` 开头的路径，按目录深度再按路径排序，最多取 40 个。自动扫描模式下内容里不同时含 `manifest` 与 `export` 的文件被静默忽略（不是插件，如普通脚本）；含有的文件如编译/校验失败则返回 `plugin: null` 与 `error`。下载并发 ≤ 4。
+- 缓存 10 分钟（成功），失败结果缓存 30 秒；缓存最多 128 项；并发相同请求合并为一次。令牌只发送给 API 主机，不发送给 raw 主机，并从错误信息中抹除。
+- 配置：环境变量 `GENKAN_GITHUB_TOKEN`；`plugin.Config`/`server.Config` 的 `GitHubToken`、`GitHubAPI`、`GitHubRaw`、`GitHubClient`（后三者供测试覆盖）。
+
+**MCP**：新增 `preview_plugin`、`get_plugin_source`、`update_plugin_source`（共 26 个工具）。`preview_plugin` 在 `error` 非空时以 `isError` 返回结构化结果。MCP 不提供市场工具（第三方浏览只在 UI/REST 中）。

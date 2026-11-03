@@ -156,7 +156,7 @@ func (s *Store) ImportData(mode string, in Export) (res ImportResult, err error)
 		if merge || !validID(id) {
 			id = NewID()
 		}
-		wgs = append(wgs, WidgetInstance{ID: id, Plugin: w.Plugin, Widget: w.Widget, WorkspaceID: nws, Config: cfg, Sort: w.Sort})
+		wgs = append(wgs, WidgetInstance{ID: id, Plugin: w.Plugin, Widget: w.Widget, WorkspaceID: nws, Config: cfg, Sort: w.Sort, W: ClampWidgetW(w.W), H: ClampWidgetH(w.H)})
 	}
 
 	err = s.commit(true, func() (bool, error) {

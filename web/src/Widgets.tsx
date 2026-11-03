@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { signal } from '@preact/signals'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { del, get, patch, post } from './api'
+import { openCtx } from './ContextMenu'
 import { ConfigFields, useConfigForm } from './ConfigForm'
 import { Icon } from './icons'
 import { LUCIDE } from './lucide'
 import { Modal } from './parts'
 import { lang, t } from './i18n'
-import { closeModal, curWs, editMode, isAdmin, load, modal, openSettings, plugins, sortedWs, toast, toastError, widgets, type ModalState } from './store'
+import { track } from './wtrack'
+import { closeModal, curWs, editMode, isAdmin, load, modal, openSettings, plugins, sortedWs, toast, toastError, widgets, type CtxItem, type ModalState } from './store'
 import type { Block, ListItem, PluginInfo, PluginWidgetDef, StatBlock, WidgetData, WidgetInstance, WidgetView } from './types'
 
 // ---------- safe value helpers (the backend sanitizes too; this is defence in depth) ----------
@@ -286,17 +289,60 @@ function useWidgetData(inst: WidgetInstance, refreshSec: number, active: boolean
   return { st, reload: (force: boolean) => reload.current(force) }
 }
 
-async function moveWidget(id: string, dir: -1 | 1, shown: WidgetInstance[]) {
-  const all = widgets.value.slice().sort((a, b) => a.sort - b.sort)
-  const i = shown.findIndex((w) => w.id === id)
-  const j = i + dir
-  if (i < 0 || j < 0 || j >= shown.length) return
-  const a = all.findIndex((w) => w.id === shown[i].id)
-  const b = all.findIndex((w) => w.id === shown[j].id)
-  ;[all[a], all[b]] = [all[b], all[a]]
-  widgets.value = all.map((w, k) => ({ ...w, sort: k }))
+// ---------- layout: masonry grid (docs/PLUGINS.md 11.1) ----------
+// `.widgets` is a dense grid of 4px rows. Every card sits in a cell (`.wgi`, the card + the gap below it) whose row span is
+// measured with a ResizeObserver (h = 0, content height) or follows the fixed height (h > 0); `w` is the width in columns of 6.
+const ROW = 4
+const DEF_W: Record<string, number> = { s: 2, m: 4, l: 6 }
+const H_MIN = 80
+const H_MAX = 1200
+const H_STEP = 8
+const effW = (w: number | undefined, size: string) => (w && w > 0 ? Math.min(6, Math.round(w)) : DEF_W[size] || 3)
+/** column spans at the three grid densities (6 / 4 / 2 columns; one column is always span 1) */
+const cellVars = (w6: number) => ({ '--c6': String(w6), '--c4': String(Math.ceil((w6 * 4) / 6)), '--c2': String(Math.ceil((w6 * 2) / 6)) })
+/** columns the grid has right now (6 / 4 / 2 / 1) */
+const gridCols = (area: HTMLElement) => Math.max(1, getComputedStyle(area).gridTemplateColumns.split(' ').length)
+/** the `w` (of 6) to store for a width of `n` columns of a `cols`-column grid */
+const toW = (n: number, cols: number) => (n >= cols ? 6 : Math.floor(((n - 1) * 6) / cols) + 1)
+const snapH = (h: number) => Math.min(H_MAX, Math.max(H_MIN, Math.round(h / H_STEP) * H_STEP))
+
+/** Keeps `--r` (the cell's row span) in sync with its rendered height. */
+function useRows(ref: { current: HTMLElement | null }) {
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const set = () => el.style.setProperty('--r', String(Math.max(1, Math.ceil(el.getBoundingClientRect().height / ROW - 0.01))))
+    set()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(set)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+}
+
+const liveMsg = signal('')
+
+// ---------- persistence ----------
+async function patchWidget(id: string, body: { w?: number; h?: number; workspace_id?: string }) {
+  widgets.value = widgets.value.map((x) => (x.id === id ? { ...x, ...body } : x))
   try {
-    await post('/api/widgets/reorder', { ids: all.map((w) => w.id) })
+    await patch('/api/widgets/' + id, body)
+  } catch (e) {
+    toastError(e)
+    load()
+  }
+}
+
+/** `ids` = the new order of the widgets of the current view; the widgets of other workspaces keep their slots. */
+async function reorderWidgets(ids: string[]) {
+  const all = widgets.value.slice().sort((a, b) => a.sort - b.sort)
+  const by = new Map(all.map((w) => [w.id, w]))
+  const set = new Set(ids)
+  let k = 0
+  const next = all.map((w) => (set.has(w.id) ? by.get(ids[k++])! : w))
+  widgets.value = next.map((w, i) => ({ ...w, sort: i }))
+  try {
+    await post('/api/widgets/reorder', { ids: next.map((w) => w.id) })
   } catch (e) {
     toastError(e)
     load()
@@ -321,6 +367,229 @@ function askDelete(w: WidgetInstance, name: string) {
   }
 }
 
+// ---------- drag to reorder (pointer events + touch long press) ----------
+function rectDist(r: DOMRect, x: number, y: number) {
+  return Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom))
+}
+
+/**
+ * Pure DOM preview while dragging: the dragged cell becomes a dashed placeholder and the other cells are re-ordered with CSS `order`
+ * (no DOM moves, so focus and pointer capture survive), animated FLIP-style. Nothing touches the store until the drop.
+ */
+function beginReorder(e: PointerEvent, area: HTMLElement, id: string, order: string[]) {
+  const cell = area.querySelector<HTMLElement>(`:scope > [data-wid="${id}"]`)
+  const card = cell?.firstElementChild as HTMLElement | null
+  if (!cell || !card) return
+  let cur = order.slice()
+  let ghost: HTMLElement | null = null
+  let offX = 0
+  let offY = 0
+  let last = 0
+  const cells = () => Array.from(area.querySelectorAll<HTMLElement>(':scope > .wgi'))
+  const setOrder = () => {
+    const els = cells()
+    const before = new Map(els.map((c) => [c, c.getBoundingClientRect()]))
+    for (const c of els) c.style.order = c.dataset.wid ? String(cur.indexOf(c.dataset.wid) + 1) : '0'
+    for (const c of els) {
+      const a = before.get(c)!
+      const b = c.getBoundingClientRect()
+      const dx = a.left - b.left
+      const dy = a.top - b.top
+      if (c === cell || (!dx && !dy)) continue
+      c.style.transition = 'none'
+      c.style.transform = `translate(${dx}px,${dy}px)`
+    }
+    void area.offsetWidth
+    for (const c of els) {
+      if (!c.style.transform) continue
+      c.style.transition = 'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)'
+      c.style.transform = ''
+    }
+  }
+  track(e, {
+    touchDelay: 260,
+    threshold: 5,
+    onStart: (sx, sy) => {
+      const r = card.getBoundingClientRect()
+      offX = sx - r.left
+      offY = sy - r.top
+      ghost = card.cloneNode(true) as HTMLElement
+      ghost.removeAttribute('data-testid')
+      ghost.querySelectorAll('[data-testid]').forEach((n) => n.removeAttribute('data-testid'))
+      ghost.classList.add('dnd-ghost')
+      ghost.style.width = r.width + 'px'
+      ghost.style.height = r.height + 'px'
+      document.body.appendChild(ghost)
+      cell.dataset.ph = '1'
+      area.dataset.dragging = '1'
+      setOrder()
+    },
+    onMove: (x, y) => {
+      if (!ghost) return
+      ghost.style.transform = `translate(${x - offX}px,${y - offY}px) scale(1.03)`
+      const now = performance.now()
+      if (now - last < 170) return // let the previous re-flow settle before judging again
+      const els = cells()
+      const rc = cell.getBoundingClientRect()
+      if (x >= rc.left && x <= rc.right && y >= rc.top && y <= rc.bottom) return // over the placeholder: stay
+      let hit: HTMLElement | null = null
+      let bd = 1e9
+      for (const c of els) {
+        if (c === cell) continue
+        const r = c.getBoundingClientRect()
+        const d = rectDist(r, x, y)
+        if (d < bd) {
+          bd = d
+          hit = c
+        }
+      }
+      if (!hit) return
+      const rest = cur.filter((k) => k !== id)
+      let at = 0
+      if (hit.dataset.wid) {
+        const r = hit.getBoundingClientRect()
+        // the cell's top-left half inserts before it, the bottom-right half after it
+        const before = (x - r.left) / (r.width || 1) + (y - r.top) / (r.height || 1) < 1
+        at = rest.indexOf(hit.dataset.wid) + (before ? 0 : 1)
+      }
+      const next = rest.slice()
+      next.splice(at, 0, id)
+      if (next.join() === cur.join()) return
+      cur = next
+      last = now
+      setOrder()
+    },
+    onEnd: (commit) => {
+      ghost?.remove()
+      delete cell.dataset.ph
+      delete area.dataset.dragging
+      for (const c of cells()) {
+        c.style.order = ''
+        c.style.transform = ''
+        c.style.transition = ''
+      }
+      if (commit && cur.join() !== order.join()) reorderWidgets(cur)
+    },
+  })
+}
+
+/** keyboard: arrows on the grip move the card one place */
+function moveBy(id: string, d: number, order: string[]) {
+  const i = order.indexOf(id)
+  const j = i + d
+  if (i < 0 || j < 0 || j >= order.length) return
+  const next = order.slice()
+  next.splice(i, 1)
+  next.splice(j, 0, id)
+  liveMsg.value = t('widget.moved', { n: j + 1, total: order.length })
+  reorderWidgets(next)
+  requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="widget-grip-${id}"]`)?.focus())
+}
+
+// ---------- resize handle: columns snap horizontally, 8px steps vertically, live preview, PATCH {w,h} on release ----------
+function beginResize(e: PointerEvent, cell: HTMLElement, inst: WidgetInstance, size: string) {
+  const area = cell.parentElement as HTMLElement
+  const card = cell.firstElementChild as HTMLElement
+  const cols = gridCols(area)
+  const gap = parseFloat(getComputedStyle(area).columnGap) || 0
+  const colW = (area.clientWidth + gap) / cols
+  const w0 = cell.getBoundingClientRect().width
+  const n0 = Math.min(cols, Math.max(1, Math.round((w0 + gap) / colW)))
+  const h0 = card.getBoundingClientRect().height
+  const h0Stored = inst.h || 0
+  let sx = 0
+  let sy = 0
+  let tip: HTMLElement | null = null
+  let res = { w: inst.w || 0, h: h0Stored }
+  const apply = (w: number, h: number) => {
+    const vars = cellVars(effW(w, size))
+    for (const k in vars) cell.style.setProperty(k, (vars as any)[k])
+    card.style.height = h ? h + 'px' : ''
+    if (h) card.dataset.fixed = '1'
+    else delete card.dataset.fixed
+  }
+  track(e, {
+    touchDelay: 0,
+    threshold: 3,
+    capture: e.currentTarget as HTMLElement,
+    onStart: (x, y) => {
+      sx = x
+      sy = y
+      tip = document.createElement('span')
+      tip.className = 'wg-size-tip'
+      card.appendChild(tip)
+      cell.dataset.resizing = '1'
+    },
+    onMove: (x, y) => {
+      const dx = x - sx
+      const dy = y - sy
+      const n = cols === 1 ? 1 : Math.min(cols, Math.max(1, Math.round((w0 + dx + gap) / colW)))
+      const w = n === n0 ? inst.w || 0 : toW(n, cols)
+      const h = Math.abs(dy) < 6 ? h0Stored : snapH(h0 + dy)
+      res = { w, h }
+      apply(w, h)
+      if (tip) tip.textContent = `${n}/${cols} × ${h ? h + 'px' : t('widget.auto')}`
+    },
+    onEnd: (commit) => {
+      tip?.remove()
+      delete cell.dataset.resizing
+      if (commit && (res.w !== (inst.w || 0) || res.h !== h0Stored)) patchWidget(inst.id, res)
+      else apply(inst.w || 0, h0Stored)
+    },
+  })
+}
+
+/** keyboard: left/right = one column, up/down = 40px, Home / Delete = auto height */
+function resizeKey(e: KeyboardEvent, cell: HTMLElement, inst: WidgetInstance) {
+  const k = e.key
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'Delete', 'Backspace'].includes(k)) return
+  e.preventDefault()
+  e.stopPropagation()
+  const area = cell.parentElement as HTMLElement
+  const card = cell.firstElementChild as HTMLElement
+  if (k === 'Home' || k === 'Delete' || k === 'Backspace') return void (inst.h && patchWidget(inst.id, { h: 0 }))
+  if (k === 'ArrowUp' || k === 'ArrowDown') {
+    const base = inst.h || card.getBoundingClientRect().height
+    return void patchWidget(inst.id, { h: snapH(base + (k === 'ArrowDown' ? 40 : -40)) })
+  }
+  const cols = gridCols(area)
+  if (cols === 1) return
+  const gap = parseFloat(getComputedStyle(area).columnGap) || 0
+  const colW = (area.clientWidth + gap) / cols
+  const n0 = Math.min(cols, Math.max(1, Math.round((cell.getBoundingClientRect().width + gap) / colW)))
+  const n = Math.min(cols, Math.max(1, n0 + (k === 'ArrowRight' ? 1 : -1)))
+  if (n !== n0) patchWidget(inst.id, { w: toW(n, cols) })
+}
+
+// ---------- context menu ----------
+function widgetMenu(inst: WidgetInstance, o: { size: string; admin: boolean; active: boolean; link: string | null; reload: () => void; name: string }): CtxItem[] {
+  const items: CtxItem[] = []
+  const sep = () => items.push({ id: 'sep' + items.length, label: '', sep: true, onSelect() {} })
+  if (o.active) items.push({ id: 'ctx-widget-refresh', label: t('plugin.refresh'), icon: 'refresh-cw', onSelect: o.reload })
+  if (o.link) items.push({ id: 'ctx-widget-open', label: t('ctx.openNew'), icon: 'external-link', onSelect: () => window.open(o.link!, '_blank', 'noopener') })
+  if (!o.admin) return items
+  if (items.length) sep()
+  if (o.active) items.push({ id: 'ctx-widget-config', label: t('widget.edit'), icon: 'pencil', onSelect: () => (modal.value = { kind: 'widget', id: inst.id }) })
+  const w = effW(inst.w, o.size)
+  const sizes: [string, number, string][] = [
+    ['s', 2, 'widget.sz.s'],
+    ['m', 3, 'widget.sz.m'],
+    ['l', 4, 'widget.sz.l'],
+    ['full', 6, 'widget.sz.full'],
+  ]
+  for (const [k, v, key] of sizes) items.push({ id: 'ctx-widget-size-' + k, label: t(key), icon: 'layout-grid', checked: w === v, onSelect: () => patchWidget(inst.id, { w: v }) })
+  items.push({ id: 'ctx-widget-height-auto', label: t('widget.sz.auto'), icon: 'arrow-down', checked: !inst.h, onSelect: () => patchWidget(inst.id, { h: 0 }) })
+  sep()
+  const ws = curWs.value
+  if (ws) items.push({ id: 'ctx-widget-scope-ws', label: t('widget.scope.ws'), icon: 'folder', checked: !!inst.workspace_id, onSelect: () => patchWidget(inst.id, { workspace_id: ws.id }) })
+  items.push({ id: 'ctx-widget-scope-all', label: t('widget.scope.all'), icon: 'globe', checked: !inst.workspace_id, onSelect: () => patchWidget(inst.id, { workspace_id: '' }) })
+  sep()
+  items.push({ id: 'ctx-widget-delete', label: t('common.delete'), icon: 'trash-2', danger: true, onSelect: () => askDelete(inst, o.name) })
+  return items
+}
+
+const LONG_PRESS = 500
+
 function Skeleton({ size }: { size: string }) {
   return (
     <div class="wg-skel" data-testid="widget-skeleton" aria-hidden="true">
@@ -331,18 +600,21 @@ function Skeleton({ size }: { size: string }) {
   )
 }
 
-function Card({ inst, p, def, edit, shown }: { inst: WidgetInstance; p?: PluginInfo; def?: PluginWidgetDef; edit: boolean; shown: WidgetInstance[] }) {
+function Card({ inst, p, def, edit, order }: { inst: WidgetInstance; p?: PluginInfo; def?: PluginWidgetDef; edit: boolean; order: string[] }) {
   const active = !!p?.enabled && !!def
   const admin = isAdmin.value
   const { st, reload } = useWidgetData(inst, def?.refresh || 300, active)
+  const cell = useRef<HTMLDivElement>(null)
+  const lp = useRef({ timer: 0, x: 0, y: 0 })
+  useRows(cell)
   const size = def?.size || 'm'
   const name = def?.name || inst.widget
-  const idx = shown.findIndex((w) => w.id === inst.id)
   const v = st.view
   const err = active ? st.err || v?.error : t('widget.disabled', { name: p?.name || inst.plugin })
   const title = v?.title || name
   const ic = wIcon(v?.icon) || wIcon(p?.icon)
   const href = httpUrl(v?.link)
+  const fixed = !!inst.h && inst.h > 0
   const ctx: Ctx = {
     admin,
     run: async (action, params) => {
@@ -355,68 +627,151 @@ function Card({ inst, p, def, edit, shown }: { inst: WidgetInstance; p?: PluginI
       }
     },
   }
+  const openMenu = (x: number, y: number) => openCtx(x, y, widgetMenu(inst, { size, admin, active, link: href, reload: () => reload(true), name }), 'ctx-menu-widget', title)
+  const onMenu = (e: MouseEvent) => {
+    if (String(window.getSelection() || '')) return // keep the native menu for selected text
+    e.preventDefault()
+    if (edit && (e as PointerEvent).pointerType === 'touch') return // long-press is drag in edit mode
+    openMenu(e.clientX, e.clientY)
+  }
+  const cancelLp = () => clearTimeout(lp.current.timer)
+  const press = (e: PointerEvent) => {
+    if (edit) {
+      if ((e.target as HTMLElement).closest('.wg-actions,.wg-resize')) return
+      return beginReorder(e, cell.current!.parentElement as HTMLElement, inst.id, order)
+    }
+    if (e.pointerType === 'mouse') return
+    const q = lp.current
+    q.x = e.clientX
+    q.y = e.clientY
+    cancelLp()
+    q.timer = window.setTimeout(() => openMenu(q.x, q.y), LONG_PRESS)
+  }
   const body = arr<Block>(v?.body, 50)
   return (
-    <section class={'wg glass wg-' + size + (active ? '' : ' off')} data-testid="widget" data-widget-id={inst.id} data-plugin={inst.plugin} data-widget={inst.widget} data-size={size} aria-busy={active && st.loading}>
-      <header class="wg-head">
-        {ic && <Icon n={ic} size={15} />}
-        {href ? (
-          <a class="wg-title" href={href} target="_blank" rel="noopener noreferrer" data-testid="widget-title">
-            {title}
-          </a>
-        ) : (
-          <h2 class="wg-title" data-testid="widget-title">
-            {title}
-          </h2>
-        )}
-        {active && admin && !edit && (
-          <button class="wg-refresh" aria-label={t('plugin.refresh')} title={t('plugin.refresh')} data-testid="widget-refresh" onClick={() => reload(true)}>
-            <Icon n="refresh-cw" size={13} />
-          </button>
-        )}
-      </header>
-      {active && st.loading && !v && <Skeleton size={size} />}
-      {err && (
-        <div class="wg-err" role="alert" data-testid="widget-error">
-          <Icon n="triangle-alert" size={15} />
-          <span>{err}</span>
-          {active && (
-            <button class="linkbtn" data-testid="widget-retry" onClick={() => reload(true)}>
-              {t('common.retry')}
+    <div class="wgi" ref={cell} data-wid={inst.id} style={cellVars(effW(inst.w, size))}>
+      <section
+        class={'wg glass wg-' + size + (active ? '' : ' off')}
+        style={fixed ? { height: inst.h + 'px' } : undefined}
+        data-fixed={fixed ? '1' : undefined}
+        data-testid="widget"
+        data-widget-id={inst.id}
+        data-plugin={inst.plugin}
+        data-widget={inst.widget}
+        data-size={size}
+        data-w={effW(inst.w, size)}
+        data-h={inst.h || 0}
+        aria-busy={active && st.loading}
+        onContextMenu={onMenu}
+        onPointerDown={press}
+        onPointerMove={(e) => Math.hypot(e.clientX - lp.current.x, e.clientY - lp.current.y) > 8 && cancelLp()}
+        onPointerUp={cancelLp}
+        onPointerCancel={cancelLp}
+        onPointerLeave={cancelLp}
+      >
+        <header class="wg-head">
+          {edit && (
+            <button
+              class="wg-grip"
+              aria-label={t('widget.drag')}
+              title={t('widget.drag')}
+              data-testid={'widget-grip-' + inst.id}
+              onKeyDown={(e) => {
+                const d = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : 0
+                if (d) {
+                  e.preventDefault()
+                  moveBy(inst.id, d, order)
+                }
+              }}
+            >
+              <Icon n="grip-vertical" size={15} />
             </button>
           )}
-        </div>
-      )}
-      {active && v && (
-        <div class={'wg-body' + (st.err ? ' stale' : '')}>
-          {body.map((b, i) => (
-            <BlockView key={i} b={b} ctx={ctx} depth={0} />
-          ))}
-        </div>
-      )}
-      {edit && (
-        <span class="cap-actions wg-actions">
-          <button class="mini" aria-label={t('widget.movePrev')} title={t('widget.movePrev')} disabled={idx <= 0} data-testid={'widget-prev-' + inst.id} onClick={() => moveWidget(inst.id, -1, shown)}>
-            <Icon n="arrow-left" size={12} />
-          </button>
-          <button class="mini" aria-label={t('widget.moveNext')} title={t('widget.moveNext')} disabled={idx >= shown.length - 1} data-testid={'widget-next-' + inst.id} onClick={() => moveWidget(inst.id, 1, shown)}>
-            <Icon n="arrow-right" size={12} />
-          </button>
-          {active && (
-            <button class="mini" aria-label={t('widget.edit')} title={t('widget.edit')} data-testid={'widget-edit-' + inst.id} onClick={() => (modal.value = { kind: 'widget', id: inst.id })}>
-              <Icon n="pencil" size={12} />
+          {ic && <Icon n={ic} size={15} />}
+          {href ? (
+            <a class="wg-title" href={href} target="_blank" rel="noopener noreferrer" data-testid="widget-title">
+              {title}
+            </a>
+          ) : (
+            <h2 class="wg-title" data-testid="widget-title">
+              {title}
+            </h2>
+          )}
+          {active && admin && !edit && (
+            <button class="wg-refresh" aria-label={t('plugin.refresh')} title={t('plugin.refresh')} data-testid="widget-refresh" onClick={() => reload(true)}>
+              <Icon n="refresh-cw" size={13} />
             </button>
           )}
-          <button class="mini danger" aria-label={t('widget.delete')} title={t('widget.delete')} data-testid={'widget-delete-' + inst.id} onClick={() => askDelete(inst, name)}>
-            <Icon n="x" size={12} />
-          </button>
-        </span>
-      )}
-    </section>
+        </header>
+        {active && st.loading && !v && <Skeleton size={size} />}
+        {err && (
+          <div class="wg-err" role="alert" data-testid="widget-error">
+            <Icon n="triangle-alert" size={15} />
+            <span>{err}</span>
+            {active && (
+              <button class="linkbtn" data-testid="widget-retry" onClick={() => reload(true)}>
+                {t('common.retry')}
+              </button>
+            )}
+          </div>
+        )}
+        {active && v && (
+          <div class={'wg-body' + (st.err ? ' stale' : '')}>
+            {body.map((b, i) => (
+              <BlockView key={i} b={b} ctx={ctx} depth={0} />
+            ))}
+          </div>
+        )}
+        {edit && (
+          <>
+            <span class="cap-actions wg-actions">
+              {active && (
+                <button class="mini" aria-label={t('widget.edit')} title={t('widget.edit')} data-testid={'widget-edit-' + inst.id} onClick={() => (modal.value = { kind: 'widget', id: inst.id })}>
+                  <Icon n="pencil" size={12} />
+                </button>
+              )}
+              <button
+                class="mini"
+                aria-label={t('widget.more')}
+                title={t('widget.more')}
+                aria-haspopup="menu"
+                data-testid={'widget-more-' + inst.id}
+                onClick={(e) => {
+                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  openMenu(r.left, r.bottom + 4)
+                }}
+              >
+                <Icon n="ellipsis" size={12} />
+              </button>
+              <button class="mini danger" aria-label={t('widget.delete')} title={t('widget.delete')} data-testid={'widget-delete-' + inst.id} onClick={() => askDelete(inst, name)}>
+                <Icon n="x" size={12} />
+              </button>
+            </span>
+            <button
+              class="wg-resize"
+              aria-label={t('widget.resize')}
+              title={t('widget.resizeTip')}
+              data-testid={'widget-resize-' + inst.id}
+              onPointerDown={(e) => {
+                e.stopPropagation()
+                beginResize(e, cell.current!, inst, size)
+              }}
+              onDblClick={() => inst.h && patchWidget(inst.id, { h: 0 })}
+              onKeyDown={(e) => resizeKey(e, cell.current!, inst)}
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                <path d="M14 6 6 14M14 10l-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+            </button>
+          </>
+        )}
+      </section>
+    </div>
   )
 }
 
 export function WidgetArea() {
+  const area = useRef<HTMLElement>(null)
   const ws = curWs.value
   const edit = editMode.value && isAdmin.value
   if (!ws) return null
@@ -426,17 +781,25 @@ export function WidgetArea() {
     .sort((a, b) => a.sort - b.sort)
   const shown = edit ? mine : mine.filter((w) => ps.find((p) => p.id === w.plugin)?.enabled)
   if (!shown.length && !edit) return null
+  const order = shown.map((w) => w.id)
   return (
-    <section class="widgets" data-testid="widget-area" data-editing={edit ? '1' : undefined} aria-label={t('widget.area')}>
+    <section class="widgets" ref={area} data-testid="widget-area" data-editing={edit ? '1' : undefined} aria-label={t('widget.area')}>
+      {edit && (
+        <div class="wgi wgi-add" style={cellVars(2)}>
+          <button class="wg wg-add glass-lite" data-testid="widget-add" onClick={() => (modal.value = { kind: 'widget' })}>
+            <Icon n="plus" size={16} />
+            {t('widget.add')}
+          </button>
+        </div>
+      )}
       {shown.map((w) => {
         const p = ps.find((x) => x.id === w.plugin)
-        return <Card key={w.id} inst={w} p={p} def={p?.widgets?.find((d) => d.id === w.widget)} edit={edit} shown={shown} />
+        return <Card key={w.id} inst={w} p={p} def={p?.widgets?.find((d) => d.id === w.widget)} edit={edit} order={order} />
       })}
       {edit && (
-        <button class="wg wg-add glass-lite" data-testid="widget-add" onClick={() => (modal.value = { kind: 'widget' })}>
-          <Icon n="plus" size={16} />
-          {t('widget.add')}
-        </button>
+        <span class="vh" aria-live="polite">
+          {liveMsg.value}
+        </span>
       )}
     </section>
   )

@@ -135,3 +135,71 @@ func TestPluginToolsWithoutManager(t *testing.T) {
 		t.Fatalf("%v", r)
 	}
 }
+
+func TestPluginSourceTools(t *testing.T) {
+	s, st := newPluginSrv(t)
+	// preview: nothing installed, errors are tool errors carrying the details
+	r := call(t, s, "preview_plugin", map[string]any{"source": mcpPlugin})
+	sc := structured(t, r)
+	if r["isError"] != nil || sc["plugin"].(map[string]any)["id"] != "mcp-demo" || sc["installed"] != false || sc["source"] != mcpPlugin {
+		t.Fatalf("preview: %v", r)
+	}
+	if len(st.Plugins()) != 0 {
+		t.Fatal("preview installed")
+	}
+	r = call(t, s, "preview_plugin", map[string]any{"source": "export const manifest = {\n id: \"abc\",\n name: ;\n};"})
+	if r["isError"] != true || !strings.Contains(jsonOf(structured(t, r)), "3:") {
+		t.Fatalf("preview error: %v", r)
+	}
+	if r := call(t, s, "preview_plugin", map[string]any{}); r["isError"] != true {
+		t.Fatalf("empty: %v", r)
+	}
+	if r := call(t, s, "preview_plugin", map[string]any{"catalog": "calculator"}); r["isError"] != nil {
+		t.Fatalf("catalog: %v", r)
+	}
+
+	call(t, s, "install_plugin", map[string]any{"source": mcpPlugin, "enable": false})
+	r = call(t, s, "get_plugin_source", map[string]any{"id": "mcp-demo"})
+	if sc := structured(t, r); sc["source"] != mcpPlugin || sc["lang"] != "js" {
+		t.Fatalf("get: %v", r)
+	}
+	if r := call(t, s, "get_plugin_source", map[string]any{"id": "nope"}); r["isError"] != true {
+		t.Fatalf("get missing: %v", r)
+	}
+	v2 := strings.Replace(mcpPlugin, `version: "1"`, `version: "9"`, 1)
+	r = call(t, s, "update_plugin_source", map[string]any{"id": "mcp-demo", "source": v2})
+	p := structured(t, r)["plugin"].(map[string]any)
+	if r["isError"] != nil || p["version"] != "9" || p["enabled"] != false {
+		t.Fatalf("update: %v", r)
+	}
+	if r := call(t, s, "update_plugin_source", map[string]any{"id": "mcp-demo", "source": strings.Replace(v2, `id: "mcp-demo"`, `id: "other"`, 1)}); r["isError"] != true {
+		t.Fatalf("id change: %v", r)
+	}
+	if r := call(t, s, "update_plugin_source", map[string]any{"id": "mcp-demo"}); r["isError"] != true {
+		t.Fatalf("missing source: %v", r)
+	}
+}
+
+func TestWidgetLayoutTools(t *testing.T) {
+	s, st := newPluginSrv(t)
+	call(t, s, "install_plugin", map[string]any{"source": mcpPlugin})
+	r := call(t, s, "add_widget", map[string]any{"plugin": "mcp-demo", "widget": "w", "config": map[string]any{"label": "L"}, "w": 4, "h": 250})
+	w := structured(t, r)["widget"].(map[string]any)
+	if w["w"] != 4.0 || w["h"] != 250.0 {
+		t.Fatalf("add: %v", w)
+	}
+	id := w["id"].(string)
+	r = call(t, s, "update_widget", map[string]any{"id": id, "w": 9, "h": 1})
+	w = structured(t, r)["widget"].(map[string]any)
+	if w["w"] != 6.0 || w["h"] != 80.0 {
+		t.Fatalf("clamp: %v", w)
+	}
+	call(t, s, "update_widget", map[string]any{"id": id, "config": map[string]any{"label": "L2"}})
+	lw := structured(t, call(t, s, "list_widgets", nil))["widgets"].([]any)[0].(map[string]any)
+	if lw["w"] != 6.0 || lw["h"] != 80.0 {
+		t.Fatalf("list: %v", lw)
+	}
+	if got, _ := st.GetWidget(id); got.W != 6 || got.H != 80 {
+		t.Fatalf("%+v", got)
+	}
+}

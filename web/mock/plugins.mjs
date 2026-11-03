@@ -40,6 +40,16 @@ const DEFS = {
     permissions: { fetch: [], links: '' }, config_schema: [],
     widgets: [{ id: 'stats', name: 'Pi-hole stats', size: 's', refresh: 60, config: [F('url', 'url', 'Pi-hole address', { required: true, allowFetch: true, default: 'http://pihole.lan' }), F('token', 'secret', 'API token', { required: true }), F('verbose', 'boolean', 'Show details', { default: true })] }],
   },
+  countdown: {
+    name: 'Countdown', version: '1.0.0', icon: 'calendar', description: 'Days until a date. No network access.', author: 'genkan',
+    permissions: { fetch: [], links: '' }, config_schema: [],
+    widgets: [{ id: 'days', name: 'Countdown', size: 's', refresh: 60, config: [F('title', 'string', 'Title', { default: 'New year' }), F('date', 'string', 'Date', { default: '2027-01-01' })] }],
+  },
+  rss: {
+    name: 'RSS feed', version: '1.0.0', icon: 'rss', description: 'Latest entries of a feed.', author: 'genkan',
+    permissions: { fetch: [], links: '' }, config_schema: [],
+    widgets: [{ id: 'feed', name: 'RSS feed', size: 'm', refresh: 900, config: [F('url', 'url', 'Feed URL', { allowFetch: true, default: 'https://example.com/feed.xml' }), F('count', 'number', 'Entries', { default: 3, min: 1, max: 15 })] }],
+  },
   'link-importer': {
     name: 'Link importer', version: '1.0.0', icon: 'download', description: 'Imports links from a JSON URL on a schedule.', author: 'genkan',
     permissions: { fetch: [], links: 'write' },
@@ -50,7 +60,62 @@ const DEFS = {
     permissions: { fetch: ['*'], links: 'read' }, config_schema: [], search: { name: 'Demo', prefix: 'demo' },
   },
 }
-const CATALOG = ['weather', 'calculator', 'picsum', 'bing-wallpaper', 'hacker-news', 'world-clock', 'pihole', 'link-importer', 'any-fetch']
+const CATALOG = ['weather', 'calculator', 'picsum', 'bing-wallpaper', 'hacker-news', 'world-clock', 'pihole', 'countdown', 'rss', 'link-importer', 'any-fetch']
+
+// widget layout fields (PLUGINS.md 11.1): w = 0..6 columns (0 = default by manifest size), h = 0 (auto) or 80..1200 px
+const clampW = (v) => Math.min(6, Math.max(0, Math.round(Number(v) || 0)))
+const clampH = (v) => { v = Math.round(Number(v) || 0); return v <= 0 ? 0 : Math.min(1200, Math.max(80, v)) }
+
+// ---- generated sources (so "Source" / "Preview" show something realistic) ----
+const srcOf = (id, d) => {
+  const hooks = []
+  if (d.widgets?.length) hooks.push(`export async function widget(ctx) {\n  // ctx.widget = "${d.widgets[0].id}", ctx.config = the instance settings\n  return { title: "${d.name}", body: [{ type: "text", text: "Hello from ${id}" }] }\n}`)
+  if (d.wallpapers?.length) hooks.push(`export async function wallpaper(ctx) {\n  const r = await genkan.fetch("https://${d.permissions?.fetch?.[0] || 'example.com'}/")\n  return { url: r.url, title: "${d.name}" }\n}`)
+  if (d.search) hooks.push(`export async function search(ctx) {\n  return [{ title: "Result for " + ctx.query, copy: ctx.query }]\n}`)
+  if (d.schedules?.length) hooks.push(`export async function schedule(ctx) {\n  console.log("sync started")\n}`)
+  return `// ${d.name}: ${d.description}\nexport const manifest = {\n  id: "${id}",\n  name: "${d.name}",\n  version: "${d.version}",\n  description: "${d.description}",\n  permissions: { fetch: ${JSON.stringify(d.permissions?.fetch || [])}, links: "${d.permissions?.links || ''}" },\n}\n\n${hooks.join('\n\n')}\n`
+}
+
+// ---- fake GitHub "third-party" market ----
+const ago = (d) => new Date(Date.now() - d * 86400000).toISOString()
+const REPOS = [
+  ['alice/genkan-plugins', 'A small collection of useful widgets: crypto ticker, quote of the day and more.', 842, 2],
+  ['bob/genkan-homelab', 'Widgets for homelab dashboards: Proxmox, TrueNAS, UniFi and friends. Needs read access to your network.', 531, 9],
+  ['carol/genkan-rss-plus', 'RSS / Atom reader widget with unread counts and per-feed icons.', 377, 21],
+  ['dave/genkan-quotes', 'Daily quotes for your start page.', 120, 64],
+  ['erin/genkan-weather-extras', 'Air quality, pollen and UV index widgets.', 96, 5],
+  ['frank/genkan-github-widgets', 'Your GitHub notifications and open pull requests as widgets and a search provider.', 88, 1],
+  ['grace/genkan-link-sync', 'Sync your links with a JSON file on a schedule. Writes to your links, so read the source first.', 64, 130],
+  ['heidi/genkan-pomodoro', 'Pomodoro timer widget. No network access at all.', 41, 300],
+  ['ivan/genkan-flaky', 'A repository whose scan fails (demo of the error state).', 12, 12],
+  ['judy/genkan-everything', 'Demo of a plugin that asks for everything. Do not install.', 3, 400],
+  ['kai/genkan-wallpapers', 'Wallpaper sources: Unsplash, Wikimedia picture of the day.', 210, 40],
+].map(([repo, description, stars, d], i) => ({ repo, description, stars, updated_at: ago(d), html_url: 'https://github.com/' + repo, owner_avatar: i === 3 ? '' : `/uploads/plugin-wallpapers/art-${i + 11}.svg`, default_branch: 'main' }))
+const F2 = (key, type, label, o = {}) => ({ key, type, label, ...o })
+const mkp = (id, name, version, description, o = {}) => ({ id, name, version, description, author: o.author || 'community', homepage: '', icon: o.icon || 'puzzle', permissions: { fetch: o.fetch || [], links: o.links || '' }, config_schema: o.config_schema || [], widgets: o.widgets, wallpapers: o.wallpapers, search: o.search, schedules: o.schedules })
+const raw = (repo, file) => `https://raw.githubusercontent.com/${repo}/main/${file}`
+const MARKET_PLUGINS = {}
+const MARKET_SCAN = {}
+const regMk = (repo, file, def, error) => {
+  const url = raw(repo, file)
+  MARKET_PLUGINS[url] = { def, error, source: error ? `export const manifest = {\n  id: "${def?.id || 'broken'}",\n  name: "Broken",\n  version: "0.1.0"\n}\nexport async function widget(ctx) {\n  return { title: "x", body: [ }\n}\n` : srcOf(def.id, def) }
+  ;(MARKET_SCAN[repo] ||= []).push({ path: file, url, def, error })
+}
+regMk('alice/genkan-plugins', 'plugins/crypto-ticker.js', mkp('crypto-ticker', 'Crypto ticker', '1.2.0', 'Bitcoin and Ethereum prices from CoinGecko.', { icon: 'wallet', fetch: ['api.coingecko.com'], widgets: [{ id: 'prices', name: 'Prices', size: 's', refresh: 120, config: [F2('coins', 'string', 'Coins', { default: 'bitcoin,ethereum' })] }] }))
+regMk('alice/genkan-plugins', 'plugins/quote-of-day.js', mkp('quote-of-day', 'Quote of the day', '1.0.1', 'A short quote every day. No network access.', { icon: 'sparkles', widgets: [{ id: 'quote', name: 'Quote', size: 's', refresh: 3600 }] }))
+regMk('alice/genkan-plugins', 'plugins/broken.js', null, 'invalid plugin: compile error: plugins/broken.js:4:12: SyntaxError: Unexpected token \'}\'')
+regMk('bob/genkan-homelab', 'proxmox.ts', mkp('proxmox', 'Proxmox status', '0.4.0', 'CPU, memory and running guests of a Proxmox node.', { icon: 'server', config_schema: [], widgets: [{ id: 'node', name: 'Node status', size: 'm', refresh: 60, config: [F2('url', 'url', 'Proxmox URL', { required: true, allowFetch: true }), F2('token', 'secret', 'API token', { required: true })] }] }))
+regMk('bob/genkan-homelab', 'unifi.ts', mkp('unifi', 'UniFi clients', '0.2.3', 'Connected clients and bandwidth from a UniFi controller.', { icon: 'router', links: 'read', widgets: [{ id: 'clients', name: 'Clients', size: 's', refresh: 60, config: [F2('url', 'url', 'Controller URL', { required: true, allowFetch: true })] }] }))
+regMk('carol/genkan-rss-plus', 'rss-plus.js', mkp('rss-plus', 'RSS Plus', '2.0.0', 'Multi-feed reader with unread counts.', { icon: 'rss', widgets: [{ id: 'feeds', name: 'Feeds', size: 'm', refresh: 600, config: [F2('feeds', 'text', 'Feed URLs', { required: true, allowFetch: true })] }] }))
+regMk('dave/genkan-quotes', 'quotes.js', mkp('quotes', 'Quotes', '1.0.0', 'Daily quotes.', { widgets: [{ id: 'q', name: 'Quote', size: 's', refresh: 3600 }] }))
+regMk('erin/genkan-weather-extras', 'uv-index.js', mkp('uv-index', 'UV index', '1.1.0', 'Current UV index from Open-Meteo.', { icon: 'sun', fetch: ['api.open-meteo.com'], widgets: [{ id: 'uv', name: 'UV', size: 's', refresh: 900, config: [F2('city', 'string', 'City', { default: 'Tokyo' })] }] }))
+regMk('erin/genkan-weather-extras', 'air-quality.js', mkp('air-quality', 'Air quality', '1.0.0', 'AQI and PM2.5.', { icon: 'cloud', fetch: ['air-quality-api.open-meteo.com'], widgets: [{ id: 'aqi', name: 'AQI', size: 's', refresh: 900 }] }))
+regMk('frank/genkan-github-widgets', 'gh-prs.js', mkp('gh-prs', 'GitHub PRs', '0.9.0', 'Your open pull requests.', { icon: 'code', fetch: ['api.github.com'], widgets: [{ id: 'prs', name: 'Open PRs', size: 'm', refresh: 300, config: [F2('token', 'secret', 'Token', { required: true })] }], search: { name: 'GitHub', prefix: 'gh' } }))
+regMk('grace/genkan-link-sync', 'sync.js', mkp('link-sync', 'Link sync', '1.0.0', 'Imports links from a JSON file on a schedule.', { icon: 'download', links: 'write', schedules: [{ id: 'sync', every: 3600 }], config_schema: [F2('feed', 'url', 'JSON URL', { required: true, allowFetch: true })] }))
+regMk('heidi/genkan-pomodoro', 'pomodoro.js', mkp('pomodoro', 'Pomodoro', '1.0.0', 'Focus timer. No network.', { icon: 'clock', widgets: [{ id: 'timer', name: 'Timer', size: 's', refresh: 30 }] }))
+regMk('judy/genkan-everything', 'all.js', mkp('everything', 'Everything', '6.6.6', 'Asks for every permission there is.', { fetch: ['*'], links: 'write', widgets: [{ id: 'x', name: 'X', size: 'l', refresh: 60 }], search: { name: 'All', prefix: 'all' } }))
+regMk('kai/genkan-wallpapers', 'unsplash.js', mkp('unsplash', 'Unsplash', '1.3.0', 'Random Unsplash photos.', { icon: 'image', fetch: ['source.unsplash.com', 'images.unsplash.com'], wallpapers: [{ id: 'random', name: 'Random', refresh: 3600 }] }))
+regMk('kai/genkan-wallpapers', 'wikimedia.js', mkp('wikimedia', 'Wikimedia POTD', '1.0.0', 'Picture of the day from Wikimedia Commons.', { icon: 'image', fetch: ['commons.wikimedia.org', 'upload.wikimedia.org'], wallpapers: [{ id: 'potd', name: 'Picture of the day', refresh: 21600 }] }))
 
 export function createPluginsMock({ send, workspaces, bump }) {
   const installed = []
@@ -58,16 +123,19 @@ export function createPluginsMock({ send, workspaces, bump }) {
   const sources = {}
   const add = (pid, enabled, config = {}) => {
     const def = DEFS[pid]
-    installed.push({ id: pid, ...def, enabled, config, secrets_set: [], source_url: '', last_error: '', installed_at: now(), updated_at: now(), source: `// mock source for ${pid}\nexport const manifest = ${JSON.stringify({ id: pid, name: def.name })}\n` })
+    installed.push({ id: pid, ...def, enabled, config, secrets_set: [], source_url: '', last_error: '', installed_at: now(), updated_at: now(), source: srcOf(pid, def) })
     return installed[installed.length - 1]
   }
-  const addWidget = (plugin, widget, workspace_id, config = {}) => insts.push({ id: id(), plugin, widget, workspace_id, config, sort: insts.length })
+  const addWidget = (plugin, widget, workspace_id, config = {}, w = 0, h = 0) => insts.push({ id: id(), plugin, widget, workspace_id, config, sort: insts.length, w, h })
   add('weather', true, { unit: 'c' })
   add('calculator', true)
   add('picsum', true)
   add('world-clock', true)
   const pi = add('pihole', true)
   pi.secrets_set = []
+  add('hacker-news', true)
+  add('countdown', true)
+  add('rss', true)
   add('any-fetch', false)
   const logs = { weather: [['info', 'fetched forecast for Tokyo (212 ms)']], pihole: [['warn', 'token missing'], ['error', 'fetch http://pihole.lan failed: connection refused']] }
   pi.last_error = 'fetch http://pihole.lan failed: connection refused'
@@ -75,7 +143,11 @@ export function createPluginsMock({ send, workspaces, bump }) {
     const ws = workspaces()
     addWidget('weather', 'current', '', { city: 'Tokyo', days: 7 })
     addWidget('world-clock', 'clock', ws[0].id, { zones: 'Asia/Tokyo\nEurope/Berlin\nAmerica/New_York' })
-    addWidget('pihole', 'stats', ws[0].id, { url: 'http://pihole.lan', token: '', verbose: true })
+    addWidget('pihole', 'stats', ws[0].id, { url: 'http://pihole.lan', token: 'seeded', verbose: true })
+    addWidget('countdown', 'days', '', { title: 'Double 11', date: '2026-11-11' })
+    addWidget('rss', 'feed', '', { url: 'https://example.com/feed.xml', count: 3 })
+    addWidget('hacker-news', 'top', '', { count: 12 })
+    addWidget('countdown', 'days', '', { title: 'New year', date: '2027-01-01' })
   }
   seedWidgets()
 
@@ -147,6 +219,14 @@ export function createPluginsMock({ send, workspaces, bump }) {
       const n = w.config.count || 5
       return { title: 'Hacker News', icon: 'newspaper', link: 'https://news.ycombinator.com', body: [{ type: 'list', items: Array.from({ length: n }, (_, i) => ({ title: `Show HN: a tiny start page #${i + 1}`, subtitle: 'example.com', url: 'https://news.ycombinator.com/', right: String(300 - i * 31), badge: i === 0 ? 'new' : undefined })) }] }
     }
+    if (w.plugin === 'countdown') {
+      const days = Math.max(0, Math.ceil((new Date(w.config.date || '2027-01-01') - Date.now()) / 864e5))
+      return { title: w.config.title || 'Countdown', icon: 'calendar', body: [{ type: 'stat', label: zh ? '还剩' : 'Remaining', value: days, unit: zh ? '天' : 'days', icon: 'calendar', trend: 'down' }, { type: 'text', text: String(w.config.date), muted: true, size: 's', align: 'center' }] }
+    }
+    if (w.plugin === 'rss') {
+      const n = w.config.count || 3
+      return { title: zh ? '示例博客' : 'Example blog', icon: 'rss', link: 'https://example.com', body: [{ type: 'list', items: Array.from({ length: n }, (_, i) => ({ title: `Weekly digest #${417 - i}: something worth reading`, subtitle: 'A short summary of the post goes here...', url: 'https://example.com/', right: `Oct ${30 - i * 7}` })) }] }
+    }
     return { title: w.widget, body: [{ type: 'text', text: 'mock' }] }
   }
 
@@ -160,6 +240,18 @@ export function createPluginsMock({ send, workspaces, bump }) {
       permissions: { fetch: fetchList, links: m(/\blinks:\s*["'](read|write)["']/) || '' }, config_schema: [],
       search: /export\s+(async\s+)?function\s+search/.test(src) ? { name: m(/\bname:\s*["']([^"']+)["']/) || pid, prefix: '' } : null,
     }
+  }
+
+  /** crude stand-in for the compiler: unbalanced braces -> "invalid plugin: compile error: plugin.js:L:C: SyntaxError: ..." */
+  const syntaxError = (src) => {
+    let depth = 0
+    const lines = String(src).split('\n')
+    for (let i = 0; i < lines.length; i++) for (let j = 0; j < lines[i].length; j++) {
+      const c = lines[i][j]
+      if (c === '{') depth++
+      else if (c === '}' && --depth < 0) return `invalid plugin: compile error: plugin.js:${i + 1}:${j + 1}: SyntaxError: Unexpected token '}'`
+    }
+    return depth > 0 ? `invalid plugin: compile error: plugin.js:${lines.length}:${lines[lines.length - 1].length + 1}: SyntaxError: Unexpected end of input` : ''
   }
 
   const handle = async function (req, res, url, body, A, R) {
@@ -178,6 +270,58 @@ export function createPluginsMock({ send, workspaces, bump }) {
       const dm = installed.find((x) => x.id === 'any-fetch')
       if (dm?.enabled && q.startsWith('demo ')) groups.push({ plugin: 'any-fetch', name: 'Demo', icon: 'globe', results: [{ title: 'Demo result for ' + q.slice(5), subtitle: 'https://example.com', url: 'https://example.com' }] })
       return send(res, 200, { groups }), true
+    }
+    if (p === '/api/plugins/preview' && m === 'POST') {
+      if (!A()) return true
+      const n = ['catalog', 'url', 'source'].filter((k) => body[k]).length
+      if (n !== 1) return send(res, 400, { error: 'exactly one of source, url, catalog is required' }), true
+      const lang = body.lang === 'ts' ? 'ts' : 'js'
+      const out = (def, source) => {
+        const rec = installed.find((x) => x.id === def.id)
+        return send(res, 200, { plugin: { ...pub({ ...def, enabled: false }), enabled: false }, source, lang, installed: !!rec, ...(rec ? { installed_version: rec.version } : {}) })
+      }
+      if (body.catalog) {
+        if (!DEFS[body.catalog]) return send(res, 404, { error: 'unknown catalog entry' }), true
+        return out({ id: body.catalog, ...DEFS[body.catalog] }, srcOf(body.catalog, DEFS[body.catalog])), true
+      }
+      if (body.url) {
+        if (!/^https?:\/\//.test(body.url)) return send(res, 400, { error: 'url must be http(s)' }), true
+        const mk = MARKET_PLUGINS[body.url]
+        if (mk) return mk.error ? (send(res, 200, { plugin: null, source: mk.source, lang, installed: false, error: mk.error }), true) : (out(mk.def, mk.source), true)
+        let text
+        try { const r = await fetch(body.url); if (!r.ok) throw new Error('HTTP ' + r.status); text = await r.text() } catch (e) { return send(res, 200, { plugin: null, source: '', lang, installed: false, error: 'download failed: ' + (e.message || 'error') }), true }
+        const d = parseManifest(text)
+        return d ? (out(d, text), true) : (send(res, 200, { plugin: null, source: text, lang, installed: false, error: 'invalid plugin: manifest: id is required' }), true)
+      }
+      const d = parseManifest(body.source)
+      const bad = syntaxError(body.source)
+      if (bad || !d) return send(res, 200, { plugin: null, source: body.source, lang, installed: false, error: bad || 'invalid plugin: manifest: id is required' }), true
+      return out(d, body.source), true
+    }
+    if (p === '/api/plugins/market' && m === 'GET') {
+      if (!A()) return true
+      const sort = url.searchParams.get('sort') || 'stars'
+      if (!['stars', 'updated'].includes(sort)) return send(res, 400, { error: 'sort must be stars or updated' }), true
+      const q = (url.searchParams.get('q') || '').trim().toLowerCase()
+      const pg = Math.min(30, Math.max(1, Number(url.searchParams.get('page')) || 1))
+      await new Promise((r) => setTimeout(r, 350))
+      if (q === 'ratelimit') return send(res, 200, { items: [], total: 0, cached_at: Date.now(), error: 'GitHub API rate limit exceeded. Try again in a few minutes, or set GENKAN_GITHUB_TOKEN on the server.' }), true
+      let items = REPOS.filter((r) => !q || (r.repo + ' ' + r.description).toLowerCase().includes(q))
+      items = items.slice().sort((a, b) => (sort === 'stars' ? b.stars - a.stars : new Date(b.updated_at) - new Date(a.updated_at)))
+      const SIZE = 6 // the real server returns 20 per page; small here so "load more" can be tried
+      return send(res, 200, { items: items.slice((pg - 1) * SIZE, pg * SIZE), total: items.length, cached_at: Date.now() }), true
+    }
+    if (p === '/api/plugins/market/repo' && m === 'GET') {
+      if (!A()) return true
+      const repo = url.searchParams.get('repo') || ''
+      if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) return send(res, 400, { error: 'invalid repo' }), true
+      await new Promise((r) => setTimeout(r, 450))
+      if (repo === 'ivan/genkan-flaky') return send(res, 200, { repo, default_branch: 'main', cached_at: Date.now(), plugins: [], error: 'GitHub API rate limit exceeded. Try again in a few minutes, or set GENKAN_GITHUB_TOKEN on the server.' }), true
+      const plugins = (MARKET_SCAN[repo] || []).map((x) => {
+        const rec = x.def && installed.find((i) => i.id === x.def.id)
+        return { path: x.path, url: x.url, plugin: x.def ? { ...pub({ ...x.def, enabled: false }), enabled: false } : null, ...(x.error ? { error: x.error } : {}), installed: !!rec, ...(rec ? { installed_version: rec.version } : {}) }
+      })
+      return send(res, 200, { repo, default_branch: 'main', cached_at: Date.now(), plugins }), true
     }
     if (p === '/api/plugins/catalog' && m === 'GET') {
       if (!A()) return true
@@ -199,7 +343,11 @@ export function createPluginsMock({ send, workspaces, bump }) {
         if (!DEFS[body.catalog]) return send(res, 404, { error: 'unknown catalog entry' }), true
         def = { id: body.catalog, ...DEFS[body.catalog] }
       } else if (body.url) {
-        try { source = await (await fetch(body.url)).text() } catch { return send(res, 502, { error: 'mock: could not download ' + body.url }), true }
+        const mk = MARKET_PLUGINS[body.url]
+        if (mk) {
+          if (mk.error) return send(res, 400, { error: mk.error }), true
+          def = { ...mk.def }; source = mk.source
+        } else try { source = await (await fetch(body.url)).text() } catch { return send(res, 502, { error: 'mock: could not download ' + body.url }), true }
       }
       if (!def) {
         def = source && parseManifest(source)
@@ -207,7 +355,7 @@ export function createPluginsMock({ send, workspaces, bump }) {
       }
       let rec = installed.find((x) => x.id === def.id)
       if (rec) Object.assign(rec, def, { config: rec.config, enabled: body.enable ?? rec.enabled, updated_at: now(), source_url: body.url || rec.source_url })
-      else installed.push((rec = { ...def, enabled: body.enable ?? true, config: {}, secrets_set: [], source_url: body.url || '', last_error: '', installed_at: now(), updated_at: now(), source: source || `// mock source for ${def.id}\n` }))
+      else installed.push((rec = { ...def, enabled: body.enable ?? true, config: {}, secrets_set: [], source_url: body.url || '', last_error: '', installed_at: now(), updated_at: now(), source: source || srcOf(def.id, def) }))
       bump()
       return send(res, 200, adminInfo(rec)), true
     }
@@ -216,7 +364,39 @@ export function createPluginsMock({ send, workspaces, bump }) {
       const pl = installed.find((x) => x.id === mm[1])
       if (!pl) return send(res, 404, { error: 'plugin not found' }), true
       if (mm[2] === 'logs' && m === 'GET') return send(res, 200, { logs: (logs[pl.id] || []).map(([level, msg], i) => ({ ts: Date.now() - (i + 1) * 60000, level, msg })) }), true
-      if (mm[2] === 'source' && m === 'GET') return send(res, 200, { source: pl.source, lang: 'js' }), true
+      if (mm[2] === 'source' && m === 'GET') return send(res, 200, { source: pl.source, lang: pl.lang || 'js' }), true
+      if (mm[2] === 'source' && m === 'PUT') {
+        const src = String(body.source || '')
+        const bad = syntaxError(src)
+        if (bad) return send(res, 400, { error: bad }), true
+        const d = parseManifest(src)
+        if (!d) return send(res, 400, { error: 'invalid plugin: manifest: id is required' }), true
+        if (d.id !== pl.id) return send(res, 400, { error: `invalid plugin: manifest.id "${d.id}" does not match "${pl.id}"` }), true
+        Object.assign(pl, { name: d.name, version: d.version, description: d.description, permissions: d.permissions, source: src, lang: body.lang === 'ts' ? 'ts' : 'js', updated_at: now(), last_error: '' })
+        bump()
+        return send(res, 200, adminInfo(pl)), true
+      }
+      if (mm[2] === 'test' && m === 'POST') {
+        const t0 = Date.now()
+        await new Promise((r) => setTimeout(r, 250 + Math.random() * 300))
+        const h = body.hook
+        if (!['wallpaper', 'widget', 'search', 'schedule', 'action'].includes(h)) return send(res, 400, { error: 'unknown hook' }), true
+        const logs = [{ ts: Date.now() - 40, level: 'info', msg: `test ${h}${body.target ? ' ' + body.target : ''} started` }]
+        let result, error
+        if (h === 'widget' || h === 'action') {
+          const w = body.instance ? insts.find((x) => x.id === body.instance) : null
+          const cfg = { ...(w?.config || {}), ...(body.config || {}) }
+          if (!pl.widgets?.some((x) => x.id === body.target)) return send(res, 400, { error: 'unknown widget' }), true
+          if (h === 'action') {
+            if (!body.action) return send(res, 400, { error: 'action is required' }), true
+            if (body.action === 'fail') { error = 'action failed: upstream returned 502'; logs.push({ ts: Date.now(), level: 'error', msg: error }) } else result = { toast: `Ran ${body.action}`, refresh: true }
+          } else if (pl.id === 'pihole' && !cfg.token) { error = 'API token is not configured'; logs.push({ ts: Date.now(), level: 'warn', msg: 'token missing' }) }
+          else { result = view({ plugin: pl.id, widget: body.target, config: cfg }, body.lang); logs.push({ ts: Date.now(), level: 'info', msg: `rendered ${result.body?.length || 0} blocks` }) }
+        } else if (h === 'wallpaper') result = { url: 'https://picsum.photos/id/10/1600/900', title: 'Mock photo', credit: 'picsum.photos' }
+        else if (h === 'search') { const v = pl.id === 'calculator' ? calc(body.query || '') : null; result = v !== null ? [{ title: '= ' + v, subtitle: body.query, copy: String(v) }] : [{ title: 'Result for ' + (body.query || ''), url: 'https://example.com' }] }
+        else result = { imported: 3, skipped: 1 }
+        return send(res, 200, { ok: !error, ...(error ? { error } : { result }), logs, ms: Date.now() - t0 }), true
+      }
       if (m === 'PATCH') {
         if (typeof body.enabled === 'boolean') pl.enabled = body.enabled
         if (body.config && typeof body.config === 'object') {
@@ -242,7 +422,7 @@ export function createPluginsMock({ send, workspaces, bump }) {
       if (!A()) return true
       const pl = installed.find((x) => x.id === body.plugin)
       if (!pl?.widgets?.some((w) => w.id === body.widget)) return send(res, 400, { error: 'unknown widget' }), true
-      const w = { id: id(), plugin: body.plugin, widget: body.widget, workspace_id: body.workspace_id || '', config: body.config || {}, sort: Math.max(-1, ...insts.map((x) => x.sort)) + 1 }
+      const w = { id: id(), plugin: body.plugin, widget: body.widget, workspace_id: body.workspace_id || '', config: body.config || {}, sort: Math.max(-1, ...insts.map((x) => x.sort)) + 1, w: clampW(body.w), h: clampH(body.h) }
       for (const k of secretKeys(pl, w.widget)) if (w.config[k] === null) delete w.config[k]
       insts.push(w); bump()
       return send(res, 200, instPub(w, true)), true
@@ -267,6 +447,8 @@ export function createPluginsMock({ send, workspaces, bump }) {
         const pl = installed.find((x) => x.id === w.plugin)
         if (body.workspace_id !== undefined) w.workspace_id = body.workspace_id
         if (body.sort !== undefined) w.sort = body.sort
+        if (body.w !== undefined) w.w = clampW(body.w)
+        if (body.h !== undefined) w.h = clampH(body.h)
         if (body.config) {
           const sk = pl ? secretKeys(pl, w.widget) : []
           for (const [k, v] of Object.entries(body.config)) { if (sk.includes(k)) { if (v === null) delete w.config[k]; else if (v !== '') w.config[k] = v } else w.config[k] = v }

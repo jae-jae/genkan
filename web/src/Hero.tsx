@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { get } from './api'
 import { Icon } from './icons'
+import { LUCIDE } from './lucide'
 import { LinkIcon } from './parts'
 import { lang, t } from './i18n'
-import { categories, curWs, links, openLink, settings, webSearch, workspaces } from './store'
-import { hostOf, searchLinks } from './util'
+import { categories, curWs, hasSearchPlugin, links, openLink, settings, toast, webSearch, workspaces } from './store'
+import type { SearchGroup, SearchResult } from './types'
+import { copyText, hostOf, searchLinks } from './util'
 
 export function Clock() {
   const [now, setNow] = useState(() => new Date())
@@ -35,6 +38,36 @@ export const focusSearch = () => {
 }
 export const searchFocused = () => !!inputEl && document.activeElement === inputEl
 
+interface PluginHit {
+  g: SearchGroup
+  r: SearchResult
+}
+const iconOf = (n?: string) => (n && LUCIDE[n] ? n : '')
+
+/** Plugin search (docs/PLUGINS.md §7.4): debounced 250 ms; never requests anything while no enabled plugin provides search. */
+function usePluginSearch(query: string) {
+  const [groups, setGroups] = useState<SearchGroup[]>([])
+  const seq = useRef(0)
+  const on = hasSearchPlugin.value
+  useEffect(() => {
+    const my = ++seq.current
+    if (!on || !query) {
+      setGroups([])
+      return
+    }
+    const id = window.setTimeout(async () => {
+      let out: SearchGroup[] = []
+      try {
+        const r = await get<{ groups: SearchGroup[] | null }>('/api/plugins/search?q=' + encodeURIComponent(query), { 'Accept-Language': lang.value })
+        out = (r?.groups || []).map((g) => ({ ...g, results: (g.results || []).filter((x) => x && typeof x.title === 'string').slice(0, 8) })).filter((g) => g.results!.length)
+      } catch {}
+      if (my === seq.current) setGroups(out)
+    }, 250)
+    return () => clearTimeout(id)
+  }, [query, on])
+  return groups
+}
+
 export function Search() {
   const [q, setQ0] = useState('')
   const [open, setOpen] = useState(false)
@@ -47,7 +80,10 @@ export function Search() {
   const wsMap = useMemo(() => new Map(workspaces.value.map((w) => [w.id, w])), [workspaces.value])
   const hits = useMemo(() => (q.trim() ? searchLinks(q.trim(), lk, catMap).slice(0, 8) : []), [q, lk, catMap])
   const query = q.trim()
-  const count = query ? hits.length + 1 : 0
+  const groups = usePluginSearch(query)
+  const phits = useMemo<PluginHit[]>(() => groups.flatMap((g) => (g.results || []).map((r) => ({ g, r }))), [groups])
+  const nl = hits.length
+  const count = query ? nl + phits.length + 1 : 0
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -60,8 +96,15 @@ export function Search() {
     inputEl?.blur()
   }
   const activate = (i: number) => {
-    if (i < hits.length) openLink(hits[i].link)
-    else if (query) webSearch(query)
+    if (i < nl) openLink(hits[i].link)
+    else if (i < nl + phits.length) {
+      const r = phits[i - nl].r
+      if (r.url && /^https?:\/\//i.test(r.url)) {
+        if (settings.value.open_in_new_tab) window.open(r.url, '_blank', 'noopener')
+        else location.assign(r.url)
+      } else if (r.copy) copyText(r.copy).then((ok) => toast(ok ? t('search.copied') : t('err.copy'), ok ? 'success' : 'error'))
+      else return
+    } else if (query) webSearch(query)
     reset()
   }
   const onKey = (e: KeyboardEvent) => {
@@ -146,23 +189,58 @@ export function Search() {
               </div>
             )
           })}
+          {groups.map((g) => (
+            <div key={g.plugin} role="group" aria-label={g.name} data-testid="search-plugin-group" data-plugin={g.plugin}>
+              <div class="result-group">
+                <Icon n={iconOf(g.icon) || 'puzzle'} size={13} />
+                <span>{g.name}</span>
+              </div>
+              {(g.results || []).map((r) => {
+                const i = nl + phits.findIndex((h) => h.r === r)
+                const copyOnly = !r.url && !!r.copy
+                return (
+                  <div
+                    key={i}
+                    id={'sr-' + i}
+                    class="result"
+                    role="option"
+                    aria-selected={sel === i}
+                    data-testid="plugin-search-result"
+                    data-plugin={g.plugin}
+                    data-copy={copyOnly ? '1' : undefined}
+                    onMouseMove={() => sel !== i && setSel(i)}
+                    onClick={() => activate(i)}
+                  >
+                    <span class="ico ico-web" style={{ '--s': '26px' } as any}>
+                      <Icon n={iconOf(r.icon) || iconOf(g.icon) || (copyOnly ? 'copy' : 'puzzle')} size={15} />
+                    </span>
+                    <span class="result-main">
+                      <span class="result-title">{r.title}</span>
+                      {r.subtitle && <span class="result-meta">{r.subtitle}</span>}
+                    </span>
+                    {sel === i && <Icon n={copyOnly ? 'copy' : 'corner-down-left'} size={15} />}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
           <div
-            id={'sr-' + hits.length}
+            id={'sr-' + (nl + phits.length)}
             class="result result-web"
             role="option"
-            aria-selected={sel === hits.length}
+            aria-selected={sel === nl + phits.length}
             data-testid="search-web"
-            onMouseMove={() => sel !== hits.length && setSel(hits.length)}
-            onClick={() => activate(hits.length)}
+            onMouseMove={() => sel !== nl + phits.length && setSel(nl + phits.length)}
+            onClick={() => activate(nl + phits.length)}
           >
             <span class="ico ico-web" style={{ '--s': '26px' } as any}>
               <Icon n="globe" size={15} />
             </span>
             <span class="result-main">
               <span class="result-title">{t('search.web', { q: query })}</span>
-              {!hits.length && <span class="result-meta">{t('search.none')}</span>}
+              {!hits.length && !phits.length && <span class="result-meta">{t('search.none')}</span>}
             </span>
-            {sel === hits.length && <Icon n="corner-down-left" size={15} />}
+            {sel === nl + phits.length && <Icon n="corner-down-left" size={15} />}
           </div>
         </div>
       )}

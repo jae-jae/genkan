@@ -7,6 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { createPluginsMock } from './plugins.mjs'
 
 const dist = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 const PORT = Number(process.env.PORT || 8080)
@@ -87,8 +88,10 @@ const send = (res, code, obj, headers = {}) => { res.writeHead(code, { 'Content-
 const nextPin = (wsid) => Math.max(-1, ...links.filter((l) => l.workspace_id === wsid && l.pinned).map((l) => l.pin_sort)) + 1
 const sortBy = (a) => a.sort((x, y) => x.sort - y.sort)
 
+const plug = createPluginsMock({ send, workspaces: () => workspaces, bump: () => bump() })
 function bootstrap(role) {
   return {
+    ...plug.bootstrap(role),
     auth: { setup_required: password === '', role },
     settings: role === 'none' ? { title: settings.title } : settings,
     workspaces: role === 'none' ? [] : workspaces, categories: role === 'none' ? [] : categories, links: role === 'none' ? [] : links,
@@ -108,6 +111,7 @@ async function api(req, res, url) {
   const A = () => role === 'admin' || (send(res, role === 'none' ? 401 : 403, { error: 'admin only' }), false)
   const R = () => role !== 'none' || (send(res, 401, { error: 'unauthorized' }), false)
   let mm
+  if (await plug.handle(req, res, url, body, A, R)) return
   if (p === '/api/bootstrap' && m === 'GET') return send(res, 200, bootstrap(role))
   if (p === '/api/auth/setup' && m === 'POST') {
     if (password) return send(res, 409, { error: 'already set up' })
@@ -232,6 +236,8 @@ http.createServer(async (req, res) => {
   try {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url)
     if (url.pathname === '/healthz') return res.end('ok')
+    const art = url.pathname.match(/^\/uploads\/plugin-wallpapers\/art-(\d+)\.svg$/)
+    if (art) { res.writeHead(200, { 'Content-Type': 'image/svg+xml' }); return res.end(plug.art(art[1])) }
     if (url.pathname.startsWith('/uploads/')) {
       const f = path.join(upDir, url.pathname.slice(9))
       if (!f.startsWith(upDir) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end() }

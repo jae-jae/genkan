@@ -14,7 +14,8 @@ import (
 	"github.com/jae-jae/genkan/internal/media"
 )
 
-const SchemaVersion = 1
+// SchemaVersion 2 added plugins and widgets (additive: schema 1 files load unchanged).
+const SchemaVersion = 2
 
 // Length caps.
 const (
@@ -127,6 +128,9 @@ type Export struct {
 	Workspaces []Workspace `json:"workspaces"`
 	Categories []Category  `json:"categories"`
 	Links      []Link      `json:"links"`
+	// Plugins carry their source but never secret config values.
+	Plugins []ExportPlugin   `json:"plugins,omitempty"`
+	Widgets []WidgetInstance `json:"widgets,omitempty"`
 }
 
 // Input / patch types ------------------------------------------------------
@@ -345,8 +349,13 @@ func cleanWallpaper(s string) (string, error) {
 			return s, nil
 		}
 		return "", invalid("invalid wallpaper file name")
+	case strings.HasPrefix(s, "plugin:"):
+		if _, _, ok := parsePluginWallpaper(s); ok {
+			return s, nil
+		}
+		return "", invalid("plugin wallpaper must be plugin:<pluginId>/<sourceId>")
 	}
-	return "", invalid("wallpaper must be preset:<id> or upload:<file>")
+	return "", invalid("wallpaper must be preset:<id>, upload:<file> or plugin:<pluginId>/<sourceId>")
 }
 
 // ApplySettingsPatch validates and applies p to s.

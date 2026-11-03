@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/jae-jae/genkan/internal/plugin"
 	"github.com/jae-jae/genkan/internal/store"
 )
 
@@ -31,6 +32,8 @@ type Server struct {
 	// OnLinksCreated, if set, is called after create_links with the new links
 	// (used to fetch icons in the background).
 	OnLinksCreated func([]store.Link)
+	// Plugins backs the plugin tools (nil: those tools report "plugins unavailable").
+	Plugins *plugin.Manager
 
 	tools []tool
 }

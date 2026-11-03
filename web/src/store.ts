@@ -1,7 +1,7 @@
 import { signal, computed, batch } from '@preact/signals'
 import { ApiError, get, post, patch, del, setUnauthorizedHandler } from './api'
 import { t } from './i18n'
-import type { Bootstrap, Category, HealthMap, Link, Role, Settings, WallpaperFile, Workspace } from './types'
+import type { Bootstrap, Category, HealthMap, Link, PluginInfo, Role, Settings, WallpaperFile, WidgetInstance, Workspace } from './types'
 import { lsGet, lsSet, sortLinks } from './util'
 
 export const DEFAULTS: Settings = {
@@ -23,6 +23,8 @@ export const workspaces = signal<Workspace[]>([])
 export const categories = signal<Category[]>([])
 export const links = signal<Link[]>([])
 export const health = signal<HealthMap>({})
+export const plugins = signal<PluginInfo[]>([])
+export const widgets = signal<WidgetInstance[]>([])
 export const version = signal(0)
 export const serverVersion = signal('')
 export const wsId = signal(lsGet('genkan.ws') || '')
@@ -34,6 +36,8 @@ export type ModalState =
   | { kind: 'workspace'; id?: string }
   | { kind: 'category'; id?: string; workspace_id: string }
   | { kind: 'settings'; tab?: string }
+  | { kind: 'widget'; id?: string }
+  | { kind: 'plugin-perm'; plugin: PluginInfo; fresh: boolean }
   | {
       kind: 'confirm'
       title: string
@@ -94,6 +98,8 @@ export const ctx = signal<CtxState | null>(null)
 export const closeCtx = () => (ctx.value = null)
 
 export const isAdmin = computed(() => role.value === 'admin')
+/** true when at least one enabled plugin provides search (no plugin search requests otherwise) */
+export const hasSearchPlugin = computed(() => plugins.value.some((p) => p.enabled && !!p.search))
 export const sortedWs = computed(() => workspaces.value.slice().sort((a, b) => a.sort - b.sort))
 export const curWs = computed(() => sortedWs.value.find((w) => w.id === wsId.value) || sortedWs.value[0] || null)
 
@@ -140,6 +146,8 @@ export async function load(): Promise<void> {
       categories.value = b.categories || []
       links.value = b.links || []
       health.value = b.health || {}
+      plugins.value = b.plugins || []
+      widgets.value = b.widgets || []
       version.value = b.version || 0
       serverVersion.value = b.server_version || ''
       loadError.value = false

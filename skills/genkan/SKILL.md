@@ -129,6 +129,10 @@ Give a link without a good favicon a Lucide icon, and turn health checks on:
 gk PATCH /api/links/$LINK '{"icon":"lucide:download","health_check":true}' | jq '{title,icon,health_check}'
 ```
 
+## Plugins
+
+The page can be extended with JavaScript plugins (widgets, wallpaper sources, search providers, scheduled jobs). To add one: `POST /api/plugins` with a built-in `{"catalog":"<id>"}` (see `GET /api/plugins/catalog`), a `{"url":...}` or your own `{"source":...}`; check it with `POST /api/plugins/{id}/test` and the plugin's logs; then place widgets with `POST /api/widgets`. Plugins only reach the hosts they declare, so tell the user which hosts and permissions a plugin asks for (`permissions` in the install response) before enabling one that uses `"*"`. Never put secrets into plugin source; use `secret` config fields. Writing a plugin: see the Plugins section of [reference.md](reference.md) and `docs/PLUGINS.md` in the Genkan repository.
+
 ## Next
 
-See [reference.md](reference.md) for every endpoint (settings, workspaces, categories, links, reorder, icon refresh, health, uploads, wallpapers, export, import), request and response shapes, limits, error codes and the full list of Lucide icon names.
+See [reference.md](reference.md) for every endpoint (settings, workspaces, categories, links, reorder, icon refresh, health, uploads, wallpapers, export, import, plugins and widgets), request and response shapes, limits, error codes and the full list of Lucide icon names.

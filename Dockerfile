@@ -18,6 +18,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY web/embed.go ./web/embed.go
 COPY skills ./skills
+COPY plugins ./plugins
 COPY --from=web /src/web/dist ./web/dist
 ARG TARGETOS
 ARG TARGETARCH

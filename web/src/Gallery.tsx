@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'preact/hooks'
 import { Icon } from './icons'
 import { t } from './i18n'
-import { gallery, loadGallery, showOver, uploadWallpapers, uploading, version, deleteWallpaper } from './store'
-import { DEFAULT_WALLPAPER, PRESETS } from './util'
+import { gallery, loadGallery, plugins, showOver, uploadWallpapers, uploading, version, deleteWallpaper } from './store'
+import { DEFAULT_WALLPAPER, PRESETS, hueOf } from './util'
 
 /**
  * Wallpaper chooser: the 6 presets plus "my gallery" (uploaded images). `manage` adds the delete buttons
@@ -13,6 +13,7 @@ export function WallpaperGallery({ value, onPick, manage }: { value: string; onP
   const files = gallery.value
   const cur = value || DEFAULT_WALLPAPER
   const up = uploading.value
+  const pluginSources = plugins.value.flatMap((p) => (p.enabled ? p.wallpapers || [] : []).map((w) => ({ value: `plugin:${p.id}/${w.id}`, name: w.name, plugin: p.name })))
   useEffect(() => void loadGallery(), [version.value])
 
   const upload = async (list: FileList | File[] | null | undefined) => {
@@ -39,6 +40,34 @@ export function WallpaperGallery({ value, onPick, manage }: { value: string; onP
           </button>
         ))}
       </div>
+      {pluginSources.length > 0 && (
+        <>
+          <h4 class="gal-h">
+            {t('wp.plugins')}
+            <small>{pluginSources.length}</small>
+          </h4>
+          <div class="gal-grid" data-testid="wp-plugins">
+            {pluginSources.map((s) => (
+              <button
+                type="button"
+                key={s.value}
+                class="wp-thumb wp-plugin"
+                style={{ '--h': hueOf(s.value) } as any}
+                aria-pressed={cur === s.value}
+                aria-label={s.name + ' · ' + s.plugin}
+                title={s.name + ' · ' + s.plugin}
+                data-testid={'wp-plugin-' + s.value.slice(7).replace('/', '-')}
+                data-value={s.value}
+                onClick={() => onPick(s.value)}
+              >
+                <Icon n="image" size={18} />
+                <span class="wp-plugin-n">{s.name}</span>
+                <span class="wp-plugin-p">{s.plugin}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       <h4 class="gal-h">
         {t('wp.mine')}
         {files && files.length > 0 && <small>{files.length}</small>}

@@ -17,9 +17,9 @@ Complete reference for what the API token can do on the user's Genkan instance. 
 | 400 | Invalid input (empty or too long name, bad URL, unknown icon name or wallpaper, malformed JSON, bad `mode`...) |
 | 401 | Missing or wrong token (`GET /api/bootstrap` is public: with a wrong token it answers 200 with `"role":"none"` and empty lists, so check that `auth.role` is `admin`) |
 | 404 | Unknown id or file |
-| 409 | Conflict (deleting the last workspace) |
+| 409 | Conflict (deleting the last workspace, using a disabled plugin) |
 | 413 | Body or upload too large |
-| 502 / 503 | Icon refresh failed / icon fetching disabled |
+| 502 / 504 / 503 | Icon refresh failed or a plugin hook failed / a plugin hook timed out / icon fetching disabled |
 
 ```bash
 gk POST /api/workspaces '{"name":"Oops","icon":"lucide:nope"}'   # HTTP 400, nothing is created
@@ -73,7 +73,7 @@ New objects get `sort` = last + 1 in their group. A link that becomes pinned get
 
 Everything in one response. Call it first and again to verify changes.
 
-Response: `{"auth":{"setup_required":false,"role":"admin"},"settings":{...},"workspaces":[...],"categories":[...],"links":[...],"health":{"<link id>":{...}},"version":42,"server_version":"v0.1.0"}`. `version` increases with every change.
+Response: `{"auth":{"setup_required":false,"role":"admin"},"settings":{...},"workspaces":[...],"categories":[...],"links":[...],"health":{"<link id>":{...}},"plugins":[...],"widgets":[...],"version":42,"server_version":"v0.1.0"}`. `version` increases with every change. `plugins` and `widgets` are described under Plugins below.
 
 ```bash
 gk GET /api/bootstrap | jq '{role: .auth.role, version, workspaces: [.workspaces[] | {id,name,icon,wallpaper}]}'
@@ -281,7 +281,7 @@ gk GET /api/bootstrap | jq '[.workspaces[] | {name,wallpaper}]'
 
 ### GET /api/export
 
-Full backup as JSON: `{"schema":1,"settings":{...},"workspaces":[...],"categories":[...],"links":[...]}`. Contains no secrets. Uploaded image files are not included, only references to them.
+Full backup as JSON: `{"schema":2,"settings":{...},"workspaces":[...],"categories":[...],"links":[...]}`, plus `"plugins":[...]` (with their source code) and `"widgets":[...]` when plugins are installed. Contains no secrets (plugin secret config values are left out). Uploaded image files are not included, only references to them.
 
 ```bash
 gk GET /api/export > genkan-backup.json
@@ -290,7 +290,7 @@ jq '{schema, workspaces: (.workspaces|length), categories: (.categories|length),
 
 ### POST /api/import
 
-Body: `{"mode":"merge"|"replace","data":<export JSON>}`. Response: `{"ok":true,"workspaces":2,"links":14}` (counts of imported workspaces and links).
+Body: `{"mode":"merge"|"replace","data":<export JSON>}`. Response: `{"ok":true,"workspaces":2,"links":14,"plugins":0,"widgets":0}` (counts of imported items). Imported plugin code is compiled and validated first; `merge` skips plugins whose id is already installed.
 
 - `merge`: adds everything from `data` under new ids, after the existing content; settings in `data` are ignored. Existing links are not deduplicated.
 - `replace`: **deletes everything and loads `data`**, including its settings (fails with 400 if `data` has no workspaces). Only use it to restore a backup the user wants restored, and take a fresh `GET /api/export` first.
@@ -302,6 +302,164 @@ jq '{mode:"merge", data:.}' genkan-backup.json > import-merge.json
 gk POST /api/import @import-merge.json
 jq '{mode:"replace", data:.}' genkan-backup.json > import-replace.json
 gk POST /api/import @import-replace.json
+```
+
+## Plugins
+
+Plugins are single JavaScript (or TypeScript) files that run on the server and add wallpaper sources, widgets, search providers, scheduled jobs and widget button actions. The browser never runs plugin code: widgets return declarative JSON that the UI renders. The full contract (manifest, `ctx`, host API, block types, limits) is in `docs/PLUGINS.md` of the Genkan repository; read it before writing a plugin.
+
+A plugin is an ES module (no imports) with this shape:
+
+```js
+export const manifest = {
+  id: "pi-hole-count", name: "Pi-hole", version: "1.0.0",           // id: [a-z0-9][a-z0-9-]{1,39}
+  permissions: { fetch: [] },                                       // hosts fetch() may reach; default deny, "*" = any host
+  widgets: [{ id: "stats", name: "Queries", size: "s", refresh: 120,
+    config: [{ key: "url", type: "url", label: "Pi-hole URL", required: true, allowFetch: true },   // allowFetch: this host is added to the fetch allow list
+             { key: "token", type: "secret", label: "API token" }] }],
+};
+export async function widget(ctx) {            // ctx.instance.config, ctx.config, ctx.lang, ctx.now
+  const r = await fetch(ctx.instance.config.url + "/admin/api.php?summary&auth=" + ctx.instance.config.token);
+  const j = await r.json();
+  return { title: "Pi-hole", body: [{ type: "stat", label: "Queries today", value: j.dns_queries_today }] };
+}
+```
+
+Capabilities and the functions they need: `wallpapers` -> `wallpaper(ctx)`, `widgets` -> `widget(ctx)` (+ optional `action(ctx)` for `button` blocks), `search` -> `search(ctx)`, `schedules` -> `schedule(ctx)`. Host API inside plugins: `genkan.log()`, `genkan.storage.get/set/delete/keys` (256 KiB per plugin), `genkan.links.*` / `genkan.workspaces.list` / `genkan.categories.list` (needs `permissions.links`), standard `fetch`, timers, `URL`. Limits: 32 MiB memory, search 2 s, widget/wallpaper/action 10 s, schedule 60 s. Config field types: `string`, `text`, `number`, `boolean`, `select`, `secret`, `url`. Secret values are never returned by the API.
+
+Write a plugin, install it, then **always run `POST /api/plugins/{id}/test`** and read `error` and `logs` before adding widgets.
+
+### GET /api/plugins
+
+Installed plugins (`PluginInfo`): `id, name, version, description, author, homepage, icon, enabled, permissions {fetch[], links}, config_schema[], wallpapers[], widgets[] (each with its instance config schema), search, schedules[]` plus `config` (secret values blanked), `secrets_set` (keys of secrets that have a value), `source_url`, `last_error`, `installed_at`, `updated_at`.
+
+```bash
+gk GET /api/plugins | jq '[.[] | {id, enabled, last_error}]'
+```
+
+### GET /api/plugins/catalog
+
+Built-in example plugins that can be installed with `{"catalog":"<id>"}`: `[{id,name,description,icon,version,installed}]` (`calculator`, `weather`, `world-clock`, `countdown`, `hacker-news`, `rss`, `pihole`, `bing-wallpaper`, ...).
+
+```bash
+gk GET /api/plugins/catalog | jq -r '.[] | "\(.id)\t\(.installed)\t\(.description)"'
+```
+
+### POST /api/plugins
+
+Installs or updates a plugin. Body: exactly one of `{"source":"<code>","lang":"js"|"ts"}`, `{"url":"https://..."}` (downloaded, max 512 KiB, http(s) only) or `{"catalog":"<id>"}`, optionally `"enable":true|false` (new plugins are enabled by default; an update keeps the current state unless `enable` is given). The plugin id comes from `manifest.id`; an existing plugin keeps its config and widgets. The manifest and the exported functions are validated: a 400 explains what to fix. Response: `PluginInfo`.
+
+```bash
+jq -n --rawfile src my-plugin.js '{source:$src}' > install.json
+gk POST /api/plugins @install.json | jq '{id, enabled, permissions}'
+gk POST /api/plugins '{"catalog":"calculator"}' | jq '{id, enabled}'
+```
+
+### GET /api/plugins/{id}/source
+
+`{"source":"...","lang":"js"}`.
+
+```bash
+gk GET /api/plugins/calculator/source | jq -r .source | head -5
+```
+
+### PATCH /api/plugins/{id}
+
+Body: `{"enabled":true}` and/or `{"config":{...}}`. `config` **replaces** the plugin-level config: send every field you want to keep. Unknown keys are dropped; invalid values or missing required fields give 400. Secret fields: `""` or omitting the key keeps the stored value, `null` clears it. Response: `PluginInfo`.
+
+```bash
+gk PATCH /api/plugins/calculator '{"enabled":false}' | jq .enabled
+gk PATCH /api/plugins/calculator '{"enabled":true}' | jq .enabled
+```
+
+### DELETE /api/plugins/{id}
+
+Uninstalls the plugin with its widgets, stored data and downloaded wallpapers; workspaces using its wallpaper fall back to `preset:dusk`. Response: `{"ok":true}`.
+
+```bash
+gk DELETE /api/plugins/calculator
+```
+
+### GET /api/plugins/{id}/logs
+
+`{"logs":[{"ts":1730000000000,"level":"info","msg":"..."}]}`: the last 200 lines (`genkan.log`, `console.*`, errors), `ts` in Unix milliseconds.
+
+```bash
+gk GET /api/plugins/calculator/logs | jq -r '.logs[] | "\(.level) \(.msg)"'
+```
+
+### POST /api/plugins/{id}/test
+
+Runs one hook for debugging. Body: `{"hook":"wallpaper"|"widget"|"search"|"schedule"|"action","target":"<source, widget or schedule id>","query":"...","config":{...},"action":"...","params":{...},"instance":"<widget instance id>"}`. `config` is the widget instance config to test with; `instance` uses a saved instance as the base (keeps its secrets). Nothing is cached or downloaded. Response: `{"ok":true,"result":...,"error":"...","logs":[...],"ms":12}` where `result` is the sanitized value the UI would use. Side effects of the plugin (storage, links it creates, schedule work) do happen.
+
+```bash
+gk POST /api/plugins/calculator/test '{"hook":"search","query":"2*21"}' | jq '{ok, result, error}'
+gk POST /api/plugins/world-clock/test '{"hook":"widget","config":{"zones":"Asia/Tokyo, UTC"}}' | jq '.result.body'
+```
+
+### POST /api/widgets
+
+Places a widget instance. Body: `{"plugin":"weather","widget":"current","workspace_id":"","config":{...}}` (`workspace_id` empty = shown in every workspace; `config` follows the widget's schema). Response: `{id, plugin, widget, workspace_id, config, sort, secrets_set?}` (secret values blanked).
+
+```bash
+gk POST /api/plugins '{"catalog":"world-clock"}' > /dev/null
+W=$(gk POST /api/widgets '{"plugin":"world-clock","widget":"clock","config":{"zones":"UTC, Asia/Tokyo"}}' | jq -r .id)
+```
+
+### PATCH /api/widgets/{id}
+
+Body: any of `workspace_id`, `sort`, `config` (replaces the instance config; secrets: `""` keeps, `null` clears). Response: the instance.
+
+```bash
+gk PATCH /api/widgets/$W '{"config":{"zones":"UTC, Europe/Berlin"}}' | jq .config
+```
+
+### POST /api/widgets/reorder
+
+Body: `{"ids":["<widget id>", ...]}`; listed widgets come first in that order. Response: `{"ok":true}`.
+
+```bash
+gk POST /api/widgets/reorder "{\"ids\":[\"$W\"]}"
+```
+
+### GET /api/widgets/{id}/data
+
+`{"view":{"title","icon","link","body":[blocks],"error"},"updated_at":<ms>,"next_at":<ms>}`. Cached on the server for the widget's `refresh` seconds; `?force=1` bypasses the cache. A failing plugin gives 502 (504 on timeout) with `{"error":...}`; a disabled plugin 409.
+
+```bash
+gk GET "/api/widgets/$W/data?force=1" | jq '.view.body[0]'
+```
+
+### POST /api/widgets/{id}/action
+
+Runs the plugin's `action(ctx)` for a `button` block. Body: `{"action":"<name>","params":{...}}`. Response: `{"toast":"...","refresh":true}`.
+
+```bash
+gk POST /api/widgets/$W/action '{"action":"noop"}'   # 400 unless the plugin exports action()
+```
+
+### DELETE /api/widgets/{id}
+
+Removes the instance. Response: `{"ok":true}`.
+
+```bash
+gk DELETE /api/widgets/$W
+```
+
+### GET /api/plugins/search
+
+`?q=<text>`: results of all enabled search plugins (no-prefix plugins only for queries of 2+ characters; a plugin with a `prefix` such as `gh` only for `gh <text>`), at most 2 s in total. Response: `{"groups":[{"plugin","name","icon","results":[{title,subtitle,url,icon,copy}]}]}`.
+
+```bash
+gk GET "/api/plugins/search?q=1%2B2*3" | jq '.groups[].results'
+```
+
+### GET /api/plugins/wallpaper/{plugin}/{source}
+
+Current image of a plugin wallpaper source: `{"url":"/uploads/plugin-wallpapers/<file>","title","credit","link","updated_at":<ms>}`. The server downloads and stores the image (the 5 newest per source are kept). Set it with `PATCH /api/workspaces/{id}` `{"wallpaper":"plugin:<plugin>/<source>"}`.
+
+```bash
+gk GET /api/plugins/wallpaper/bing-wallpaper/daily | jq .   # after installing bing-wallpaper
 ```
 
 ## Icon formats
@@ -325,4 +483,4 @@ The 52 Lucide icon names (use as `lucide:<name>`):
 
 ## Wallpaper formats
 
-Workspace `wallpaper`: `preset:aurora`, `preset:dusk` (default), `preset:ocean`, `preset:forest`, `preset:sakura`, `preset:graphite`, or `upload:<file>` for an image in the gallery (`GET /api/wallpapers`). Empty on create means `preset:dusk`; an empty value on `PATCH` also resets to `preset:dusk`.
+Workspace `wallpaper`: `preset:aurora`, `preset:dusk` (default), `preset:ocean`, `preset:forest`, `preset:sakura`, `preset:graphite`, `upload:<file>` for an image in the gallery (`GET /api/wallpapers`), or `plugin:<pluginId>/<sourceId>` for a wallpaper source of an installed plugin (see Plugins; uninstalling the plugin resets such workspaces to `preset:dusk`). Empty on create means `preset:dusk`; an empty value on `PATCH` also resets to `preset:dusk`.

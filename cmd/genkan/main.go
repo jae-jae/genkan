@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata" // the scratch image has no zoneinfo; plugins (world-clock) use IANA time zones
 
 	"github.com/jae-jae/genkan/internal/auth"
 	"github.com/jae-jae/genkan/internal/favicon"

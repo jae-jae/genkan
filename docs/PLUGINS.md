@@ -259,3 +259,37 @@ type Block =
 - 前端：`npm run build` 通过（tsc + vite），gzip 体积不超标。
 - e2e：新增 `e2e/specs/20-plugins.spec.ts`：安装内置示例（calculator、world-clock、countdown，均无外网依赖）、添加小组件并看到渲染、搜索得到计算结果、禁用后消失、访客可见但无管理按钮。
 - 文档：README（中英）功能列表加一行；`docs/SPEC.md` 加指向本文的一节；`web/TESTIDS.md`、`skills/genkan/reference.md` 同步。
+
+## 10. 后端实现补充（对契约的澄清与小幅调整）
+
+以下是后端实现时确定的细节；JSON 形状与上文一致，仅有加粗标注的新增字段。
+
+**时间与语言**
+- 运行时产生的时间戳一律为 **Unix 毫秒整数**：`/data` 的 `updated_at`、`next_at`，壁纸的 `updated_at`，日志的 `ts`。（`PluginInfo.installed_at/updated_at` 仍是 RFC3339 字符串。）
+- `ctx.lang`：优先 `?lang=zh|en`，否则 `Accept-Language`（`zh*` → `zh`，其余 `en`）；定时任务与未带语言的 test 为 `en`。
+
+**错误状态码**
+- 插件钩子执行失败（异常、超时、内存超限、结果无效）：`502 {error}`，超时 `504`；`GET /api/widgets/{id}/data` 与壁纸接口失败后 15 秒内复用该错误（不重复执行），`?force=1`（仅管理员）除外。
+- 插件被禁用 → `409`；插件/小组件/壁纸源不存在 → `404`；校验失败 → `400`。
+
+**安装**
+- `POST /api/plugins`：`enable` 省略时新装插件默认**启用**，更新已存在插件则保持原状态；`enable:false` 会把已存在的插件也置为禁用。校验失败返回 400，message 指出具体字段。
+- 同一时间最多 50 个插件、200 个小组件实例；源码 ≤ 512 KiB；插件文件不得 `import`。
+- manifest 未知的顶层字段被忽略；`permissions.fetch` 可以为空数组（主机仅来自 `allowFetch`）。`permissions.fetch` 项可写 `host`、`host:port`、`*.suffix`、`*`。
+
+**配置**
+- REST `PATCH /api/plugins/{id}`、`PATCH /api/widgets/{id}` 的 `config` 是**整体替换**（省略的非 secret 字段回到默认值，空字符串等同于清除）；secret：`""`/省略 = 保持，`null` = 清除。MCP 的 `update_plugin` / `update_widget` 的 `config` 则是**合并**（null 删除该键）。
+- `WidgetInstance` 新增可选字段 **`secrets_set: string[]`**（仅管理员；实例 schema 里有值的 secret 字段名）。管理员看到的实例 `config` 中 secret 值为 `""`，访客的 `config` 中没有 secret 键。
+- `allowFetch` 的 url 字段把 `host:port` 加入白名单（URL 未写端口时为 80/443）。仅这些主机在 HTTPS 下**不校验证书**（自签证书的内网服务）；manifest 声明的主机始终校验证书。
+- secret 值会从插件日志、`last_error`、test 结果与错误信息中以 `***` 替换；`default` 对 secret 字段允许（manifest 内容是公开的）。
+
+**其它**
+- 宿主 API 另提供 `console.log/info/debug/warn/error`（写入插件日志）。
+- test 请求可选 **`instance`**（已保存的小组件实例 id，作为配置基底，保留其 secret）和 `lang`。`result` 是清洗后的值；壁纸 test 不下载图片。
+- 壁纸文件名为 `<插件前缀8位>-<源前缀6位>-<内容哈希16位>.<ext>`（前缀由插件 id/源 id 的 sha256 得到，用于按源保留最近 5 张并在卸载时清理），仍由 `/uploads/plugin-wallpapers/{name}` 提供。
+- 搜索：结果为空的分组不返回；无前缀插件需 `q` ≥ 2 个字符；带前缀的需 `q` 以 `<prefix> ` 开头且去前缀后非空。
+- 小组件按钮 `action` 名需匹配 `^[A-Za-z0-9_.:-]{1,40}$`；`params` 序列化后 ≤ 2 KiB（action 请求 ≤ 8 KiB）。
+- 导出 `schema` 升为 **2**（旧文件无需迁移，可直接读取；旧版本程序会拒绝读取 schema 2 的数据文件）。导出中仅在存在插件/小组件时才出现 `plugins`、`widgets` 键；`plugins[]` 为 `PluginRecord + source + lang`，secret 值被去除（无法解析 manifest 的插件导出时不含 config）。导入前每个插件源码都会被编译校验，manifest id 必须与记录一致；`merge` 跳过已存在的插件 id；`POST /api/import` 响应新增 `plugins`、`widgets` 计数。
+- 数据文件里的 `plugins[]` 记录多一个 `lang`（`js`|`ts`）字段。
+- 运行时池：每次调用独占一个运行时，成功结束的运行时放回池（每插件最多 2 个空闲，5 分钟无调用释放）；超时、出错或钩子完成后仍有残留定时器的运行时直接丢弃。插件不应依赖 JS 全局变量保存状态（请用 `genkan.storage`）。
+- Docker 镜像是 `FROM scratch`：二进制内置了 `time/tzdata`（约 450 KB），world-clock 才能使用 IANA 时区。

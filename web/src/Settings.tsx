@@ -4,6 +4,7 @@ import { AiTab } from './Ai'
 import { ContentTab } from './Content'
 import { WallpaperGallery } from './Gallery'
 import { Icon } from './icons'
+import { loadPlugins, useChunk } from './lazy'
 import { Modal, Row, Switch } from './parts'
 import { langPref, setLang, t, type LangPref } from './i18n'
 import { closeModal, curWs, importData, patchSettings, settings, settingsTab, sortedWs, toast, serverVersion, toastError, updateWorkspace, version, type ModalState } from './store'
@@ -199,6 +200,11 @@ function DataTab() {
   )
 }
 
+function Plugins() {
+  const m = useChunk(loadPlugins)
+  return m ? <m.PluginsTab /> : <p class="hint">…</p>
+}
+
 function About() {
   return (
     <div class="about">
@@ -214,7 +220,7 @@ function About() {
   )
 }
 
-const TABS = ['general', 'appearance', 'content', 'ai', 'security', 'data', 'about'] as const
+const TABS = ['general', 'appearance', 'content', 'plugins', 'ai', 'security', 'data', 'about'] as const
 export function SettingsModal(_: { state: Extract<ModalState, { kind: 'settings' }> }) {
   const raw = settingsTab.value
   const tab = (TABS as readonly string[]).includes(raw) ? raw : 'general'
@@ -232,6 +238,7 @@ export function SettingsModal(_: { state: Extract<ModalState, { kind: 'settings'
           {tab === 'general' && <General />}
           {tab === 'appearance' && <Appearance />}
           {tab === 'content' && <ContentTab />}
+          {tab === 'plugins' && <Plugins />}
           {tab === 'ai' && <AiTab />}
           {tab === 'security' && <Security />}
           {tab === 'data' && <DataTab />}

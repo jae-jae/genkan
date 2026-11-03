@@ -41,6 +41,9 @@ Both are glass dropdowns: trigger button `aria-haspopup="menu"` + `aria-expanded
 `search-input`, `search-results` (dropdown, `role=listbox`), `search-result` (one per hit,
 attr `data-link-id`, `aria-selected` marks the keyboard selection), `search-web` ("search the web" row,
 always last and the only row when nothing matches).
+Plugin search groups sit between the link hits and `search-web`: `search-plugin-group` (attr `data-plugin`, `role=group`, header = plugin name),
+`plugin-search-result` (attr `data-plugin`, `data-copy="1"` for copy-only results, `aria-selected`; Enter opens `url` or copies `copy` and shows a toast).
+They take part in ArrowUp/Down selection. Requests (`GET /api/plugins/search?q=`) are debounced 250 ms and only sent while an enabled plugin has `search`.
 Shortcuts: `/`, `Ctrl/Cmd+K` focus, `ArrowUp/Down`, `Enter`, `Esc`, digits `1-9` switch workspace (the dropdown shows the hint).
 
 ## Board
@@ -77,7 +80,7 @@ All modals: `modal-close` (X) ; Esc closes.
 | `category-modal` | `category-name`, `category-save`, `category-cancel` |
 | `workspace-modal` | `ws-name`, icon picker: `ws-icon` (the `role=radiogroup` grid, attr `data-value=lucide:<name>`), `ws-icon-<name>` (one `role=radio` button per Lucide name, `aria-checked`), `ws-icon-search` (filter input), `ws-icon-preview`; wallpaper gallery (below); `ws-save`, `ws-cancel`, `ws-delete` (edit only). The old emoji text input `ws-icon` is gone |
 | `confirm-modal` | `confirm-ok`, `confirm-cancel`, `confirm-checkbox` (category delete: "also delete links") |
-| `settings-modal` | tabs `settings-tab-general/appearance/content/ai/security/data/about` (order as listed; `mcp` was renamed `ai`), panel `settings-panel-<tab>` |
+| `settings-modal` | tabs `settings-tab-general/appearance/content/plugins/ai/security/data/about` (order as listed; `mcp` was renamed `ai`), panel `settings-panel-<tab>` |
 
 Stacked modals: editors / confirms opened from inside Settings (content manager, gallery delete) sit on top of Settings; closing them
 returns to Settings on the same tab.
@@ -85,7 +88,8 @@ returns to Settings on the same tab.
 Wallpaper gallery (`wp-picker`; Settings → 外观 and the workspace editor): `wp-presets`, `wp-preset-aurora|dusk|ocean|forest|sakura|graphite`
 (`aria-pressed`), `wp-gallery` (my gallery grid, also a file drop target), `gallery-item-<file>` (`data-value=upload:<file>`, `aria-pressed`),
 `gallery-delete-<file>` (Settings only; opens `confirm-modal`; visible on hover/focus, always on touch), `wp-upload` (tile `<label>`),
-`wp-upload-input` (`multiple` file input), `wp-upload-progress` (`done/total` while uploading), `wp-apply-all` (Settings → 外观).
+`wp-upload-input` (`multiple` file input), `wp-upload-progress` (`done/total` while uploading), `wp-apply-all` (Settings → 外观). Plugin sources (enabled plugins only): grid `wp-plugins`, tile `wp-plugin-<pluginId>-<sourceId>` (`data-value=plugin:<id>/<source>`, `aria-pressed`).
+The wallpaper root keeps `data-wallpaper=plugin:<id>/<source>`; the plugin's credit shows as `wallpaper-credit` (bottom-left; absent for presets / uploads / when falling back to the default).
 Uploading exactly one file also applies it; several files only add them to the gallery. `wp-current-upload` was removed.
 
 ## Context menus (`role=menu`, closes on Esc / outside press / scroll / resize; ArrowUp/Down/Home/End; first item focused on open)
@@ -127,3 +131,33 @@ Uploading exactly one file also applies it; several files only add them to the g
 - Menus and `toggleEdit`/`openSettings`-style helpers live in `e2e/helpers.ts` (`openWsMenu`, `switchWs`, `openMainMenu`, `mainMenuItem`, `openSettings`, `setSort`, `expectSort`).
 - Link capsules are real anchors (`href`, `target=_blank` when `open_in_new_tab`), click sends `navigator.sendBeacon(/api/links/<id>/click)` (admin only).
 - Keyboard-opened results use `window.open(url,'_blank','noopener')` (or `location.assign` if `open_in_new_tab=false`).
+
+## Plugins and widgets (docs/PLUGINS.md)
+**Settings → Plugins** (`settings-tab-plugins`, panel root `plugins-tab`): `plugin-add-btn`, `plugin-empty` / `plugin-empty-add`, list `plugin-list`.
+Row `plugin-row` (attrs `data-plugin-id`, `data-enabled=1|0`) contains `plugin-name`, `plugin-badge` (attr `data-kind=wallpaper|widget|search|schedule`),
+`plugin-error` (last error), `plugin-toggle` (switch, `aria-checked`), `plugin-config-btn`, `plugin-logs-btn` (`aria-pressed`, one panel open at a time),
+`plugin-update` (only with `source_url`: re-installs from it), `plugin-delete` (opens `confirm-modal`).
+Config panel `plugin-config-panel`: generated fields `plugin-cfg-<key>` (switch for boolean; secret: `data-set=1|0`, `plugin-cfg-secret-clear-<key>` toggles "clear"), inline errors `plugin-cfg-error-<key>`,
+`plugin-config-save`, `plugin-permissions` (hosts, `*` has the warning style). Logs panel `plugin-logs-panel` with `plugin-logs` (`<pre>`) and `plugin-logs-refresh`.
+Secrets: the input is empty; blank = keep (sent as `""`), "clear" sends `null`.
+
+**Add plugin** (`plugin-add`): `plugin-add-back`, tabs `plugin-add-tab-catalog|url|source` (group `plugin-add-tabs`).
+Catalog `plugin-catalog` with `plugin-catalog-item` (attrs `data-plugin-id`, `data-installed`) + `plugin-catalog-install` (disabled when installed).
+URL: `plugin-url-input`, `plugin-url-install`. Source: `plugin-source-input` (textarea), `plugin-source-lang` (`js`/`ts`), `plugin-source-install`.
+
+**Install flow** (permission confirmation): every install is POSTed with `enable:false`, so no plugin code runs before review. If the manifest asks for
+fetch hosts, `links` access or has `url` fields with `allowFetch`, the `plugin-perm-modal` (stacked over Settings) lists them:
+`plugin-perms`, `plugin-perm-host` (one per host), `plugin-perm-any` (the `*` entry, warning style), `plugin-perm-urlfields`, `plugin-perm-links` (`data-level=read|write`);
+`plugin-perm-allow` PATCHes `enabled:true`, `plugin-perm-cancel` leaves it installed but disabled. Plugins requesting nothing (e.g. calculator) are enabled immediately with a toast,
+and so is an update of an enabled plugin whose permissions did not change. After enabling a plugin with required settings its config panel opens.
+
+**Widget area** (`widget-area`, between the hero and `board`; absent when the workspace has no visible widget, unless admin edit mode; `data-editing=1` in edit mode):
+`widget` (attrs `data-widget-id`, `data-plugin`, `data-widget`, `data-size=s|m|l`, `aria-busy`), `widget-title`, `widget-skeleton` (while the first load runs),
+`widget-error` + `widget-retry`, `widget-refresh` (admin, hover). Instances of disabled plugins are hidden (edit mode: shown dashed with an error, only move/delete).
+Block testids: `widget-text`, `widget-stat`, `widget-stats`, `widget-list` / `widget-list-item`, `widget-kv`, `widget-progress`, `widget-image`, `widget-chart` (attr `data-kind=spark|bar`),
+`widget-row`, `widget-button` (admin only, attr `data-action`; calls the action endpoint, toasts the result, `refresh:true` forces a reload). A divider is a bare `hr.wg-hr`.
+Edit mode (admin): `widget-add` (dashed card), per card `widget-prev-<id>`, `widget-next-<id>` (reorder, no dragging), `widget-edit-<id>`, `widget-delete-<id>` (opens `confirm-modal`).
+Data polling: each instance refetches at the widget's `refresh` seconds (min 30); paused while `document.hidden`, refetched on return when stale.
+
+`widget-modal`: picker `widget-picker` with `widget-pick-<pluginId>-<widgetId>` (or `widget-none` + `widget-open-plugins` when no plugin provides widgets) -> form `widget-form`:
+`widget-cfg-<key>` fields (+ `widget-cfg-error-<key>`, `widget-cfg-secret-clear-<key>`), `widget-workspace` (select; empty value = all workspaces), `widget-back`, `widget-cancel`, `widget-save`.

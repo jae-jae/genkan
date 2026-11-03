@@ -36,6 +36,7 @@ Genkan（玄関）是一款可自托管的极简导航页，面向 homelab 玩�
 │   ├── auth/              密码哈希、会话 cookie、API token 生成、登录限速
 │   ├── mcp/               MCP (Streamable HTTP, JSON-RPC 2.0) 实现
 │   ├── health/            服务在线检测
+│   ├── plugin/            JS 插件引擎（moejs）、manifest、宿主 API、调度，见 docs/PLUGINS.md
 │   └── favicon/           图标抓取
 ├── web/
 │   ├── embed.go           package web; //go:embed all:dist  (后端负责)
@@ -43,6 +44,7 @@ Genkan（玄関）是一款可自托管的极简导航页，面向 homelab 玩�
 │   ├── package.json, vite.config.ts, tsconfig.json, index.html
 │   └── src/               前端源码（前端负责）
 ├── skills/genkan/         AI Skill 源码（仅 REST，不含 MCP，不含任何密钥/占位符；用户通过 raw.githubusercontent.com 直接从仓库获取，另可从设置页下载安装包）：SKILL.md（入口：凭据、`gk` 助手、数据模型、工作流、最佳实践、常用配方）+ reference.md（完整 REST 参考，每个接口一条可运行 curl）
+├── plugins/               内置示例插件 catalog/*.js；embed.go 嵌入二进制
 ├── skills/embed.go        package skills；`//go:embed genkan/SKILL.md genkan/reference.md`（go:embed 不能引用父目录），`Files()` 返回与仓库字节一致的文件
 ├── e2e/                   Playwright 端到端测试
 ├── Dockerfile, docker-compose.yml, Makefile, README.md, LICENSE, CONTRIBUTING.md, SECURITY.md
@@ -226,6 +228,10 @@ MCP 与 Skill 是**两条互相独立、二选一**的 AI 接入路径：安装 
 | `delete_links` | `ids: []` | 批量删除 |
 | `reorder` | `kind: workspaces\|categories\|links`, `ids`, `workspace_id?`, `category_id?` | 同 REST reorder 语义：`category_id:"__pinned"` 仅调整置顶行（`pin_sort`），其余按分类重写 `sort` |
 | `update_settings` | Settings 部分字段 | |
+
+## 8.5 插件
+
+JavaScript 插件（壁纸源、小组件、搜索提供者、定时任务）在服务端由纯 Go 的 moejs 引擎执行，浏览器只渲染清洗后的声明式 JSON；未启用插件时不创建任何运行时。需求、接口契约、REST/MCP 与数据模型详见 [`docs/PLUGINS.md`](PLUGINS.md)；代码在 `internal/plugin/`，内置示例在 `plugins/catalog/*.js`（`plugins/embed.go` 嵌入二进制）。数据：`data/plugins/<id>.js|.ts`（源码）、`<id>.kv.json`（存储）、`uploads/plugin-wallpapers/`（壁纸）；`genkan.json` schema 2 增加 `plugins` 与 `widgets`。
 
 ## 9. 前端 UI/UX
 

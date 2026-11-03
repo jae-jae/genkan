@@ -123,7 +123,7 @@ func (s *Server) buildTools() []tool {
 
 	okResult := func(m M) (any, error) { return m, nil }
 
-	return []tool{
+	tools := []tool{
 		{
 			name: "get_overview", title: "Get overview", readOnly: true, idempotent: true,
 			desc: "Return the whole navigation tree: every workspace → categories → links (with ids, clicks, pinned, pin_sort, health_check; links are listed in category order, pinned links appear in their category and are also shown in the pinned row ordered by pin_sort) plus settings. Call this first before organizing. " +
@@ -263,7 +263,7 @@ func (s *Server) buildTools() []tool {
 		{
 			name: "update_workspace", title: "Update workspace", idempotent: true,
 			desc:   "Rename a workspace or change its icon (a built-in Lucide icon, lucide:<name>) or wallpaper. Only given fields change. 修改工作空间名称/图标（内置 Lucide 图标）/壁纸，仅修改传入字段。",
-			schema: obj(M{"id": str("Workspace id."), "name": str("New name."), "icon": workspaceIconSchema("New icon."), "wallpaper": str("preset:<id> (dusk, aurora, ocean, forest, sakura, graphite).")}, "id"),
+			schema: obj(M{"id": str("Workspace id."), "name": str("New name."), "icon": workspaceIconSchema("New icon."), "wallpaper": str("preset:<id> (dusk, aurora, ocean, forest, sakura, graphite), or plugin:<pluginId>/<sourceId> for an installed wallpaper plugin.")}, "id"),
 			fn: func(args json.RawMessage) (any, error) {
 				var a struct {
 					ID string `json:"id"`
@@ -557,6 +557,7 @@ func (s *Server) buildTools() []tool {
 			},
 		},
 	}
+	return append(tools, s.pluginTools()...)
 }
 
 func normURL(u string) string {

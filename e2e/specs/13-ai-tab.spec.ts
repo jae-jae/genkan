@@ -29,7 +29,7 @@ test.describe('AI tab and top-right AI button', () => {
     await openApp(page)
     await openSettings(page)
     const ids = await page.locator('[data-testid^="settings-tab-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')!.replace('settings-tab-', '')))
-    expect(ids).toEqual(['general', 'appearance', 'content', 'ai', 'security', 'data', 'about'])
+    expect(ids).toEqual(['general', 'appearance', 'content', 'plugins', 'ai', 'security', 'data', 'about'])
     await expect(page.getByTestId('settings-tab-mcp')).toHaveCount(0)
     await expect(page.getByTestId('settings-tab-ai')).toHaveText('AI')
     await page.getByTestId('settings-tab-ai').click()

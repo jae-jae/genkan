@@ -87,9 +87,12 @@ func ContentType(ext string) string {
 
 // Save writes data to dir as <sha256[:16]>.<ext> (atomic, idempotent) and
 // returns the file name.
-func Save(dir string, data []byte, ext string) (string, error) {
+func Save(dir string, data []byte, ext string) (string, error) { return SaveNamed(dir, "", data, ext) }
+
+// SaveNamed is Save with a fixed file name prefix: <prefix><sha256[:16]>.<ext>.
+func SaveNamed(dir, prefix string, data []byte, ext string) (string, error) {
 	sum := sha256.Sum256(data)
-	name := hex.EncodeToString(sum[:])[:16] + "." + ext
+	name := prefix + hex.EncodeToString(sum[:])[:16] + "." + ext
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

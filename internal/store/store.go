@@ -28,12 +28,14 @@ type authData struct {
 }
 
 type fileData struct {
-	Schema     int         `json:"schema"`
-	Auth       authData    `json:"auth"`
-	Settings   Settings    `json:"settings"`
-	Workspaces []Workspace `json:"workspaces"`
-	Categories []Category  `json:"categories"`
-	Links      []Link      `json:"links"`
+	Schema     int              `json:"schema"`
+	Auth       authData         `json:"auth"`
+	Settings   Settings         `json:"settings"`
+	Workspaces []Workspace      `json:"workspaces"`
+	Categories []Category       `json:"categories"`
+	Links      []Link           `json:"links"`
+	Plugins    []Plugin         `json:"plugins,omitempty"`
+	Widgets    []WidgetInstance `json:"widgets,omitempty"`
 }
 
 // Store is the in-memory database. All exported methods are safe for concurrent use.
@@ -49,6 +51,8 @@ type Store struct {
 	closed  bool
 	seq     uint64
 	notify  func(version int64)
+	secrets SecretResolver
+	revSeq  uint64
 
 	fileMu  sync.Mutex
 	written uint64
@@ -112,6 +116,23 @@ func Open(dir string) (*Store, error) {
 func (s *Store) normalize() bool {
 	changed := false
 	d := &s.d
+	// Schema 2 added plugins and widgets; v1 files need no migration.
+	for i := range d.Plugins {
+		p := &d.Plugins[i]
+		s.revSeq++
+		p.Rev = s.revSeq
+		if p.Lang == "" {
+			p.Lang = "js"
+		}
+		if p.Config == nil {
+			p.Config = map[string]any{}
+		}
+	}
+	for i := range d.Widgets {
+		if d.Widgets[i].Config == nil {
+			d.Widgets[i].Config = map[string]any{}
+		}
+	}
 	if d.Schema != SchemaVersion {
 		d.Schema = SchemaVersion
 		changed = true
@@ -306,6 +327,7 @@ type Snapshot struct {
 	Workspaces []Workspace
 	Categories []Category
 	Links      []Link
+	Widgets    []WidgetInstance
 	Version    int64
 }
 
@@ -320,6 +342,7 @@ func (s *Store) Snapshot() Snapshot {
 		Links:      make([]Link, len(s.d.Links)),
 		Version:    s.version,
 	}
+	snap.Widgets = s.widgetsLocked()
 	copy(snap.Links, s.d.Links)
 	for i := range snap.Links { // detach *string pointers
 		snap.Links[i].LastUsedAt = cloneStr(snap.Links[i].LastUsedAt)
@@ -375,5 +398,9 @@ func (s *Store) HealthConfig() ([]HealthTarget, int) {
 // Export returns the portable data set (no auth, no API token).
 func (s *Store) Export() Export {
 	snap := s.Snapshot()
-	return Export{Schema: SchemaVersion, Settings: snap.Settings, Workspaces: snap.Workspaces, Categories: snap.Categories, Links: snap.Links}
+	exp := Export{Schema: SchemaVersion, Settings: snap.Settings, Workspaces: snap.Workspaces, Categories: snap.Categories, Links: snap.Links}
+	s.mu.RLock()
+	exp.Plugins, exp.Widgets = s.exportPluginsLocked()
+	s.mu.RUnlock()
+	return exp
 }

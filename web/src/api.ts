@@ -9,8 +9,8 @@ export class ApiError extends Error {
 let onUnauthorized: () => void = () => {}
 export const setUnauthorizedHandler = (fn: () => void) => (onUnauthorized = fn)
 
-export async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method, credentials: 'same-origin', headers: {} }
+export async function api<T = any>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
+  const init: RequestInit = { method, credentials: 'same-origin', headers: { ...headers } }
   const h = init.headers as Record<string, string>
   if (method !== 'GET') {
     h['X-Requested-With'] = 'genkan'
@@ -44,7 +44,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
   return data as T
 }
 
-export const get = <T = any>(p: string) => api<T>('GET', p)
+export const get = <T = any>(p: string, headers?: Record<string, string>) => api<T>('GET', p, undefined, headers)
 export const post = <T = any>(p: string, b?: unknown) => api<T>('POST', p, b ?? {})
 export const patch = <T = any>(p: string, b: unknown) => api<T>('PATCH', p, b)
 export const del = <T = any>(p: string) => api<T>('DELETE', p)

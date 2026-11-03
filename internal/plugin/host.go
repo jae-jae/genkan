@@ -36,13 +36,6 @@ func installHost(in *instance, m *Manager, probe bool) error {
 			return moejs.Undefined(), nil
 		}
 	}
-	keyArg := func(args []moejs.Value) (string, error) {
-		v := moejs.Arg(args, 0)
-		if !v.IsString() {
-			return "", errors.New("storage key must be a string")
-		}
-		return v.String(), nil
-	}
 	// guard wraps a host function that needs the real plugin context.
 	guard := func(fn moejs.NativeFunc) moejs.NativeFunc {
 		if !probe {
@@ -53,41 +46,12 @@ func installHost(in *instance, m *Manager, probe bool) error {
 		}
 	}
 
-	storage := map[string]any{
-		"get": moejs.NativeFunc(guard(func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
-			key, err := keyArg(args)
-			if err != nil {
-				return moejs.Undefined(), err
-			}
-			raw, ok := e.kv.get(key)
-			if !ok {
-				return moejs.Undefined(), nil
-			}
-			return rt.ParseJSON(raw)
-		})),
-		"set": moejs.NativeFunc(guard(func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
-			key, err := keyArg(args)
-			if err != nil {
-				return moejs.Undefined(), err
-			}
-			raw, err := rt.AppendJSONWith(nil, moejs.Arg(args, 1), moejs.JSONOptions{Strict: true})
-			if err != nil {
-				return moejs.Undefined(), fmt.Errorf("storage value must be JSON-serializable: %v", err)
-			}
-			return moejs.Undefined(), e.kv.set(key, raw)
-		})),
-		"delete": moejs.NativeFunc(guard(func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
-			key, err := keyArg(args)
-			if err != nil {
-				return moejs.Undefined(), err
-			}
-			e.kv.delete(key)
-			return moejs.Undefined(), nil
-		})),
-		"keys": moejs.NativeFunc(guard(func(*moejs.Realm, moejs.Value, []moejs.Value) (moejs.Value, error) {
-			return rt.FromGo(e.kv.keys())
-		})),
-	}
+	storage := in.storageAPI(guard, kvScope{
+		get:  e.kv.get,
+		set:  e.kv.set,
+		del:  e.kv.delete,
+		keys: e.kv.keys,
+	})
 
 	// need checks the links permission declared in the manifest.
 	level := 0
@@ -184,12 +148,20 @@ func installHost(in *instance, m *Manager, probe bool) error {
 		return toJS(st.Snapshot().Categories)
 	}))}
 
+	// widgets.list: the plugin's OWN widget instances only, with their secrets
+	// (the plugin owns them; never other plugins' instances). No permission needed.
+	widgetsAPI := map[string]any{"list": moejs.NativeFunc(guard(func(*moejs.Realm, moejs.Value, []moejs.Value) (moejs.Value, error) {
+		return toJS(m.ownWidgets(e))
+	}))}
+
 	if err := rt.SetGlobal("genkan", map[string]any{
 		"log":        moejs.NativeFunc(logf("info")),
 		"storage":    storage,
 		"links":      links,
 		"workspaces": workspaces,
 		"categories": categories,
+		"html":       htmlAPI(rt),
+		"widgets":    widgetsAPI,
 		"version":    m.cfg.Version,
 	}); err != nil {
 		return err
@@ -255,4 +227,117 @@ func (in *instance) translateFunc(ms *Messages, lang string) moejs.NativeFunc {
 		}
 		return in.rt.FromGo(ms.T(lang, key, params))
 	}
+}
+
+// kvScope is one storage namespace: the plugin level or one widget instance.
+type kvScope struct {
+	get  func(key string) (json.RawMessage, bool)
+	set  func(key string, val json.RawMessage) error
+	del  func(key string)
+	keys func() []string
+}
+
+// storageAPI builds the get/set/delete/keys object of a namespace
+// (genkan.storage and ctx.instance.storage). guard may be nil.
+func (in *instance) storageAPI(guard func(moejs.NativeFunc) moejs.NativeFunc, sc kvScope) map[string]any {
+	rt := in.rt
+	if guard == nil {
+		guard = func(fn moejs.NativeFunc) moejs.NativeFunc { return fn }
+	}
+	keyArg := func(args []moejs.Value) (string, error) {
+		v := moejs.Arg(args, 0)
+		if !v.IsString() {
+			return "", errors.New("storage key must be a string")
+		}
+		return v.String(), nil
+	}
+	return map[string]any{
+		"get": moejs.NativeFunc(guard(func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			key, err := keyArg(args)
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			raw, ok := sc.get(key)
+			if !ok {
+				return moejs.Undefined(), nil
+			}
+			return rt.ParseJSON(raw)
+		})),
+		"set": moejs.NativeFunc(guard(func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			key, err := keyArg(args)
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			raw, err := rt.AppendJSONWith(nil, moejs.Arg(args, 1), moejs.JSONOptions{Strict: true})
+			if err != nil {
+				return moejs.Undefined(), fmt.Errorf("storage value must be JSON-serializable: %v", err)
+			}
+			return moejs.Undefined(), sc.set(key, raw)
+		})),
+		"delete": moejs.NativeFunc(guard(func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+			key, err := keyArg(args)
+			if err != nil {
+				return moejs.Undefined(), err
+			}
+			sc.del(key)
+			return moejs.Undefined(), nil
+		})),
+		"keys": moejs.NativeFunc(guard(func(*moejs.Realm, moejs.Value, []moejs.Value) (moejs.Value, error) {
+			return rt.FromGo(sc.keys())
+		})),
+	}
+}
+
+// instanceStorage is ctx.instance.storage of one hook call.
+func (in *instance) instanceStorage(kv *kvStore, id string) map[string]any {
+	return in.storageAPI(nil, kvScope{
+		get:  func(k string) (json.RawMessage, bool) { return kv.iget(id, k) },
+		set:  func(k string, v json.RawMessage) error { return kv.iset(id, k, v) },
+		del:  func(k string) { kv.idelete(id, k) },
+		keys: func() []string { return kv.ikeys(id) },
+	})
+}
+
+// ownWidgetOut is one entry of genkan.widgets.list().
+type ownWidgetOut struct {
+	ID          string         `json:"id"`
+	Widget      string         `json:"widget"`
+	WorkspaceID string         `json:"workspace_id"`
+	Config      map[string]any `json:"config"`
+}
+
+// ownWidgets lists the widget instances of one plugin; config has the manifest
+// defaults applied and secrets in clear text.
+func (m *Manager) ownWidgets(e *entry) []ownWidgetOut {
+	out := []ownWidgetOut{}
+	for _, w := range m.st.Widgets() {
+		if w.Plugin != e.id {
+			continue
+		}
+		var schema []ConfigField
+		if e.man != nil {
+			if d := e.man.widget(w.Widget); d != nil {
+				schema = d.Config
+			}
+		}
+		out = append(out, ownWidgetOut{ID: w.ID, Widget: w.Widget, WorkspaceID: w.WorkspaceID, Config: withDefaults(schema, w.Config)})
+	}
+	return out
+}
+
+// widgetSecrets lists the secret config values of all widget instances of a plugin.
+func (m *Manager) widgetSecrets(e *entry) []string {
+	var out []string
+	if e.man == nil {
+		return nil
+	}
+	for _, w := range m.st.Widgets() {
+		if w.Plugin != e.id {
+			continue
+		}
+		if d := e.man.widget(w.Widget); d != nil {
+			out = append(out, secretValues(d.Config, w.Config)...)
+		}
+	}
+	return out
 }

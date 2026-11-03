@@ -3,7 +3,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { del, get, patch } from './api'
 import { ConfigFields, useConfigForm } from './ConfigForm'
 import { Icon } from './icons'
-import { loadPluginMarket, loadPluginSource, useChunk } from './lazy'
+import { loadPluginData, loadPluginMarket, loadPluginSource, useChunk } from './lazy'
 import { Modal, Switch } from './parts'
 import { lang, loc, t } from './i18n'
 import { closeModal, load, modal, openSettings, settingsTab, showOver, toast, toastError, version, type ModalState } from './store'
@@ -53,6 +53,7 @@ export function PermModal({ state }: { state: PermState }) {
     if (state.dlg === 'source') return <SourceHost plugin={state.plugin} />
     if (state.dlg === 'batch') return <BatchModal />
     if (state.dlg === 'catalog') return <CatalogSourceModal id={state.id} />
+    if (state.dlg === 'data') return <DataHost plugin={state.plugin} />
     return <DevAiModal />
   }
   return <SingleModal state={state} />
@@ -61,6 +62,11 @@ export function PermModal({ state }: { state: PermState }) {
 function SourceHost({ plugin }: { plugin: PluginInfo }) {
   const m = useChunk(loadPluginSource)
   return m ? <m.default plugin={plugin} onSaved={() => void (loadList(), load())} /> : null
+}
+
+function DataHost({ plugin }: { plugin: PluginInfo }) {
+  const m = useChunk(loadPluginData)
+  return m ? <m.default plugin={plugin} /> : null
 }
 
 function SingleModal({ state }: { state: Extract<PermState, { fresh: boolean }> }) {
@@ -496,6 +502,9 @@ function Row({ p }: { p: PluginInfo }) {
           </button>
           <button class="ib" aria-pressed={o === 'logs'} aria-label={t('plugin.logs')} title={t('plugin.logs')} data-testid="plugin-logs-btn" onClick={() => toggle('logs')}>
             <Icon n="scroll-text" size={16} />
+          </button>
+          <button class="ib" aria-label={t('plugin.data')} title={t('plugin.data')} data-testid="plugin-data-btn" onClick={() => showOver({ kind: 'plugin-perm', dlg: 'data', plugin: p })}>
+            <Icon n="database" size={16} />
           </button>
           <button class="ib" aria-label={t('src.btn')} title={t('src.btn')} data-testid="plugin-source-btn" onClick={() => showOver({ kind: 'plugin-perm', dlg: 'source', plugin: p })}>
             <Icon n="code" size={16} />

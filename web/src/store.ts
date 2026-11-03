@@ -42,6 +42,7 @@ export type ModalState =
   | { kind: 'plugin-perm'; dlg: 'source'; plugin: PluginInfo }
   | { kind: 'plugin-perm'; dlg: 'batch' | 'ai' }
   | { kind: 'plugin-perm'; dlg: 'catalog'; id: string }
+  | { kind: 'plugin-perm'; dlg: 'data'; plugin: PluginInfo }
   | {
       kind: 'confirm'
       title: string

@@ -171,6 +171,7 @@ gk POST /api/plugins/preview '{"catalog":"pihole"}' | jq -r .source
 | `calculator`, `github-search` | Search: no prefix with `copy` results; prefix `gh` with abort timer and optional token |
 | `bing-wallpaper`, `nasa-apod`, `picsum` | Wallpaper sources (skipping unusable days, redirects to a CDN host) |
 | `link-importer` | Schedule + `genkan.links.create`, idempotent import, result kept in storage |
+| `github-stars` | Time series: `chart` `line`, `genkan.widgets.list()` from a schedule, compact history in storage (compaction, backfill with rate-limit handling), fetch against a stubbed API in Go tests |
 
 ## 2. Reference
 
@@ -256,7 +257,7 @@ Declare a capability without exporting its function and install fails: ``the man
 | `locale` | all | BCP-47 tag for `Intl` / `toLocaleString`: `zh` -> `"zh-CN"`, `en` -> `"en-US"` |
 | `t(key, params?)` | all | translate from your `messages` table in `ctx.lang`; `{name}` placeholders come from `params` (section 2.11) |
 | `now` | all | Unix time in **ms** (number) |
-| `instance` | widget, action | `{id, config}` of the widget instance (`id` is `"test"` in `/test` unless you pass `instance`) |
+| `instance` | widget, action | `{id, config, storage}` of the widget instance (`id` is `"test"` in `/test` unless you pass `instance`). `storage` = storage of this instance only, see 2.5 |
 | `widget` | widget, action | widget id from the manifest |
 | `source` | wallpaper | wallpaper source id |
 | `query` | search | the query; with a prefix the prefix and the space are removed |
@@ -271,10 +272,13 @@ Declare a capability without exporting its function and install fails: ``the man
 | `genkan.storage.get(key)` | Persistent JSON per **plugin** (shared by all instances and hooks), `undefined` if missing |
 | `genkan.storage.set(key, value)` | `value` must be JSON-serializable. Key 1-200 bytes. All keys + values <= **256 KiB**, else it throws `storage is full (max 256 KiB)`. Written to disk after ~2 s |
 | `genkan.storage.delete(key)`, `genkan.storage.keys()` | |
+| `ctx.instance.storage.get/set/delete/keys` | Same API, but private to **one widget instance** (`widget` and `action` hooks only). Same file and the same 256 KiB cap as the plugin storage. Removed together with the widget (delete, workspace delete, uninstall). Plugin-level `keys()` never lists it; keys starting with `@i/` are reserved. A `/test` run of an unsaved instance gets a throw-away storage |
+| `genkan.widgets.list()` | Synchronous, no permission. **This plugin's own** widget instances: `[{ id, widget, workspace_id, config }]` with defaults applied and **secrets in clear text**. How a `schedule` finds the instances it should work for |
 | `genkan.links.list()` | needs `links: "read"`. Synchronous. Same objects as `GET /api/bootstrap` links: `id, workspace_id, category_id, title, url, description, icon, pinned, health_check, ...` |
 | `genkan.links.create(input)` | needs `"write"`. Same body as `POST /api/links`. Throws on invalid input. Returns the link |
 | `genkan.links.update(id, patch)` | needs `"write"`. Same body as `PATCH /api/links/{id}` |
 | `genkan.workspaces.list()`, `genkan.categories.list()` | needs `"read"` |
+| `genkan.html.select(html, selector, { base?, limit? })` | Synchronous, no permission, no network. Runs a CSS selector (cascadia: tags, classes, ids, attributes, combinators, `:nth-child`, `:not`, `:contains`, ...) over a full HTML document and returns `[{ html, text }]`. `html` = the sanitized outer HTML of the match (same allow-list as the `html` block, URLs made absolute with `base`; relative URLs are dropped without `base`), ready for `{ type: "html", html }`. `text` = collapsed text content (<= 4000 chars). `limit` default **10**, max 100. Matches inside an earlier match are skipped; no match = `[]`. Input <= **2 MiB** and selector <= 500 chars. An invalid selector or oversized input **throws** (`genkan.html.select: invalid selector "a[[": ...`), so catch it and return a readable `error` |
 | `genkan.version` | server version string |
 
 Without the permission the call throws ``permission denied: genkan.links.list needs permissions.links = "read"``.
@@ -312,7 +316,7 @@ Important behaviours:
 
 ### 2.8 Return shapes and sanitization
 
-Output is normalized on the server. **Everything unknown is dropped without an error.** All text is rendered as plain text (no HTML, no Markdown). Whitespace in single-line strings is collapsed; control characters are removed; strings are cut at 500 chars unless noted.
+Output is normalized on the server. **Everything unknown is dropped without an error.** All text is rendered as plain text (no Markdown; HTML only inside the sanitized `html` block). Whitespace in single-line strings is collapsed; control characters are removed; strings are cut at 500 chars unless noted.
 
 #### WidgetView (`widget`)
 
@@ -330,8 +334,13 @@ return { title: "Pi-hole", icon: "shield", link: "http://pi.hole/admin", body: [
 | `list` | **`items`**: `{title` (required)`, subtitle, right, badge, url, icon, image}` | <= 20 items; `url` http(s) (clickable); `image` http(s) or `data:image/...;base64` <= 256 KiB; items without `title` are dropped |
 | `kv` | **`items`**: `{k, v}` (`v` may be a number or bool) | <= 20 |
 | `progress` | **`value`** 0..1 (clamped), `label`, `text` | |
-| `image` | **`src`** (http(s) or `data:image/<png, jpeg, gif, webp, avif or svg+xml>;base64,...` <= 256 KiB), `alt`, `href`, `ratio` (> 0, max 10) | |
+| `image` | **`src`** (http(s) or `data:image/<png, jpeg, gif, webp, avif or svg+xml>;base64,...` <= 256 KiB), `alt`, `href`, `ratio` (> 0, max 10), `fit` cover/contain, `height` (px, 60-1000) | single image |
+| `image` (slideshow) | **`images`**: `{src` (as above)`, alt, href}` instead of `src`; `interval` (seconds, >= 3, default 6), `fit`, `height` | <= 20 images (invalid ones dropped, none left = block dropped); dots and a timer only with 2+ images |
+| `iframe` | **`src`** (http(s)), `height` (px, 120-1600, default 360), `ratio` (width/height, 0.2-5; replaces `height`), `crop` `{x, y, width, height}` (page px; needs width and height), `zoom` (0.25-2), `refresh` (seconds, >= 5) | the **browser** loads it. A `src` on Genkan's own origin is refused at render time. See "Embedding blocks" below |
+| `html` | **`html`** (fragment), `base` (http(s) URL for relative links) | sanitized on the server and again in the browser; output <= 64 KiB, nesting <= 20; empty result = block dropped |
+| `media` | **`kind`** `video`/`audio`, **`src`** (http(s)), `poster` (video), `title` (<= 200), `autoplay`, `muted`, `loop`, `controls` (default true) | `autoplay` only counts together with `muted: true`. Audio renders as a compact player bar; live streams show LIVE |
 | `chart` | **`kind`** `spark` or `bar`, **`values`** numbers, `labels` | <= 60 points, non-finite numbers dropped |
+| `chart` (line) | **`kind`** `"line"`, **`points`** `[[tsMs, value], ...]`, `format` `int`/`compact`/`percent`/`decimal` (tooltip value; default `int`; `percent` values are already percentages, 42.5 = 42.5%), `color` `accent`/`green`/`red`/`blue`/`orange` | <= **500** points, sorted by time, invalid pairs dropped, no valid point = block dropped. Smooth area line with a localized date axis (hours / days / months by span), compact y ticks and a hover/touch tooltip. Draw one point per sample; thin long series yourself |
 | `row` | **`children`**: blocks laid out horizontally | nesting depth <= 3, needs >= 1 valid child |
 | `button` | **`label`**, **`action`** (`^[A-Za-z0-9_.:-]{1,40}$`), `params` (any JSON, <= 2 KiB else dropped), `icon` | admin only; plugin must export `action` |
 | `divider` | | |
@@ -372,6 +381,22 @@ Prefix rules: an empty `prefix` plugin is only called for queries of **>= 2 char
 #### Action result (`action`)
 
 `{ toast: "Done", refresh: true }`. `toast` <= 200 chars, `refresh: true` reloads the widget. Throwing shows the message as an error. The cached widget view is dropped after every action.
+
+#### Embedding blocks (`iframe`, `html`, `media`, image slideshow)
+
+```js
+{ type: "iframe", src: "https://grafana.example.com/d-solo/abc?panelId=2", height: 300, crop: { x: 0, y: 60, width: 600, height: 200 }, zoom: 1, refresh: 60 }
+{ type: "html", html: "<h3>Notes</h3><p>See <a href='/docs'>docs</a></p>", base: "https://example.com/" }
+{ type: "media", kind: "video", src: "https://example.com/clip.mp4", poster: "https://example.com/p.jpg", autoplay: true, muted: true, loop: true }
+{ type: "media", kind: "audio", src: "https://radio.example.com/stream", title: "Radio" }
+{ type: "image", images: [{ src: "https://example.com/1.jpg", href: "https://example.com/" }, { src: "https://example.com/2.jpg" }], interval: 5, fit: "cover", height: 200 }
+```
+
+- **The browser loads `iframe`, `media` and image URLs, not the server.** No `permissions.fetch` is needed, and the allow-list does not apply. The visitor's IP is visible to those hosts.
+- `iframe` runs with `sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"`, `referrerpolicy="no-referrer"`, `allow="fullscreen; autoplay; picture-in-picture"`. That sandbox is safe **only because cross-origin is enforced**: the frontend refuses a `src` whose origin equals Genkan's own (it would share the admin session). Do not point it at Genkan. Sites that send `X-Frame-Options`/`frame-ancestors` stay blank (this cannot be detected), so every frame has a small "open in new tab" link under it. With `crop`, the card takes the region's height and `height` is ignored.
+- **`autoplay` is honoured only with `muted: true`** (browsers block autoplay with sound). Without `muted` Genkan drops `autoplay`, so the user presses play.
+- `html` allows: `p div span br hr h1-h6 strong b em i u s small sub sup code pre blockquote ul ol li dl dt dd table thead tbody tr th td a img figure figcaption time`. Attributes: `a[href]`, `img[src alt width height]`, `td/th[colspan rowspan]`, `title`, `time[datetime]`; no `style`, `class`, `id`, `srcset` or `on*`. `script style iframe svg math object embed form input video audio ...` are removed with their content; other unknown tags (`section`, `font`, ...) are unwrapped. URLs must be absolute http(s) (relative ones are resolved with `base`, else dropped); `javascript:`, `data:` and entity or tab/newline tricks are rejected. Links get `target=_blank rel="noopener noreferrer"` from the frontend.
+- Row/list/cell fragments (`<tr>`, `<li>`, `<td>`) lose their tags when parsed alone: wrap them in `<table><tbody>...</tbody></table>` or `<ul>...</ul>`.
 
 ### 2.9 Icons
 
@@ -856,6 +881,108 @@ export async function widget(ctx) {
   }
 }
 ```
+
+### 3.8 Scrape part of a page
+
+Show the elements a CSS selector picks from a web page, for example the headlines of a news site. The **server** fetches the page (a `url` field with `allowFetch: true` opens exactly that host) and `genkan.html.select` cuts out the parts. This only sees the **static HTML**: content rendered by JavaScript and pages behind a login are not available. For those, embed the page with an `iframe` block instead (the browser loads it, with its own cookies).
+
+```js
+export const messages = {
+  en: { name: "Page Snippet", desc: "Show part of a web page.", widget: "Snippet", url: "Page URL", selector: "CSS selector", selectorHelp: "e.g. .titleline > a", max: "Max items", setup: "Set the URL and selector in the widget settings", noMatch: "Nothing matches “{selector}”. The content may be rendered by JavaScript.", badSelector: "Invalid selector: {msg}", failed: "Could not load the page: {msg}" },
+  zh: { name: "网页片段", desc: "显示网页的一部分。", widget: "片段", url: "网页地址", selector: "CSS 选择器", selectorHelp: "例如 .titleline > a", max: "最多条数", setup: "请先在小组件设置中填写地址和选择器", noMatch: "没有匹配“{selector}”的内容。该内容可能由 JavaScript 渲染。", badSelector: "选择器无效：{msg}", failed: "无法加载网页：{msg}" },
+};
+
+export const manifest = {
+  id: "page-snippet",
+  name: t("name"),
+  version: "1.0.0",
+  description: t("desc"),
+  icon: "newspaper",
+  widgets: [
+    {
+      id: "main",
+      name: t("widget"),
+      size: "m",
+      refresh: 900,
+      config: [
+        { key: "url", type: "url", label: t("url"), required: true, allowFetch: true },
+        { key: "selector", type: "string", label: t("selector"), help: t("selectorHelp"), required: true },
+        { key: "max", type: "number", label: t("max"), default: 5, min: 1, max: 20 },
+      ],
+    },
+  ],
+};
+
+export async function widget(ctx) {
+  const { t } = ctx;
+  const cfg = (ctx.instance && ctx.instance.config) || {};
+  const fail = (error) => ({ title: "Snippet", icon: "newspaper", body: [], error });
+  if (!cfg.url || !cfg.selector) return fail(t("setup"));
+
+  let page, base;
+  try {
+    // Many sites answer the default fetch User-Agent with 403: send a browser-like one.
+    const res = await fetch(cfg.url, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" } });
+    if (!res.ok) return fail("HTTP " + res.status);
+    base = res.url || cfg.url; // after redirects: relative links resolve against it
+    page = (await res.text()).slice(0, 650000); // genkan.html.select takes <= 2 MiB
+  } catch (e) {
+    return fail(t("failed", { msg: e.message }));
+  }
+
+  let matches;
+  try {
+    matches = genkan.html.select(page, cfg.selector, { base, limit: cfg.max || 5 });
+  } catch (e) {
+    return fail(t("badSelector", { msg: e.message })); // invalid selector, input too large
+  }
+  if (matches.length === 0) return fail(t("noMatch", { selector: cfg.selector }));
+
+  return {
+    title: new URL(base).hostname,
+    icon: "newspaper",
+    link: cfg.url,
+    // matches[i].html is already sanitized, with absolute URLs; matches[i].text is the plain text
+    body: matches.map((m) => ({ type: "html", html: m.html })),
+  };
+}
+```
+
+Tips: find the selector in the browser dev tools ("Copy selector" gives a long path; shorten it to a class). Test with `/test` and read `result.body[].html`. Rows and list items need their container (`<table><tbody>${rows.join("")}</tbody></table>`), see "Embedding blocks". The built-in `media` plugin (`plugins/catalog/media.js`) has a complete version of this widget plus web page, image, video and audio widgets.
+
+### 3.9 A time series: line chart + history in storage
+
+There is no history API in most services, so a plugin builds one: a `schedule` appends `[now, value]` samples, the widget draws them. See `github-stars` for the full version (backfill, compaction, pruning).
+
+```js
+export const manifest = {
+  id: "cpu-history", name: "CPU history", version: "1.0.0",
+  widgets: [{ id: "cpu", name: "CPU", size: "m", refresh: 300 }],
+  schedules: [{ id: "sample", every: 300 }],
+};
+const KEEP = 7 * 24 * 12; // 7 days of 5 minute samples = 2016 points: much more than a chart needs
+
+export async function schedule(ctx) {
+  const pts = genkan.storage.get("series") || []; // [[tsMs, value], ...]
+  pts.push([ctx.now, Math.round(Math.random() * 100)]); // replace with a real fetch
+  genkan.storage.set("series", pts.slice(-KEEP));
+}
+
+export async function widget(ctx) {
+  const pts = genkan.storage.get("series") || [];
+  // at most 500 points reach the browser: thin the series yourself
+  const step = Math.ceil(pts.length / 400) || 1;
+  const shown = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+  return {
+    title: "CPU",
+    body: shown.length < 2
+      ? [{ type: "text", text: "Collecting data…", muted: true, align: "center" }]
+      : [{ type: "chart", kind: "line", points: shown, format: "percent", color: "green" }],
+  };
+}
+```
+
+Storage is limited to 256 KiB for the whole plugin: store compactly (delta-encode, drop old detail) and measure. Per-instance data belongs in `ctx.instance.storage` (deleted with the widget); a `schedule` that must visit every instance reads `genkan.widgets.list()`. The admin can inspect and clear what you stored under Settings > Plugins > Data (`GET/DELETE /api/plugins/{id}/storage`, MCP `plugin_storage` / `clear_plugin_storage`); plugin data is only part of an export with `?plugin_data=1`.
 
 ## 4. Debugging
 

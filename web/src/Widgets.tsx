@@ -4,12 +4,14 @@ import { del, get, patch, post } from './api'
 import { openCtx } from './ContextMenu'
 import { ConfigFields, useConfigForm } from './ConfigForm'
 import { Icon } from './icons'
+import { LineChart } from './LineChart'
 import { LUCIDE } from './lucide'
 import { Modal } from './parts'
 import { lang, loc, t } from './i18n'
 import { track } from './wtrack'
 import { closeModal, curWs, editMode, isAdmin, load, modal, openSettings, plugins, sortedWs, toast, toastError, widgets, type CtxItem, type ModalState } from './store'
 import type { Block, ListItem, PluginInfo, PluginWidgetDef, StatBlock, WidgetData, WidgetInstance, WidgetView } from './types'
+import { HtmlBlock, IframeBlock, MediaBlock, Slideshow } from './WidgetMedia'
 
 // ---------- safe value helpers (the backend sanitizes too; this is defence in depth) ----------
 const str = (v: unknown): string => (typeof v === 'string' ? v : typeof v === 'number' && Number.isFinite(v) ? String(v) : '')
@@ -70,6 +72,7 @@ function ListRow({ it }: { it: ListItem }) {
 }
 
 function Chart({ b }: { b: Extract<Block, { type: 'chart' }> }) {
+  if (b.kind === 'line') return <LineChart points={b.points} format={b.format} color={b.color} />
   const v = nums(b.values)
   if (!v.length) return null
   const labels = arr<unknown>(b.labels, 60).map(str)
@@ -177,6 +180,9 @@ function BlockView({ b, ctx, depth }: { b: Block; ctx: Ctx; depth: number }) {
       )
     }
     case 'image': {
+      // slideshow, or a single image with fit/height (WidgetMedia.tsx); the plain single form stays below
+      if (Array.isArray(b.images)) return <Slideshow b={b} />
+      if (b.fit || b.height) return <Slideshow b={{ ...b, images: [{ src: str(b.src), alt: str(b.alt), href: str(b.href) }] }} />
       const src = imgSrc(b.src)
       if (!src) return null
       const href = httpUrl(b.href)
@@ -194,6 +200,12 @@ function BlockView({ b, ctx, depth }: { b: Block; ctx: Ctx; depth: number }) {
     }
     case 'chart':
       return <Chart b={b} />
+    case 'iframe':
+      return <IframeBlock b={b} />
+    case 'html':
+      return <HtmlBlock b={b} />
+    case 'media':
+      return <MediaBlock b={b} />
     case 'row':
       if (depth >= 3) return null
       return (

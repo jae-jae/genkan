@@ -91,6 +91,7 @@ genkan.storage.get(key): any        // 每插件持久 KV（JSON 值），存 da
 genkan.storage.set(key, value)      // 总大小上限 256 KiB，超出抛错；写入防抖落盘
 genkan.storage.delete(key)
 genkan.storage.keys(): string[]
+genkan.widgets.list(): { id, widget, workspace_id, config }[]  // 本插件自己的小组件实例（config 含 secret 明文），见 §13.2
 genkan.links.list(): Link[]         // 需 permissions.links >= "read"；字段同 REST 的 Link
 genkan.links.create(input): Link    // 需 "write"；input 同 POST /api/links
 genkan.links.update(id, patch): Link// 需 "write"
@@ -108,7 +109,7 @@ genkan.version                      // 服务器版本字符串
 {
   plugin: { id, version },
   config: { ...插件级配置（含 secret 明文） },
-  instance?: { id, config },   // widget/action：当前小组件实例
+  instance?: { id, config, storage },   // widget/action：当前小组件实例；storage = 实例级存储（§13.1）
   source?: string,             // wallpaper：壁纸源 id
   widget?: string,             // widget/action：小组件 id
   query?: string,              // search：去掉前缀后的查询
@@ -151,13 +152,15 @@ type Block =
   | { type: "progress", label?: string, value: number /*0..1*/, text?: string }
   | { type: "image",    src: string, alt?: string, href?: string, ratio?: number }
   | { type: "chart",    kind: "spark"|"bar", values: number[], labels?: string[] }  // ≤ 60 点，前端内联 SVG 绘制
+  | { type: "chart",    kind: "line", points: [tsMs, value][], format?, color? }       // 时间序列折线图，≤ 500 点，见 §13.5
   | { type: "row",      children: Block[] }                         // 水平排列
   | { type: "button",   label: string, action: string, params?: any, icon?: string }  // 仅管理员可点；POST action 钩子
   | { type: "divider" }
 ```
 
 - 后端负责**规范化与清洗**：丢弃未知类型和字段、截断字符串（单个字符串 ≤ 500）、过滤非 http(s)/非 `data:image/` 的 URL、限制数量。前端仍需防御性渲染。
-- 字符串一律作为纯文本渲染。
+- 字符串一律作为纯文本渲染（唯一例外是经白名单清洗的 `html` 块）。
+- 更多块类型 `iframe`、`html`、`media` 和图片轮播见 §14。
 
 ### 3.3 SearchResult
 
@@ -200,6 +203,7 @@ type Block =
 | `PATCH /api/plugins/{id}` | admin | `{ enabled?: bool, config?: object }` |
 | `DELETE /api/plugins/{id}` | admin | 卸载 |
 | `GET /api/plugins/{id}/logs` | admin | `{ logs: { ts, level, msg }[] }` |
+| `GET`/`DELETE /api/plugins/{id}/storage` | admin | 查看 / 清除插件存储，见 §13.3 |
 | `POST /api/plugins/{id}/test` | admin | 试运行，供 AI/开发者调试：`{ hook: "wallpaper"\|"widget"\|"search"\|"schedule"\|"action", target?: string /* source/widget/schedule id */, query?, config?: object /* 实例配置 */, action?, params? }` → `{ ok, result, error?, logs, ms }`。不写缓存 |
 | `POST /api/widgets` | admin | 新建实例 `{ plugin, widget, workspace_id?, config? }` |
 | `PATCH /api/widgets/{id}` | admin | `{ workspace_id?, config?, sort? }` |
@@ -225,7 +229,7 @@ type Block =
 
 ## 6. MCP 工具与 Skill
 
-新增 MCP 工具（风格与现有工具一致）：`list_plugins`、`install_plugin`（source 或 url 或 catalog）、`update_plugin`（enabled/config）、`uninstall_plugin`、`test_plugin`、`plugin_logs`、`list_widgets`、`add_widget`、`update_widget`、`remove_widget`。
+新增 MCP 工具（风格与现有工具一致）：`list_plugins`、`install_plugin`（source 或 url 或 catalog）、`update_plugin`（enabled/config）、`uninstall_plugin`、`test_plugin`、`plugin_logs`、`plugin_storage`、`clear_plugin_storage`（§13.3）、`list_widgets`、`add_widget`、`update_widget`、`remove_widget`。
 `skills/genkan/reference.md` 增加插件 API 一节，并说明插件编写要点（指向 `docs/PLUGINS.md`）。
 
 ## 7. 前端
@@ -260,6 +264,7 @@ type Block =
 | `pihole` | 小组件+动作 | 实例配置 Pi-hole 地址（url, allowFetch）与 API token（secret）；显示今日查询/拦截数/拦截率；按钮"暂停拦截 5 分钟"（action） |
 | `uptime-summary` | 小组件 | `links: "read"`；汇总开启健康检查的链接数量（演示宿主 API） |
 | `link-importer` | 定时任务 | `links: "write"`；配置一个 JSON URL（allowFetch），定时把其中 `{title,url,category}` 导入为链接（演示定时任务），已存在的 URL 跳过 |
+| `github-stars` | 小组件+定时任务 | GitHub 星标增长折线图（`chart` 的 `line`、实例级配置、`genkan.widgets.list()`、插件存储），见 §13.6 |
 
 每个示例都要短小、注释清晰，作为插件开发者的范例。
 
@@ -419,3 +424,157 @@ name: t("name")                          // 引用 messages 表
 - 前端用同一个小函数 `loc(v)`（`web/src/i18n.ts`）按当前界面语言解析，回退链与 `ctx.t` 相同：完全匹配 → 基础语言 → `en` → 字母序第一种语言。因此在设置里切换语言，插件名称、描述、配置表单、小组件选择器、壁纸库立即更新；小组件的文字由服务端按请求语言生成，切换语言后会重新拉取。
 - 需要单个字符串的服务端位置按请求语言解析：搜索接口分组的 `name`、配置校验错误里的字段名（`城市 is required`）。日志和插件错误信息不翻译。
 - 小组件数据缓存按语言分别保存；搜索结果同样按语言区分。壁纸结果按来源缓存、与语言无关（避免不同语言的访问者得到不同的图片），所以壁纸的 `title`/`credit` 使用第一次请求时的语言。
+
+## 13. 存储增强、折线图与 `github-stars`
+
+### 13.1 实例级存储 `ctx.instance.storage`
+
+`widget` 与 `action` 钩子的 `ctx.instance` 多一个 `storage`，API 与 `genkan.storage` 完全相同（`get`/`set`/`delete`/`keys`），但只属于**当前小组件实例**：两个实例互不可见，`keys()` 只列出本实例的键。
+
+- 与插件级存储共用同一个文件 `data/plugins/<id>.kv.json` 和同一个 **256 KiB** 上限（键名与值的总和，含内部前缀）。
+- 内部命名空间是键前缀 `@i/<实例 id>/`：插件级 `genkan.storage` 看不到、读不到、也不能写以 `@i/` 开头的键（`set` 抛错；`keys()` 不列出）。
+- 删除小组件实例会清除它的存储：REST `DELETE /api/widgets/{id}`、MCP `remove_widget`、UI 删除、**级联**（删除工作空间、卸载插件）和"替换导入"里不再存在的实例，全部走同一个 store 回调（`Store.SetWidgetsGone`，在锁外调用 `Manager.clearInstances`）。
+- `/test` 试运行未保存的实例（`instance` 为 `"test"`）时，`ctx.instance.storage` 是一次性的内存存储，不落盘；带 `instance` 参数试运行已保存的实例则读写真实数据。
+- `schedule`、`search`、`wallpaper` 没有 `ctx.instance`；要在定时任务里按实例处理，用 §13.2。
+
+### 13.2 `genkan.widgets.list()`
+
+返回**本插件自己的**小组件实例：`[{ id, widget, workspace_id, config }]`。`config` 已套用清单里的默认值，**包含 secret 明文**（它们属于这个插件）。同步调用，无需任何 `permissions`；永远不会返回其它插件的实例（门控就是"只看自己"）。探测运行时（只读清单）调用会失败，与其它宿主 API 相同。因为它把所有实例的 secret 交给了插件，这些值同样会从日志和错误信息里被脱敏。
+
+典型用途：`schedule` 钩子要为所有实例准备数据（`github-stars` 的每小时采样）。
+
+### 13.3 存储的查看与清除
+
+| 方法 & 路径 | 权限 | 说明 |
+|---|---|---|
+| `GET /api/plugins/{id}/storage` | admin | `{ size, limit, entries: [{ key, size, value, instance? }] }`。`size`/`limit` 单位字节（`limit` = 262144）；`entries[].size` = 内部键 + JSON 值的长度（各项之和即 `size`）；`instance` 仅实例级存储的键有。排序：插件级键在前，然后按实例 id、键名 |
+| `DELETE /api/plugins/{id}/storage` | admin | 清空全部（含各实例的存储） |
+| `DELETE /api/plugins/{id}/storage?key=K` | admin | 删除插件级键 K；加 `&instance=<实例 id>` 删除该实例的键 K。只给 `instance` 不给 `key` → 400。键不存在不是错误 |
+
+清除后会丢弃该插件各小组件的缓存视图。MCP 工具：`plugin_storage {id}`（同 GET）与 `clear_plugin_storage {id, key?, instance?}`（同 DELETE；破坏性）。
+
+UI：设置 → 插件，每个已安装插件有一个"数据 / Data"按钮（数据库图标，`data-testid="plugin-data-btn"`），打开懒加载对话框（`PluginData.tsx`，独立分块）：用量条（`plugin-data-usage`）、键列表（`plugin-data-row`，带大小、实例徽标）、可展开的格式化 JSON 值、逐键删除，以及"全部清除"（对话框内二次确认）。
+
+### 13.4 导出/导入插件数据（可选）
+
+- `GET /api/export?plugin_data=1`：在导出 JSON 里多一个 `plugin_data: { "<pluginId>": { "<key>": value, … } }`，含各实例的命名空间（键名就是内部名 `@i/<实例 id>/<key>`）。只包含有数据的插件。**默认导出不变**（没有 `plugin_data` 键）。
+- `POST /api/import`：文件里有 `plugin_data`（键存在，哪怕是 `{}`）时才还原；没有则完全不动存储。
+  - **replace**：被导入的每个插件的存储都被替换为 `plugin_data` 里的内容（没有条目的插件被清空）。
+  - **merge**：只还原这次**新增**的插件；已安装的插件不动。merge 给小组件分配新 id，实例级的键随之改名；指向未导入实例（或属于别的插件）的键被丢弃。
+  - 导入前校验：插件 id、键长、每个插件总量 ≤ 256 KiB，不合格返回 400 且不导入任何内容。
+- UI：设置 → 数据 有一个默认关闭的复选框"包含插件数据 / Include plugin data"，并提示插件数据可能含缓存的敏感数据；勾选后导出链接带 `?plugin_data=1`。
+
+### 13.5 `chart` 的 `line` 类型（时间序列折线图）
+
+```ts
+{ type: "chart", kind: "line",
+  points: [number /* 时间戳 ms */, number /* 值 */][],     // 至多 500 个点
+  format?: "int" | "compact" | "percent" | "decimal",     // 默认 "int"
+  color?:  "accent" | "green" | "red" | "blue" | "orange" // 默认 "accent" }
+```
+
+- **清洗**：非 `[有限数, 有限数]` 的点、时间戳 ≤ 0 的点被丢弃；只取前 500 个有效点；**按时间升序排序**（时间戳取整，相同时间戳的点在前端只保留最后一个）；没有有效点则丢弃整个块；未知的 `format`/`color` 被忽略。`spark`/`bar` 不变（`values` ≤ 60）。
+- **渲染**（`web/src/LineChart.tsx`，内联 SVG，无依赖，在懒加载的 Widgets 分块里）：随容器宽度自适应（ResizeObserver）；单调三次曲线 + 渐变面积；y 轴 3–4 个"整齐"刻度，一律是紧凑写法（`1.2k`，中文界面 `1.2万`），`percent` 带 `%`；x 轴按跨度选刻度：≤ 2 天按小时、≤ 75 天按天、更长按月（≥ 14 个月带两位年份），日期用界面语言本地化；鼠标悬停/触摸出现十字线、圆点和提示（日期 + 值，跨度 ≤ 14 天时带时间）；没有数据时显示"暂无数据"。
+- `format` 决定**提示里的值**：`int` 整数加千分位（`12,345`），`compact` 紧凑（`12.35k`），`decimal` 固定两位小数，`percent` 的值本身就是百分数（`42.5` → `42.5%`，不是 0..1）。
+
+### 13.6 内置插件 `github-stars`
+
+GitHub 星标增长折线图（`plugins/catalog/github-stars.js`）。GitHub 没有星标历史接口，所以采用混合方案：
+
+- **配置**：插件级 `token`（secret，可选；**回填历史需要它**，并把速率限制从 60 提高到 5000 次/小时）；小组件 `trend` 的实例配置 `repo`（`owner/name`，必填；也接受 `github.com/o/r`、`https://github.com/o/r.git`，无效时返回本地化 `error`）和 `range`（`30d` / `90d` / `1y` / `all`，默认 `90d`）。`permissions.fetch: ["api.github.com"]`。
+- **自采样**：定时任务 `sample`（每 3600 s）用 `genkan.widgets.list()` 收集不同的仓库，请求 `GET /repos/{o}/{r}` 取 `stargazers_count`，追加 `[now, count]` 到插件存储 `series:{owner/name}`（键小写）。小组件钩子在最新点超过 1 小时时也会自己取一次，所以新建的小组件不用等第一次定时任务。
+- **一次性回填**（**需要 token**：GitHub 对未登录的 stargazers 请求返回 401 `Requires authentication`，实测如此；没有 token 时插件不会发这些请求，只做自采样，图表从现在开始积累，小组件里提示"添加 GitHub 令牌即可回填更早的历史"，之后配置了 token 就会自动开始回填）：第一次见到某个仓库（小组件钩子或定时任务）时，用 `GET /repos/{o}/{r}/stargazers?per_page=100&page=N`（`Accept: application/vnd.github.star+json`）在 `ceil(stars/100)` 页（上限 400 页，即 GitHub 的 4 万星限制）里均匀取约 10 页；每页得到一个点 `(第一条的 starred_at, (页-1)*100+1)`，再加当前总数作为最后一点。超过 4 万星的仓库，小组件里提示"在开始自采样之前的历史是近似值"。遇到 403/429（或剩余额度 ≤ 2）就停止，进度（`meta:{repo}.todo` 剩余页）已保存，下一次运行继续。小组件钩子里的回填有 5 秒预算。
+- **紧凑存储**：`series:{repo}` = `{ t, c, d }`，`t`/`c` 是第一个点的时间（Unix 分钟）与星数，`d` 是 `[[Δ分钟, Δ星数], …]`。压缩规则：最近 7 天保留所有点（每小时一个）、之前每天一个、满一年之后每周一个。2 年以上历史的一个仓库约 600 个点、约 5 KB；**20 个仓库约 105 KB**（Go 测试 `TestStarsTwentyReposFitInStorage` 断言 < 128 KiB），所以大约 40 个仓库以内都在 256 KiB 之内。没有任何实例使用的仓库，其 `series:`/`meta:` 在最后一次被使用 30 天后删除。
+- **小组件**：标题是仓库名（链接到 GitHub）；`stat` 当前星数（趋势 = 近 7 天）；`stats` 近 7 天、近 30 天增量；`line` 图表（所选范围，起点按插值补在范围起点上，超过 480 点时均匀抽稀）；少于 2 个点显示"正在收集数据…"；刷新失败但有旧数据时仍显示并附"刷新失败：原因"。错误（仓库不存在、速率限制、令牌无效、网络）返回本地化的 `error`。
+- 并发：定时任务与小组件钩子可能同时读写同一个系列；插件在没有 `await` 的同步段里"读-改-写"，最坏丢一个点。
+
+## 14. 媒体与嵌入：`iframe` / `html` / `media` 块、图片轮播、`genkan.html.select`
+
+本节扩展 §3.2 的块类型与 §2.1 的宿主 API，并给出内置插件 `media`（`plugins/catalog/media.js`）。所有块仍然先经服务端清洗、前端再防御性清洗；未知字段静默丢弃。新增的渲染器都在懒加载的 Widgets 分块里，不增加首屏 JS。
+
+### 14.1 新增与扩展的块
+
+```ts
+type Block =
+  | { type: "iframe", src: string,              // 浏览器直接加载；仅 http(s)
+      height?: number,                          // px，默认 360，夹在 120–1600
+      ratio?: number,                           // 宽/高（0.2–5）；设置后用宽高比代替固定高度，适合视频
+      crop?: { x?: number, y?: number, width: number, height: number },  // 只显示页面的这块矩形（页面像素）
+      zoom?: number,                            // 0.25–2，默认 1
+      refresh?: number }                        // 秒，≥ 5；0/省略 = 不自动刷新
+  | { type: "html", html: string, base?: string }          // 经白名单清洗的 HTML 片段
+  | { type: "media", kind: "video"|"audio", src: string, poster?: string, title?: string,
+      autoplay?: boolean, muted?: boolean, loop?: boolean, controls?: boolean /* 默认 true */ }
+  | { type: "image", images: { src: string, alt?: string, href?: string }[],   // 轮播，≤ 20 张
+      interval?: number /* 秒，≥ 3，默认 6 */, fit?: "cover"|"contain", height?: number /* px，60–1000，默认 16:9 */ }
+  // 原有的单图写法 { type: "image", src, alt?, href?, ratio? } 保持不变，也可加 fit / height
+```
+
+**`iframe`**
+- `src` 只能是 http(s) URL（≤ 2048）。服务端无法知道 Genkan 页面自己的来源，所以**同源检查在前端渲染时做**：`src` 的 origin 与 `location.origin` 相同就拒绝渲染，改显示一条错误（`data-testid="widget-iframe-blocked"`）。
+- 渲染为 `<iframe sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" loading="lazy" allow="fullscreen; autoplay; picture-in-picture">`。`allow-scripts` 与 `allow-same-origin` 同时给出时，**同源页面可以拆掉自己的沙箱**，只有因为强制了跨源才是安全的（见 14.4）。没有 `allow-top-navigation`：被嵌入的页面不能跳转 Genkan。
+- 被嵌入的网站可能用 `X-Frame-Options` / CSP `frame-ancestors` 拒绝嵌入，而这在浏览器里**无法检测**，所以框下方始终有一行低调的提示和“在新标签页打开”链接。
+- `crop` 与 `zoom`：框外面是 `overflow:hidden` 的定长容器，iframe 按 `-x/-y` 偏移并用 CSS `transform: scale(zoom)` 缩放，只露出该区域。有 `crop` 时容器高度取自区域（`crop.height × 缩放`），`height` 被忽略；卡片比区域窄时缩放自动变小以显示完整宽度。没有 `crop` 时 `zoom < 1` 表示显示页面更多内容。
+- `refresh`：每隔 N 秒重新加载 iframe（不触发插件钩子）。
+- 编辑模式下 iframe 不接收指针事件，以免妨碍拖拽。
+
+**`html`**
+- `html` 经 `golang.org/x/net/html` 解析、用**白名单重建**（见 14.3）后输出，≤ **64 KiB**，嵌套 ≤ **20** 层；`base` 是 http(s) 绝对 URL，用来解析相对链接。清洗后没有可见内容（无文字、无图片）的块被丢弃。输出里没有 `base` 字段。
+- 前端在插入前**再清洗一次**：用 `DOMParser`（惰性文档，不执行脚本、不加载资源）解析，只把白名单节点和属性重建进一个新的 `DocumentFragment`；**从不**对插件的原始 HTML 使用 `innerHTML`。链接由前端加上 `target="_blank" rel="noopener noreferrer"`，图片加上 `loading="lazy" referrerpolicy="no-referrer"`。
+- 样式是内置的、限定在卡片内的排版（标题、列表、表格、代码、引用……）。插件不能指定 `style`/`class`。
+
+**`media`**
+- `kind: "video"` 渲染 `<video playsinline preload="metadata">`；`kind: "audio"` 渲染一个与 Genkan 风格一致的紧凑播放条（播放/暂停、进度条、时间、标题、静音）。直播流没有时长：进度条换成 `LIVE`。`controls: false` 的音频只保留播放按钮和标题。
+- `src`/`poster` 只能是 http(s)（`poster` 只对视频有效）。
+- **`autoplay` 只在同时 `muted: true` 时生效**：浏览器不允许带声音的自动播放，服务端与前端都会丢弃未静音的 `autoplay`。
+- `title` ≤ 200 字符。加载失败时显示“无法播放该媒体”。
+
+**`image` 轮播**
+- `images` 非空时是轮播：每张 `{ src, alt?, href? }`（`src` 规则同 `image.src`，`href` 为 http(s)），`interval`（秒，3–3600，默认 6）后淡入下一张，下方有圆点可跳转；单张图时没有圆点和定时器。`fit` 为 `cover`（默认，填满裁剪）或 `contain`（完整显示）。`height` 省略时容器是 16:9。有效图片为 0 张时块被丢弃。
+- 单图写法 `src` 与之前完全一致；单图加 `fit`/`height` 时按只有一张的轮播渲染。
+
+### 14.2 宿主 API：`genkan.html.select(html, selector, opts?)`
+
+同步、纯计算（不需要任何权限，也不联网）。用 CSS 选择器（[cascadia](https://github.com/andybalholm/cascadia)，BSD-2-Clause）在**完整 HTML 文档**里选元素：
+
+```js
+const items = genkan.html.select(pageHtml, ".titleline > a", { base: "https://news.ycombinator.com/", limit: 5 });
+// -> [{ html: '<a href="https://news.ycombinator.com/item?id=1">Title</a>', text: "Title" }, ...]
+```
+
+- 返回 `[{ html, text }]`，按文档顺序。`html` 是该元素**清洗后的外层 HTML**（与 `html` 块同一套白名单，URL 已绝对化；元素本身不在白名单时只保留其子内容），可直接放进 `{ type: "html", html }`；`text` 是折叠空白后的文本内容（≤ 4000 字符）。清洗后为空的匹配被跳过。
+- `opts.base`：http(s) 绝对 URL，用来把相对链接/图片地址绝对化；省略则相对 URL 被丢弃。`opts.limit`：默认 **10**，最大 100。嵌套在较早匹配里的匹配会被跳过（`div` 不会返回每一层）。
+- 输入 HTML **≤ 2 MiB**，选择器 ≤ 500 字符。无效选择器、非字符串参数、超限输入都会**抛出**带说明的错误，例如 `genkan.html.select: invalid selector "a[[": expected identifier, found [ instead`。没有匹配返回 `[]`，不是错误。
+- `<tr>`、`<li>`、`<td>` 单独放进 `html` 块会被 HTML 解析器丢掉标签（片段解析没有表格/列表上下文），要自己包上 `<table><tbody>…</tbody></table>` / `<ul>…</ul>`（`media` 插件的 `snippet` 就是这么做的）。
+- 抓取本身仍然走 `fetch` 与允许列表（§2.1）：不渲染 JavaScript，也不带登录状态。
+
+### 14.3 `html` 白名单
+
+| 项 | 内容 |
+|---|---|
+| 保留的元素 | `p div span br hr h1–h6 strong b em i u s small sub sup code pre blockquote ul ol li dl dt dd table thead tbody tr th td a img figure figcaption time` |
+| 整体删除（含内容） | `script style iframe frame frameset object embed applet svg math template noscript noembed noframes head title meta link base audio video source track canvas map area dialog plaintext xmp textarea select option optgroup datalist button input slot portal`，以及所有 SVG/MathML 命名空间的元素 |
+| 其余元素 | 去掉标签、**保留子内容**（`section`、`article`、`font`、`form` 等） |
+| 保留的属性 | `a[href]`、`img[src alt width height]`、`td/th[colspan rowspan]`、任意白名单元素的 `title`、`time[datetime]`。**没有** `style`、`class`、`id`、`srcset`、`on*`、`target`、`rel` |
+| URL | 只接受绝对 http(s)（相对 URL 用 `base` 解析，没有 `base` 就丢弃；`//host/x` 用 `base` 的协议）。解析发生在实体解码**之后**，所以 `&#106;avascript:`、`java&#x09;script:` 都看得到真实协议；URL 里含控制字符（含 tab/换行）一律拒绝；`javascript:`、`vbscript:`、`data:` 等全部丢弃。输出是规范化后的 `url.String()`。没有可用 `href` 的 `<a>` 退化为纯内容；没有可用 `src` 的 `<img>` 被删除 |
+| 限制 | 输出 ≤ 64 KiB（超出时按文档顺序截断，保持标签闭合）、嵌套 ≤ 20 层（更深的元素只保留文字）、`html` 块输入 ≤ 512 KiB。解析器自身在 512 层打开元素处拒绝 |
+
+### 14.4 安全模型
+
+1. **不信任插件**：插件只能返回数据。`html` 在服务端被**重建**而不是“过滤”：输出树里只有白名单元素和属性，文本由序列化器转义，所以未知构造没有办法漏过去；前端用同一份白名单再做一次。
+2. **iframe 的信任边界是“跨源”**：`allow-scripts` + `allow-same-origin` 让被嵌入页面像普通网站一样工作（登录态、本地存储、脚本）。这只有在它**不与 Genkan 同源**时才安全，否则页面里的脚本能访问管理员会话。服务端不知道 Genkan 的来源，因此前端在渲染时比较 `new URL(src).origin` 与 `location.origin`，相同则拒绝。`localhost` 与 `127.0.0.1` 是不同的 origin，属于跨源。被嵌入页面无法导航 Genkan（无 `allow-top-navigation`），也拿不到 Referer。
+3. **没有新的服务端网络能力**：`iframe`/`media`/图片由**浏览器**加载，不需要 `permissions.fetch`，也不经过允许列表；服务端抓取（`snippet`）仍然受 §2.1 约束。代价是这些 URL 由访问者的浏览器请求，插件作者与被嵌入站点能看到访问者的 IP。
+4. **只接受 http(s)**：`iframe.src`、`media.src/poster`、`html` 里的链接和图片、轮播的 `href` 都拒绝 `javascript:`、`data:`、`blob:`、`file:`。（轮播与单图的 `src` 仍允许 §3.2 已有的 `data:image/`。）
+5. **自动播放**：只有静音的视频/音频才会自动播放。
+
+### 14.5 内置插件 `media`
+
+一个插件、五个小组件，全部需要每个实例自己的 URL，所以清单里没有固定的 fetch 主机。
+
+| 小组件 | 默认大小 | 配置 | 输出 |
+|---|---|---|---|
+| `page` 网页 | l | `url`、`height`、`cropX/cropY/cropW/cropH`、`zoom`、`refresh`（0 = 关） | `iframe`；刷新由块自己的 `refresh` 完成，小组件轮询间隔 3600 秒 |
+| `snippet` 网页片段 | m | `url`（`allowFetch`）、`selector`（必填）、`title`、`max`（默认 5，≤ 20） | 服务端抓取页面（浏览器式 User-Agent），`genkan.html.select` 后每个匹配一个 `html` 块（全是 `<tr>` 或 `<li>` 时合并成一个 `table`/`ul`）；刷新 900 秒。错误：无匹配（显示选择器）、选择器无效、抓取失败、HTTP 错误、非 HTML 内容类型。不支持 JavaScript 渲染的内容和需要登录的页面 |
+| `image` 图片 | m | `urls`（每行一个，≤ 20）、`interval`、`fit`、`height`、`link` | 轮播 `image`；刷新 3600 秒 |
+| `video` 视频 | m | `url`、`poster`、`autoplay`（静音）、`loop`、`controls` | YouTube（`watch?v=`、`youtu.be/`、`shorts/`、`live/`、`embed/`）→ `https://www.youtube-nocookie.com/embed/ID` 的 `iframe`（`ratio: 16/9`）；哔哩哔哩 `bilibili.com/video/BV…` → `https://player.bilibili.com/player.html?bvid=…&autoplay=0` 的 `iframe`；其它 → `media` 视频块。主机必须正好是 youtube / youtu.be / bilibili 域名（`youtube.com.evil.example` 之类不会被识别） |
+| `audio` 音频 | s | `url`、`title`、`loop` | `media` 音频块（文件和电台流都可以） |

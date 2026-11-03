@@ -121,7 +121,7 @@ Uploading exactly one file also applies it; several files only add them to the g
   category groups `cm-cat-<id|uncat>` with `cm-toggle-<id|uncat>` (`aria-expanded`), `cm-cat-rename-<id>`, `cm-cat-up-<id>`, `cm-cat-down-<id>`,
   `cm-cat-delete-<id>`, `cm-add-link-<id|uncat>`; link rows `cm-link-<id>` with `cm-pin-<id>` (star, `aria-pressed`), `cm-link-edit-<id>`,
   `cm-link-delete-<id>`. Edit / delete actions open the usual modals (`link-modal`, `category-modal`, `workspace-modal`, `confirm-modal`) over Settings.
-- Data: `export-btn` (`<a href=/api/export download>`), `import-mode`, `import-mode-merge`, `import-mode-replace`,
+- Data: `export-plugin-data-chk` (checkbox in `export-plugin-data`, off by default; checked = `export-btn` links to `/api/export?plugin_data=1`) with `export-plugin-data-hint`, `export-btn` (`<a href=/api/export download>`), `import-mode`, `import-mode-merge`, `import-mode-replace`,
   `import-file` (file input), `import-btn`.
 - About: `about-version` (server build version from `/api/bootstrap` `server_version`; `dev` for unversioned builds), `about-revision` (data revision).
 
@@ -136,7 +136,7 @@ Uploading exactly one file also applies it; several files only add them to the g
 ## Plugins and widgets (docs/PLUGINS.md)
 **Settings → Plugins** (`settings-tab-plugins`, panel root `plugins-tab`): `plugin-add-btn`, `plugin-empty` / `plugin-empty-add`, list `plugin-list`.
 Row `plugin-row` (attrs `data-plugin-id`, `data-enabled=1|0`) contains `plugin-name`, `plugin-badge` (attr `data-kind=wallpaper|widget|search|schedule`),
-`plugin-error` (last error), `plugin-toggle` (switch, `aria-checked`), `plugin-config-btn`, `plugin-logs-btn` (`aria-pressed`, one panel open at a time),
+`plugin-error` (last error), `plugin-toggle` (switch, `aria-checked`), `plugin-config-btn`, `plugin-data-btn` (opens `plugin-data-modal`: `plugin-data-usage` (attrs `data-size`, `data-limit`, bytes), `plugin-data-list` > `plugin-data-row` (attrs `data-key`, `data-instance`) with `plugin-data-toggle`, `plugin-data-instance` (badge), `plugin-data-size`, `plugin-data-delete`, `plugin-data-value` (pretty JSON when expanded), `plugin-data-empty`; footer `plugin-data-clear` > `plugin-data-confirm` (`plugin-data-clear-cancel` / `plugin-data-clear-yes`), `plugin-data-close`), `plugin-logs-btn` (`aria-pressed`, one panel open at a time),
 `plugin-update` (only with `source_url`: re-installs from it), `plugin-delete` (opens `confirm-modal`).
 Config panel `plugin-config-panel`: generated fields `plugin-cfg-<key>` (switch for boolean; secret: `data-set=1|0`, `plugin-cfg-secret-clear-<key>` toggles "clear"), inline errors `plugin-cfg-error-<key>`,
 `plugin-config-save`, `plugin-permissions` (hosts, `*` has the warning style). Logs panel `plugin-logs-panel` with `plugin-logs` (`<pre>`) and `plugin-logs-refresh`.
@@ -173,7 +173,9 @@ and so is an update of an enabled plugin whose permissions did not change. After
 **Widget area** (`widget-area`, between the hero and `board`; absent when the workspace has no visible widget, unless admin edit mode; `data-editing=1` in edit mode):
 `widget` (attrs `data-widget-id`, `data-plugin`, `data-widget`, `data-size=s|m|l`, `aria-busy`), `widget-title`, `widget-skeleton` (while the first load runs),
 `widget-error` + `widget-retry`, `widget-refresh` (admin, hover). Instances of disabled plugins are hidden (edit mode: shown dashed with an error; no edit button).
-Block testids: `widget-text`, `widget-stat`, `widget-stats`, `widget-list` / `widget-list-item`, `widget-kv`, `widget-progress`, `widget-image`, `widget-chart` (attr `data-kind=spark|bar`),
+Block testids: `widget-text`, `widget-stat`, `widget-stats`, `widget-list` / `widget-list-item`, `widget-kv`, `widget-progress`, `widget-image`, `widget-chart` (attr `data-kind=spark|bar|line`; line charts: `widget-line` (the `<svg>`), `widget-line-path`, `widget-chart-tip` (hover/touch tooltip, only while hovering), `widget-chart-empty`; axis labels are `svg text.wg-lc-t`, the y ones have `text-anchor=end`),
+Media blocks (docs/PLUGINS.md 14): `widget-iframe-block` > `widget-iframe` (the `<iframe>`) + `widget-iframe-open` (hint link); `widget-iframe-blocked` replaces a same-origin frame; `widget-html`; `widget-video`; `widget-audio` (attr `data-state=paused|playing|error`) with `audio-toggle`, `audio-title`, `audio-seek`, `audio-time`, `audio-mute`;
+`widget-slideshow` (attrs `data-index`, `data-count`, `data-fit`) with `widget-slide` (`data-active`) and `widget-slide-dot` (`aria-current`).
 `widget-row`, `widget-button` (admin only, attr `data-action`; calls the action endpoint, toasts the result, `refresh:true` forces a reload). A divider is a bare `hr.wg-hr`.
 Layout (docs/PLUGINS.md 11.1): masonry grid, 6 / 4 / 2 / 1 columns (<=1100 / 700 / 480px), `grid-auto-flow: row dense`, 4px rows. The card `section[data-testid=widget]` sits in a cell `.wgi[data-wid=<id>]`
 (the card plus the gap below it); the card also carries `data-w` (effective columns of 6) and `data-h` (fixed px, 0 = auto). Fixed height: `data-fixed=1`, the `.wg-body` scrolls inside.

@@ -28,6 +28,8 @@ func (s *Server) pluginRoutes() {
 	m.HandleFunc("GET /api/plugins/{id}/source", s.guard(permAdmin, s.handlePluginSource))
 	m.HandleFunc("PUT /api/plugins/{id}/source", s.guard(permAdmin, s.handlePluginSourcePut))
 	m.HandleFunc("GET /api/plugins/{id}/logs", s.guard(permAdmin, s.handlePluginLogs))
+	m.HandleFunc("GET /api/plugins/{id}/storage", s.guard(permAdmin, s.handlePluginStorage))
+	m.HandleFunc("DELETE /api/plugins/{id}/storage", s.guard(permAdmin, s.handlePluginStorageClear))
 	m.HandleFunc("POST /api/plugins/{id}/test", s.guard(permAdmin, s.handlePluginTest))
 	m.HandleFunc("PATCH /api/plugins/{id}", s.guard(permAdmin, s.handlePluginPatch))
 	m.HandleFunc("DELETE /api/plugins/{id}", s.guard(permAdmin, s.handlePluginDelete))
@@ -193,6 +195,26 @@ func (s *Server) handlePluginLogs(w http.ResponseWriter, r *http.Request, _ Role
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, r, http.StatusOK, map[string]any{"logs": logs})
+}
+
+func (s *Server) handlePluginStorage(w http.ResponseWriter, r *http.Request, _ Role) {
+	info, err := s.plugins.Storage(r.PathValue("id"))
+	if err != nil {
+		failPlugin(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, r, http.StatusOK, info)
+}
+
+// handlePluginStorageClear clears all storage, or one key (?key=, plus &instance= for instance-scoped keys).
+func (s *Server) handlePluginStorageClear(w http.ResponseWriter, r *http.Request, _ Role) {
+	q := r.URL.Query()
+	if err := s.plugins.ClearStorage(r.PathValue("id"), q.Get("key"), q.Get("instance")); err != nil {
+		failPlugin(w, err)
+		return
+	}
+	writeOK(w)
 }
 
 func (s *Server) handlePluginTest(w http.ResponseWriter, r *http.Request, _ Role) {

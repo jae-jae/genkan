@@ -223,8 +223,12 @@ export type Block =
   | { type: 'list'; items: ListItem[] }
   | { type: 'kv'; items: { k: string; v: string }[] }
   | { type: 'progress'; label?: string; value: number; text?: string }
-  | { type: 'image'; src: string; alt?: string; href?: string; ratio?: number }
+  | { type: 'image'; src?: string; alt?: string; href?: string; ratio?: number; images?: { src: string; alt?: string; href?: string }[]; interval?: number; fit?: 'cover' | 'contain'; height?: number }
+  | { type: 'iframe'; src: string; height?: number; ratio?: number; crop?: { x?: number; y?: number; width: number; height: number }; zoom?: number; refresh?: number }
+  | { type: 'html'; html: string }
+  | { type: 'media'; kind: 'video' | 'audio'; src: string; poster?: string; title?: string; autoplay?: boolean; muted?: boolean; loop?: boolean; controls?: boolean }
   | { type: 'chart'; kind: 'spark' | 'bar'; values: number[]; labels?: string[] }
+  | { type: 'chart'; kind: 'line'; points: [number, number][]; format?: 'int' | 'compact' | 'percent' | 'decimal'; color?: 'accent' | 'green' | 'red' | 'blue' | 'orange' }
   | { type: 'row'; children: Block[] }
   | { type: 'button'; label: string; action: string; params?: unknown; icon?: string }
   | { type: 'divider' }

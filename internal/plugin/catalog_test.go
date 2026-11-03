@@ -40,7 +40,7 @@ func TestCatalogCompilesAndValidates(t *testing.T) {
 		}
 		n++
 	}
-	want := []string{"bing-wallpaper", "nasa-apod", "picsum", "weather", "hacker-news", "rss", "world-clock", "countdown", "calculator", "github-search", "pihole", "uptime-summary", "link-importer"}
+	want := []string{"bing-wallpaper", "nasa-apod", "picsum", "weather", "hacker-news", "rss", "world-clock", "countdown", "calculator", "github-search", "pihole", "uptime-summary", "link-importer", "media", "github-stars"}
 	m := New(Config{Store: e.st, DataDir: e.dir, Catalog: cat})
 	defer m.Close()
 	have := map[string]bool{}
@@ -52,8 +52,8 @@ func TestCatalogCompilesAndValidates(t *testing.T) {
 			t.Errorf("catalog is missing %s", id)
 		}
 	}
-	if n != 13 || len(want) != 13 {
-		t.Errorf("expected the 13 documented example plugins, found %d valid files", n)
+	if n != len(want) {
+		t.Errorf("expected the %d documented example plugins, found %d valid files", len(want), n)
 	}
 	if n != len(m.Catalog()) {
 		t.Errorf("%d valid files but %d catalog items", n, len(m.Catalog()))

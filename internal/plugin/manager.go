@@ -87,6 +87,7 @@ func New(cfg Config) *Manager {
 	m.ctx, m.end = context.WithCancel(context.Background())
 	m.sched = newScheduler(m)
 	m.st.SetSecretResolver(m.secretResolver)
+	m.st.SetWidgetsGone(m.clearInstances)
 	m.sched.kick()
 	return m
 }

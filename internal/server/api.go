@@ -460,7 +460,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request, _ Role) {
 // Export / import -------------------------------------------------------------------
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request, _ Role) {
-	b, err := json.MarshalIndent(s.st.Export(), "", "  ")
+	exp := s.st.Export()
+	if v := r.URL.Query().Get("plugin_data"); v == "1" || strings.EqualFold(v, "true") {
+		exp.PluginData = s.plugins.ExportData()
+	}
+	b, err := json.MarshalIndent(exp, "", "  ")
 	if err != nil {
 		fail(w, err)
 		return
@@ -492,10 +496,22 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request, _ Role) {
 			return
 		}
 	}
+	if req.Data.PluginData != nil {
+		if err := plugin.ValidatePluginData(req.Data.PluginData); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	res, err := s.st.ImportData(req.Mode, req.Data)
 	if err != nil {
 		fail(w, err)
 		return
+	}
+	if req.Data.PluginData != nil {
+		if err := s.plugins.RestoreData(req.Data.PluginData, res); err != nil {
+			fail(w, err)
+			return
+		}
 	}
 	writeJSON(w, r, http.StatusOK, map[string]any{"ok": true, "workspaces": res.Workspaces, "links": res.Links, "plugins": res.Plugins, "widgets": res.Widgets})
 }

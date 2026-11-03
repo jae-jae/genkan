@@ -154,7 +154,7 @@ test.describe('single API token + Skill + MCP', () => {
     const list = await rpc(mcp, 'tools/list')
     const names = list.body.result.tools.map((t: any) => t.name)
     expect(names).toEqual(['get_overview', 'search_links', 'create_workspace', 'update_workspace', 'delete_workspace', 'create_category', 'update_category', 'delete_category', 'create_links', 'update_link', 'delete_links', 'reorder', 'update_settings',
-      'list_plugins', 'install_plugin', 'preview_plugin', 'get_plugin_source', 'update_plugin_source', 'update_plugin', 'uninstall_plugin', 'test_plugin', 'plugin_logs', 'list_widgets', 'add_widget', 'update_widget', 'remove_widget'])
+      'list_plugins', 'install_plugin', 'preview_plugin', 'get_plugin_source', 'update_plugin_source', 'update_plugin', 'uninstall_plugin', 'test_plugin', 'plugin_logs', 'plugin_storage', 'clear_plugin_storage', 'list_widgets', 'add_widget', 'update_widget', 'remove_widget'])
     for (const t of list.body.result.tools) expect(t.inputSchema.type).toBe('object')
 
     const ov = await tool(mcp, 'get_overview', {})

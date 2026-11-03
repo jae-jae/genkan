@@ -281,7 +281,7 @@ gk GET /api/bootstrap | jq '[.workspaces[] | {name,wallpaper}]'
 
 ### GET /api/export
 
-Full backup as JSON: `{"schema":2,"settings":{...},"workspaces":[...],"categories":[...],"links":[...]}`, plus `"plugins":[...]` (with their source code) and `"widgets":[...]` when plugins are installed. Contains no secrets (plugin secret config values are left out). Uploaded image files are not included, only references to them.
+Full backup as JSON: `{"schema":2,"settings":{...},"workspaces":[...],"categories":[...],"links":[...]}`, plus `"plugins":[...]` (with their source code) and `"widgets":[...]` when plugins are installed. Contains no secrets (plugin secret config values are left out). Uploaded image files are not included, only references to them. `?plugin_data=1` adds `"plugin_data":{"<plugin id>":{"<key>":value}}` (what the plugins stored, per-instance keys as `@i/<widget id>/<key>`); it may contain cached sensitive data, so only on request. `POST /api/import` restores it when present (`replace`: for all imported plugins; `merge`: only for newly added plugins).
 
 ```bash
 gk GET /api/export > genkan-backup.json
@@ -330,7 +330,7 @@ export async function widget(ctx) {            // ctx.instance.config, ctx.confi
 }
 ```
 
-Capabilities and the functions they need: `wallpapers` -> `wallpaper(ctx)`, `widgets` -> `widget(ctx)` (+ optional `action(ctx)` for `button` blocks), `search` -> `search(ctx)`, `schedules` -> `schedule(ctx)`. Host API inside plugins: `genkan.log()`, `genkan.storage.get/set/delete/keys` (256 KiB per plugin), `genkan.links.*` / `genkan.workspaces.list` / `genkan.categories.list` (needs `permissions.links`), standard `fetch`, timers, `URL`. Limits: 32 MiB memory, search 2 s, widget/wallpaper/action 10 s, schedule 60 s. Config field types: `string`, `text`, `number`, `boolean`, `select`, `secret`, `url`. Secret values are never returned by the API.
+Capabilities and the functions they need: `wallpapers` -> `wallpaper(ctx)`, `widgets` -> `widget(ctx)` (+ optional `action(ctx)` for `button` blocks), `search` -> `search(ctx)`, `schedules` -> `schedule(ctx)`. Host API inside plugins: `genkan.log()`, `genkan.storage.get/set/delete/keys` (256 KiB per plugin), `genkan.links.*` / `genkan.workspaces.list` / `genkan.categories.list` (needs `permissions.links`), standard `fetch`, timers, `URL`. Limits: 32 MiB memory, search 2 s, widget/wallpaper/action 10 s, schedule 60 s. Config field types: `string`, `text`, `number`, `boolean`, `select`, `secret`, `url`. Secret values are never returned by the API. Besides text, stat, list, kv, progress, image, chart, row, button and divider, widgets can return `iframe` (the browser embeds a page; sandboxed, never Genkan's own origin), `html` (sanitized fragment, no scripts or styles), `media` (video or audio; `autoplay` only with `muted`) and an `image` slideshow (`images: [...]`). `genkan.html.select(html, selector, {base, limit})` extracts `[{html, text}]` from fetched HTML with a CSS selector (input <= 2 MiB, throws on a bad selector). The built-in `media` plugin (page, snippet, image, video, audio widgets) shows each; details in `docs/PLUGINS.md` section 14 and `docs/PLUGIN_DEV.md`.
 
 Localization: every user-visible manifest string (`name`, `description`, config `label` / `help`, `select` option labels, widget / wallpaper / schedule / search `name`) may be a plain string, an object `{ "en": "Weather", "zh": "天气" }` or `t("key")` (expanded from `messages` when the plugin is installed). The API returns the string or the object as written, so `name` and `description` in the plugin list and catalog can be objects: take `.en` when you need a single string. In hooks, use `ctx.t(key, params)` (`{name}` placeholders; fallback exact language -> base language -> `en` -> key) and `ctx.locale` (`zh-CN`, `en-US`) for `Intl`; never branch on `ctx.lang`. `POST /api/plugins/{id}/test` accepts `"lang":"zh"`. See `docs/PLUGIN_DEV.md` (Localization).
 
@@ -436,6 +436,18 @@ gk DELETE /api/plugins/calculator
 ```bash
 gk GET /api/plugins/calculator/logs | jq -r '.logs[] | "\(.level) \(.msg)"'
 ```
+
+### GET /api/plugins/{id}/storage
+
+What the plugin keeps in its persistent storage: `{"size":1234,"limit":262144,"entries":[{"key":"series:a/b","size":812,"value":...,"instance":"<widget id, only for per-instance storage>"}]}`. Plugin data can contain cached sensitive data.
+
+```bash
+gk GET /api/plugins/github-stars/storage | jq '{size, keys: [.entries[].key]}'
+```
+
+### DELETE /api/plugins/{id}/storage
+
+Clears all stored data of the plugin (it starts over; e.g. cached history is lost). `?key=K` deletes only that plugin-level key, `?key=K&instance=<widget id>` a key of one widget instance's storage. Only when the user asked. Response: `{"ok":true}`.
 
 ### POST /api/plugins/{id}/test
 

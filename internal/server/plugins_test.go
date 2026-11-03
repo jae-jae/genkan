@@ -53,7 +53,7 @@ func TestPluginRESTPermissions(t *testing.T) {
 	type rq struct{ method, path, body string }
 	adminOnly := []rq{
 		{"GET", "/api/plugins", ""}, {"POST", "/api/plugins", `{"catalog":"x"}`}, {"GET", "/api/plugins/catalog", ""},
-		{"GET", "/api/plugins/demo/source", ""}, {"GET", "/api/plugins/demo/logs", ""}, {"POST", "/api/plugins/demo/test", `{"hook":"search","query":"ab"}`},
+		{"GET", "/api/plugins/demo/source", ""}, {"GET", "/api/plugins/demo/logs", ""}, {"GET", "/api/plugins/demo/storage", ""}, {"DELETE", "/api/plugins/demo/storage", ""}, {"POST", "/api/plugins/demo/test", `{"hook":"search","query":"ab"}`},
 		{"PATCH", "/api/plugins/demo", `{"enabled":true}`}, {"DELETE", "/api/plugins/demo", ""},
 		{"POST", "/api/widgets", `{"plugin":"demo","widget":"w"}`}, {"PATCH", "/api/widgets/" + wid, `{"sort":3}`}, {"DELETE", "/api/widgets/" + wid, ""},
 		{"POST", "/api/widgets/reorder", `{"ids":[]}`}, {"POST", "/api/widgets/" + wid + "/action", `{"action":"go"}`},

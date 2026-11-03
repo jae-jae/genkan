@@ -53,6 +53,7 @@ type Store struct {
 	notify  func(version int64)
 	secrets SecretResolver
 	revSeq  uint64
+	gone    func([]WidgetRef) // called after widget instances were removed
 
 	fileMu  sync.Mutex
 	written uint64

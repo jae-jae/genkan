@@ -256,6 +256,51 @@ func (s *Server) pluginTools() []tool {
 			},
 		},
 		{
+			name: "plugin_storage", title: "Plugin storage", readOnly: true, idempotent: true,
+			desc:   "Inspect what a plugin keeps in its persistent key/value storage: {size, limit (bytes), entries: [{key, size, value, instance?}]}. Entries with `instance` belong to one widget instance (ctx.instance.storage). Plugin data can contain cached sensitive data. 查看插件的持久化存储。",
+			schema: obj(M{"id": str("Plugin id.")}, "id"),
+			fn: func(args json.RawMessage) (any, error) {
+				m, err := mgr()
+				if err != nil {
+					return nil, err
+				}
+				var a struct {
+					ID string `json:"id"`
+				}
+				if err := decode(args, &a); err != nil {
+					return nil, err
+				}
+				return m.Storage(a.ID)
+			},
+		},
+		{
+			name: "clear_plugin_storage", title: "Clear plugin storage", destructive: true,
+			desc: "Delete a plugin's stored data: everything (only key omitted), or one key; add instance for a key of one widget instance (see plugin_storage). The plugin starts over (e.g. cached history is lost). Only when the user asked. 清除插件的存储数据。",
+			schema: obj(M{
+				"id":       str("Plugin id."),
+				"key":      str("Delete only this key (default: everything)."),
+				"instance": str("Widget instance id when key is an instance-scoped key."),
+			}, "id"),
+			fn: func(args json.RawMessage) (any, error) {
+				m, err := mgr()
+				if err != nil {
+					return nil, err
+				}
+				var a struct {
+					ID       string `json:"id"`
+					Key      string `json:"key"`
+					Instance string `json:"instance"`
+				}
+				if err := decode(args, &a); err != nil {
+					return nil, err
+				}
+				if err := m.ClearStorage(a.ID, a.Key, a.Instance); err != nil {
+					return nil, err
+				}
+				return M{"ok": true, "cleared": a.ID}, nil
+			},
+		},
+		{
 			name: "list_widgets", title: "List widgets", readOnly: true, idempotent: true,
 			desc:   "List widget instances placed on the start page (id, plugin, widget kind, workspace_id (\"\" = all workspaces), config with secrets blanked, sort, w columns, h pixels). 小组件实例列表。",
 			schema: obj(M{}),

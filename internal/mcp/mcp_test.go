@@ -96,7 +96,7 @@ func TestToolsListSchemas(t *testing.T) {
 	m, _ := rpc(t, s, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	tools := m["result"].(map[string]any)["tools"].([]any)
 	want := []string{"get_overview", "search_links", "create_workspace", "update_workspace", "delete_workspace", "create_category", "update_category", "delete_category", "create_links", "update_link", "delete_links", "reorder", "update_settings",
-		"list_plugins", "install_plugin", "preview_plugin", "get_plugin_source", "update_plugin_source", "update_plugin", "uninstall_plugin", "test_plugin", "plugin_logs", "list_widgets", "add_widget", "update_widget", "remove_widget"}
+		"list_plugins", "install_plugin", "preview_plugin", "get_plugin_source", "update_plugin_source", "update_plugin", "uninstall_plugin", "test_plugin", "plugin_logs", "plugin_storage", "clear_plugin_storage", "list_widgets", "add_widget", "update_widget", "remove_widget"}
 	if len(tools) != len(want) {
 		t.Fatalf("got %d tools", len(tools))
 	}

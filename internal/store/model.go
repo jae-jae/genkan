@@ -131,6 +131,9 @@ type Export struct {
 	// Plugins carry their source but never secret config values.
 	Plugins []ExportPlugin   `json:"plugins,omitempty"`
 	Widgets []WidgetInstance `json:"widgets,omitempty"`
+	// PluginData is the optional plugin storage (export ?plugin_data=1):
+	// plugin id -> storage key -> JSON value (instance storage keys included).
+	PluginData map[string]map[string]json.RawMessage `json:"plugin_data,omitempty"`
 }
 
 // Input / patch types ------------------------------------------------------

@@ -28,6 +28,7 @@ type hookReq struct {
 	instID     string
 	instSchema []ConfigField
 	instCfg    map[string]any // stored instance config (secrets in clear text)
+	scratch    bool           // instance is not saved (test run): ctx.instance.storage is throw-away
 }
 
 // call builds ctx for a hook and runs it.
@@ -54,7 +55,13 @@ func (m *Manager) call(parent context.Context, e *entry, rec store.Plugin, r hoo
 		jsctx["instance"] = map[string]any{"id": r.instID, "config": icfg}
 		o.extraHosts = fetchHostsFromConfig(r.instSchema, icfg)
 		o.secrets = append(o.secrets, secretValues(r.instSchema, r.instCfg)...)
+		o.instID, o.instKV = r.instID, e.kv
+		if r.scratch {
+			o.instKV = newScratchKV()
+		}
 	}
+	// genkan.widgets.list() hands the plugin all of its instances' secrets: keep them out of logs and errors
+	o.secrets = append(o.secrets, m.widgetSecrets(e)...)
 	return e.invoke(parent, o)
 }
 
@@ -539,6 +546,7 @@ func (m *Manager) Test(ctx context.Context, id string, req TestRequest) (TestRes
 			cfg = base
 		}
 		hr.instID, hr.instSchema, hr.instCfg = instID, nonNil(d.Config), cfg
+		hr.scratch = req.Instance == ""
 		hr.fields["widget"] = wid
 		if req.Hook == hookAction {
 			if _, has := e.hook[hookAction]; !has {

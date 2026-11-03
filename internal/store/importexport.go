@@ -9,7 +9,15 @@ import (
 // ImportResult counts what an import created.
 type ImportResult struct {
 	Workspaces, Links, Plugins, Widgets int
+	// PluginIDs are the plugins this import wrote (merge: only new ones).
+	PluginIDs []string
+	// WidgetMap maps the widget ids of the import file to the stored widgets
+	// (merge assigns fresh ids); only widgets that were kept are listed.
+	WidgetMap map[string]ImportedWidget
 }
+
+// ImportedWidget is a stored widget of an import.
+type ImportedWidget struct{ ID, Plugin string }
 
 // Import loads exported data. mode "replace" swaps all user data (auth and
 // tokens are kept); "merge" appends everything under fresh IDs.
@@ -137,6 +145,7 @@ func (s *Store) ImportData(mode string, in Export) (res ImportResult, err error)
 
 	// Widgets: keep those whose plugin will exist and whose workspace was imported.
 	var wgs []WidgetInstance
+	wmap := map[string]ImportedWidget{}
 	for _, w := range in.Widgets {
 		nws := ""
 		if w.WorkspaceID != "" {
@@ -156,9 +165,11 @@ func (s *Store) ImportData(mode string, in Export) (res ImportResult, err error)
 		if merge || !validID(id) {
 			id = NewID()
 		}
+		wmap[w.ID] = ImportedWidget{ID: id, Plugin: w.Plugin}
 		wgs = append(wgs, WidgetInstance{ID: id, Plugin: w.Plugin, Widget: w.Widget, WorkspaceID: nws, Config: cfg, Sort: w.Sort, W: ClampWidgetW(w.W), H: ClampWidgetH(w.H)})
 	}
 
+	var gone []WidgetRef
 	err = s.commit(true, func() (bool, error) {
 		// plugin sources first: a write error leaves the data untouched
 		var addPlugins []Plugin
@@ -217,6 +228,9 @@ func (s *Store) ImportData(mode string, in Export) (res ImportResult, err error)
 			}
 			s.d.Workspaces, s.d.Categories, s.d.Links = wss, cats, lks
 			s.d.Plugins = addPlugins
+			for _, w := range s.d.Widgets {
+				gone = append(gone, WidgetRef{ID: w.ID, Plugin: w.Plugin})
+			}
 			s.d.Widgets = nil
 			s.d.Settings = normalizeSettings(in.Settings)
 		}
@@ -247,10 +261,37 @@ func (s *Store) ImportData(mode string, in Export) (res ImportResult, err error)
 		}
 		res.Plugins = len(addPlugins)
 		res.Widgets = len(kept)
+		for _, p := range addPlugins {
+			res.PluginIDs = append(res.PluginIDs, p.ID)
+		}
+		keptIDs := map[string]bool{}
+		for _, w := range s.d.Widgets {
+			keptIDs[w.ID] = true
+		}
+		for old, w := range wmap {
+			if !keptIDs[w.ID] || s.plIndex(w.Plugin) < 0 {
+				delete(wmap, old)
+			}
+		}
+		res.WidgetMap = wmap
 		return true, nil
 	})
 	if err != nil {
 		return ImportResult{}, err
+	}
+	// replace: old instances that are not in the import any more lose their storage
+	if mode == "replace" {
+		stay := map[string]bool{}
+		for _, w := range res.WidgetMap {
+			stay[w.ID] = true
+		}
+		var drop []WidgetRef
+		for _, g := range gone {
+			if !stay[g.ID] {
+				drop = append(drop, g)
+			}
+		}
+		s.widgetsGone(drop)
 	}
 	res.Workspaces, res.Links = len(wss), len(lks)
 	return res, nil

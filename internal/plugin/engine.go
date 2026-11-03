@@ -332,6 +332,8 @@ type callOpts struct {
 	secrets    []string // values to redact from logs and errors
 	lang       string   // request language, for ctx.t
 	msgs       *Messages
+	instID     string   // widget instance of the call ("" = none)
+	instKV     *kvStore // storage behind ctx.instance.storage
 }
 
 // invoke runs one hook of the plugin and returns its result converted to Go
@@ -389,6 +391,14 @@ func (e *entry) invoke(parent context.Context, o callOpts) (res any, err error) 
 			hctx[k] = v
 		}
 		hctx["t"] = moejs.NativeFunc(in.translateFunc(o.msgs, o.lang))
+		if inst, ok := hctx["instance"].(map[string]any); ok && o.instKV != nil {
+			withStorage := make(map[string]any, len(inst)+1)
+			for k, v := range inst {
+				withStorage[k] = v
+			}
+			withStorage["storage"] = in.instanceStorage(o.instKV, o.instID)
+			hctx["instance"] = withStorage
+		}
 		arg, err := rt.FromGo(hctx)
 		if err != nil {
 			return err

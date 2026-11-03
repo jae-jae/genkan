@@ -117,6 +117,30 @@ func (s *Store) SetSecretResolver(fn SecretResolver) {
 	s.mu.Unlock()
 }
 
+// WidgetRef names a widget instance (and its plugin) that was removed.
+type WidgetRef struct{ ID, Plugin string }
+
+// SetWidgetsGone installs a callback that runs (outside the store lock) after
+// widget instances were removed by a delete, a workspace delete or a replace
+// import, so a plugin's per-instance storage can be cleared.
+func (s *Store) SetWidgetsGone(fn func([]WidgetRef)) {
+	s.mu.Lock()
+	s.gone = fn
+	s.mu.Unlock()
+}
+
+func (s *Store) widgetsGone(refs []WidgetRef) {
+	if len(refs) == 0 {
+		return
+	}
+	s.mu.RLock()
+	fn := s.gone
+	s.mu.RUnlock()
+	if fn != nil {
+		fn(refs)
+	}
+}
+
 // PluginWallpaperPrefix is the file name prefix of all wallpapers a plugin downloaded.
 func PluginWallpaperPrefix(pluginID string) string {
 	sum := sha256.Sum256([]byte(pluginID))
@@ -576,14 +600,20 @@ func (s *Store) UpdateWidget(id string, p WidgetPatch) (WidgetInstance, error) {
 }
 
 func (s *Store) DeleteWidget(id string) error {
-	return s.commit(true, func() (bool, error) {
+	var gone []WidgetRef
+	err := s.commit(true, func() (bool, error) {
 		i := s.wgIndex(id)
 		if i < 0 {
 			return false, notFound("widget", id)
 		}
+		gone = []WidgetRef{{ID: id, Plugin: s.d.Widgets[i].Plugin}}
 		s.d.Widgets = append(s.d.Widgets[:i], s.d.Widgets[i+1:]...)
 		return true, nil
 	})
+	if err == nil {
+		s.widgetsGone(gone)
+	}
+	return err
 }
 
 func (s *Store) ReorderWidgets(ids []string) error {

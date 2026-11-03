@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -21,6 +22,7 @@ const (
 	maxListItems   = 20
 	maxKVItems     = 20
 	maxChartPoints = 60
+	maxLinePoints  = 500
 	maxRowDepth    = 3
 	maxSearchItems = 8
 	maxParamsJSON  = 2048
@@ -285,20 +287,37 @@ func sanitizeBlock(b map[string]any, budget *int, depth int) map[string]any {
 		out["value"] = math.Min(1, math.Max(0, f))
 		setStr(out, "label", b["label"], maxStr)
 		setStr(out, "text", b["text"], maxStr)
-	case "image":
-		src := cleanImageURL(b["src"])
-		if src == "" {
+	case "image": // single image or slideshow (sanitize_media.go)
+		if out = sanitizeImage(b); out == nil {
 			return nil
 		}
-		out["src"] = src
-		setStr(out, "alt", b["alt"], maxStr)
-		if h := cleanHTTPURL(b["href"]); h != "" {
-			out["href"] = h
+	case "iframe":
+		if out = sanitizeIframe(b); out == nil {
+			return nil
 		}
-		if r, ok := finite(b["ratio"]); ok && r > 0 {
-			out["ratio"] = math.Min(r, 10)
+	case "html":
+		if out = sanitizeHTMLBlock(b); out == nil {
+			return nil
+		}
+	case "media":
+		if out = sanitizeMedia(b); out == nil {
+			return nil
 		}
 	case "chart":
+		if b["kind"] == "line" {
+			pts := sanitizePoints(b["points"])
+			if len(pts) == 0 {
+				return nil
+			}
+			out["kind"], out["points"] = "line", pts
+			if v := oneOf(b["format"], "int", "compact", "percent", "decimal"); v != "" {
+				out["format"] = v
+			}
+			if v := oneOf(b["color"], "accent", "green", "red", "blue", "orange"); v != "" {
+				out["color"] = v
+			}
+			break
+		}
 		kind := oneOf(b["kind"], "spark", "bar")
 		vals, _ := b["values"].([]any)
 		nums := []float64{}
@@ -485,4 +504,28 @@ func SanitizeWallpaper(raw any, pick func(n int) int) (WallpaperResult, bool) {
 	r.Credit = cleanLine(m["credit"], 200)
 	r.Link = cleanHTTPURL(m["link"])
 	return r, true
+}
+
+// sanitizePoints cleans the points of a line chart: [[timestamp ms, value], ...].
+// Invalid pairs are dropped, at most maxLinePoints are kept, the result is sorted by time.
+func sanitizePoints(v any) [][2]float64 {
+	list, _ := v.([]any)
+	out := make([][2]float64, 0, min(len(list), maxLinePoints))
+	for _, it := range list {
+		if len(out) >= maxLinePoints {
+			break
+		}
+		p, ok := it.([]any)
+		if !ok || len(p) < 2 {
+			continue
+		}
+		ts, ok1 := finite(p[0])
+		val, ok2 := finite(p[1])
+		if !ok1 || !ok2 || ts <= 0 {
+			continue
+		}
+		out = append(out, [2]float64{math.Round(ts), val})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i][0] < out[j][0] })
+	return out
 }

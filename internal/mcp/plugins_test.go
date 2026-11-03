@@ -242,3 +242,51 @@ export async function widget(ctx) { return { body: [{ type: "text", text: ctx.t(
 		t.Fatalf("test: %s", b)
 	}
 }
+
+const mcpStoragePlugin = `export const manifest = { id: "mcp-kv", name: "KV", version: "1", widgets: [{ id: "w", name: "W" }] };
+export async function widget(ctx) {
+  ctx.instance.storage.set("c", 3);
+  genkan.storage.set("plain", "p");
+  return { body: [{ type: "text", text: "ok" }] };
+}
+`
+
+func TestPluginStorageTools(t *testing.T) {
+	s, _ := newPluginSrv(t)
+	if r := call(t, s, "install_plugin", map[string]any{"source": mcpStoragePlugin}); r["isError"] != nil {
+		t.Fatalf("install: %v", r)
+	}
+	w := structured(t, call(t, s, "add_widget", map[string]any{"plugin": "mcp-kv", "widget": "w"}))["widget"].(map[string]any)
+	wid := w["id"].(string)
+	if r := call(t, s, "test_plugin", map[string]any{"id": "mcp-kv", "hook": "widget", "instance": wid}); r["isError"] != nil {
+		t.Fatalf("run: %v", r)
+	}
+	st := structured(t, call(t, s, "plugin_storage", map[string]any{"id": "mcp-kv"}))
+	entries := st["entries"].([]any)
+	if st["limit"] != float64(256<<10) || len(entries) != 2 || entries[1].(map[string]any)["instance"] != wid {
+		t.Fatalf("storage: %v", st)
+	}
+	if r := call(t, s, "clear_plugin_storage", map[string]any{"id": "mcp-kv", "key": "c", "instance": wid}); r["isError"] != nil {
+		t.Fatalf("clear key: %v", r)
+	}
+	if n := len(structured(t, call(t, s, "plugin_storage", map[string]any{"id": "mcp-kv"}))["entries"].([]any)); n != 1 {
+		t.Fatalf("after clearing one key: %d entries", n)
+	}
+	if r := call(t, s, "clear_plugin_storage", map[string]any{"id": "mcp-kv"}); r["isError"] != nil {
+		t.Fatalf("clear all: %v", r)
+	}
+	if n := len(structured(t, call(t, s, "plugin_storage", map[string]any{"id": "mcp-kv"}))["entries"].([]any)); n != 0 {
+		t.Fatalf("after clear: %d entries", n)
+	}
+	if r := call(t, s, "plugin_storage", map[string]any{"id": "nope"}); r["isError"] != true {
+		t.Fatalf("unknown plugin: %v", r)
+	}
+	// removing the widget (MCP) clears its instance storage
+	call(t, s, "test_plugin", map[string]any{"id": "mcp-kv", "hook": "widget", "instance": wid})
+	call(t, s, "remove_widget", map[string]any{"id": wid})
+	for _, e := range structured(t, call(t, s, "plugin_storage", map[string]any{"id": "mcp-kv"}))["entries"].([]any) {
+		if e.(map[string]any)["instance"] != nil {
+			t.Fatalf("instance storage survived remove_widget: %v", e)
+		}
+	}
+}

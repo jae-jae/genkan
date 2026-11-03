@@ -267,6 +267,73 @@ export async function search(ctx) { return [{ title: "perm:" + ctx.query }] }
     await expect(page.getByTestId('widget-area')).not.toHaveAttribute('data-editing', '1')
   })
 
+  test('switching the UI language re-localizes plugin names, widget text and search group names (docs/PLUGINS.md §12)', async ({ page, api, ws }) => {
+    await install(api, 'countdown')
+    await install(api, 'world-clock')
+    await install(api, 'calculator')
+    await addWidget(api, 'countdown', 'timer', ws, { date: '2099-01-01' }) // no label: the default label comes from messages
+    await addWidget(api, 'world-clock', 'clock', ws, { zones: 'Asia/Tokyo' })
+    // the API carries both languages: LocalizedString objects, not a resolved string
+    const infos = await api.call<any[]>('GET', '/api/plugins')
+    expect(infos.find((p) => p.id === 'countdown').name).toEqual({ en: 'Countdown', zh: '倒计时' })
+    expect(infos.find((p) => p.id === 'countdown').widgets[0].config[0].label).toEqual({ en: 'Label', zh: '标签' })
+
+    await openApp(page)
+    const cd = page.locator('[data-testid="widget"][data-plugin="countdown"]')
+    const clock = page.locator('[data-testid="widget"][data-plugin="world-clock"]')
+    // ---- English (the e2e browser locale) ----
+    await expect(cd.getByTestId('widget-title')).toHaveText('New Year')
+    await expect(cd.getByTestId('widget-stat')).toContainText('Days left')
+    await expect(cd.getByTestId('widget-stat')).toContainText('days')
+    await expect(clock.getByTestId('widget-title')).toHaveText('World Clock')
+    await expect(clock.getByTestId('widget-list-item')).toContainText(/^Tokyo\s*(Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d\d\/\d\d · UTC\+9/)
+    await openSettings(page, 'plugins')
+    await expect(row(page, 'countdown').getByTestId('plugin-name')).toHaveText('Countdown')
+    await expect(row(page, 'world-clock').getByTestId('plugin-name')).toHaveText('World Clock')
+    await expect(row(page, 'countdown')).toContainText('Days until a date, offline.')
+
+    // ---- switch to Chinese without reloading: names change at once ----
+    await page.getByTestId('settings-tab-general').click()
+    await page.getByTestId('set-lang').selectOption('zh')
+    await page.getByTestId('settings-tab-plugins').click()
+    await expect(row(page, 'countdown').getByTestId('plugin-name')).toHaveText('倒计时')
+    await expect(row(page, 'world-clock').getByTestId('plugin-name')).toHaveText('世界时钟')
+    await expect(row(page, 'countdown')).toContainText('距离某一天还有几天（离线）。')
+    // the config form of a plugin and the catalog pick the language up as well
+    await page.getByTestId('plugin-add-btn').click()
+    await expect(page.locator('[data-testid="plugin-catalog-item"][data-plugin-id="weather"]')).toContainText('天气')
+    await page.getByTestId('plugin-add-back').click()
+    await page.getByTestId('modal-close').click()
+    // widgets refetch in the new language
+    await expect(cd.getByTestId('widget-title')).toHaveText('新年')
+    await expect(cd.getByTestId('widget-stat')).toContainText('还剩')
+    await expect(cd.getByTestId('widget-stat')).toContainText('天')
+    await expect(clock.getByTestId('widget-title')).toHaveText('世界时钟')
+    await expect(clock.getByTestId('widget-list-item')).toContainText(/周[日一二三四五六] \d\d\/\d\d · UTC\+9/)
+    // the widget picker and the form show localized widget names and field labels
+    await toggleEdit(page)
+    await page.getByTestId('widget-add').click()
+    await expect(page.getByTestId('widget-pick-countdown-timer')).toContainText('倒计时')
+    await page.getByTestId('widget-pick-countdown-timer').click()
+    await expect(page.getByTestId('widget-form')).toContainText('标签')
+    await expect(page.getByTestId('widget-form')).toContainText('UTC 偏移（小时）')
+    await page.getByTestId('widget-cancel').click()
+    await toggleEdit(page, false)
+    // search group names are resolved by the server for the request language
+    await page.keyboard.press('/')
+    await page.keyboard.type('1+2*3')
+    await expect(page.getByTestId('search-plugin-group')).toHaveAttribute('aria-label', '计算器')
+
+    // ---- persisted: a reload stays Chinese, switching back restores English ----
+    await page.reload()
+    await expect(cd.getByTestId('widget-title')).toHaveText('新年')
+    await openSettings(page, 'general')
+    await page.getByTestId('set-lang').selectOption('en')
+    await page.getByTestId('modal-close').click()
+    await expect(cd.getByTestId('widget-title')).toHaveText('New Year')
+    await expect(cd.getByTestId('widget-stat')).toContainText('Days left')
+  })
+
   test('disabling world-clock in Settings > Plugins hides its widget; enabling brings it back', async ({ page, api, ws }) => {
     await install(api, 'world-clock')
     await install(api, 'countdown')
@@ -454,7 +521,7 @@ export async function search(ctx) { return [{ title: "perm:" + ctx.query }] }
     // admin: list + catalog
     const list = await api.call<any[]>('GET', '/api/plugins')
     expect(list.map((p) => p.id).sort()).toEqual(['calculator', 'world-clock'])
-    expect(list.find((p) => p.id === 'calculator')).toMatchObject({ enabled: true, name: 'Calculator' })
+    expect(list.find((p) => p.id === 'calculator')).toMatchObject({ enabled: true, name: { en: 'Calculator', zh: '计算器' } }) // LocalizedString: the object as written
     const catalog = await api.call<{ id: string; installed: boolean }[]>('GET', '/api/plugins/catalog')
     for (const id of ['calculator', 'world-clock', 'countdown']) expect(catalog.map((c) => c.id)).toContain(id)
     expect(catalog.find((c) => c.id === 'calculator')!.installed).toBe(true)

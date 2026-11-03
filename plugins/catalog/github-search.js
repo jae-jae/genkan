@@ -9,19 +9,38 @@
 // Unauthenticated GitHub search allows ~10 requests/minute; an optional
 // personal access token (no scopes needed) raises that.
 
+export const messages = {
+  en: {
+    name: "GitHub Search",
+    desc: "Search GitHub repositories with the “gh” prefix.",
+    group: "GitHub",
+    token: "GitHub token",
+    tokenHelp: "Optional. Raises the API rate limit; no scopes needed.",
+    web: "Search GitHub for {q}",
+  },
+  zh: {
+    name: "GitHub 搜索",
+    desc: "用 gh 前缀搜索 GitHub 仓库。",
+    group: "GitHub",
+    token: "GitHub 令牌",
+    tokenHelp: "可选。提高 API 速率限制，无需任何权限范围。",
+    web: "在 GitHub 上搜索 {q}",
+  },
+};
+
 export const manifest = {
   id: "github-search",
-  name: "GitHub Search",
+  name: t("name"),
   version: "1.0.0",
-  description: "Search GitHub repositories with the “gh” prefix. 用 gh 前缀搜索 GitHub 仓库。",
+  description: t("desc"),
   author: "genkan",
   homepage: "https://github.com",
   icon: "code",
   permissions: { fetch: ["api.github.com"] },
   config: [
-    { key: "token", type: "secret", label: "GitHub token", help: "Optional. Raises the API rate limit; no scopes needed." },
+    { key: "token", type: "secret", label: t("token"), help: t("tokenHelp") },
   ],
-  search: { name: "GitHub", prefix: "gh" },
+  search: { name: t("group"), prefix: "gh" },
 };
 
 const compact = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k" : String(n));
@@ -29,9 +48,9 @@ const compact = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).repla
 export async function search(ctx) {
   const q = String(ctx.query || "").trim();
   if (q.length < 2) return [];
-  const zh = ctx.lang === "zh";
+  const { t } = ctx;
   const web = {
-    title: (zh ? "在 GitHub 上搜索 " : "Search GitHub for ") + q,
+    title: t("web", { q }),
     url: "https://github.com/search?type=repositories&q=" + encodeURIComponent(q),
     icon: "search",
   };

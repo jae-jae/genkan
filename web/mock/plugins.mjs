@@ -6,7 +6,7 @@ const now = () => new Date().toISOString()
 const F = (key, type, label, o = {}) => ({ key, type, label, ...o })
 const DEFS = {
   weather: {
-    name: 'Weather', version: '1.0.0', icon: 'cloud-sun', description: 'Current weather and a 7-day trend from Open-Meteo (no API key).', author: 'genkan', homepage: 'https://open-meteo.com',
+    name: { en: 'Weather', zh: '天气' }, version: '1.0.0', icon: 'cloud-sun', description: { en: 'Current weather and a 7-day trend from Open-Meteo (no API key).', zh: 'Open-Meteo 实时天气和 7 天趋势（无需 API key）。' }, author: 'genkan', homepage: 'https://open-meteo.com',
     permissions: { fetch: ['api.open-meteo.com', 'geocoding-api.open-meteo.com'], links: '' },
     config_schema: [F('unit', 'select', 'Temperature unit', { default: 'c', options: [{ value: 'c', label: 'Celsius' }, { value: 'f', label: 'Fahrenheit' }] })],
     widgets: [{ id: 'current', name: 'Current weather', size: 'm', refresh: 600, config: [F('city', 'string', 'City', { required: true, default: 'Tokyo', help: 'Resolved with the geocoding API' }), F('days', 'number', 'Forecast days', { default: 7, min: 3, max: 14 })] }],
@@ -31,9 +31,9 @@ const DEFS = {
     widgets: [{ id: 'top', name: 'Top stories', size: 'm', refresh: 900, config: [F('count', 'number', 'Stories', { default: 5, min: 1, max: 15 })] }],
   },
   'world-clock': {
-    name: 'World clock', version: '1.0.0', icon: 'clock', description: 'Time in several time zones. No network access.', author: 'genkan',
+    name: { en: 'World clock', zh: '世界时钟' }, version: '1.0.0', icon: 'clock', description: { en: 'Time in several time zones. No network access.', zh: '多个时区的时间，无需联网。' }, author: 'genkan',
     permissions: { fetch: [], links: '' }, config_schema: [],
-    widgets: [{ id: 'clock', name: 'World clock', size: 's', refresh: 60, config: [F('zones', 'text', 'Time zones', { default: 'Asia/Tokyo\nEurope/Berlin\nAmerica/New_York', help: 'One IANA zone per line' })] }],
+    widgets: [{ id: 'clock', name: { en: 'World clock', zh: '世界时钟' }, size: 's', refresh: 60, config: [F('zones', 'text', 'Time zones', { default: 'Asia/Tokyo\nEurope/Berlin\nAmerica/New_York', help: 'One IANA zone per line' })] }],
   },
   pihole: {
     name: 'Pi-hole', version: '1.0.0', icon: 'shield', description: 'Queries and blocked count from your Pi-hole, with a pause button.', author: 'genkan',
@@ -41,9 +41,9 @@ const DEFS = {
     widgets: [{ id: 'stats', name: 'Pi-hole stats', size: 's', refresh: 60, config: [F('url', 'url', 'Pi-hole address', { required: true, allowFetch: true, default: 'http://pihole.lan' }), F('token', 'secret', 'API token', { required: true }), F('verbose', 'boolean', 'Show details', { default: true })] }],
   },
   countdown: {
-    name: 'Countdown', version: '1.0.0', icon: 'calendar', description: 'Days until a date. No network access.', author: 'genkan',
+    name: { en: 'Countdown', zh: '倒计时' }, version: '1.0.0', icon: 'calendar', description: { en: 'Days until a date. No network access.', zh: '距离某一天还有几天，无需联网。' }, author: 'genkan',
     permissions: { fetch: [], links: '' }, config_schema: [],
-    widgets: [{ id: 'days', name: 'Countdown', size: 's', refresh: 60, config: [F('title', 'string', 'Title', { default: 'New year' }), F('date', 'string', 'Date', { default: '2027-01-01' })] }],
+    widgets: [{ id: 'days', name: { en: 'Countdown', zh: '倒计时' }, size: 's', refresh: 60, config: [F('title', 'string', 'Title', { default: 'New year' }), F('date', 'string', 'Date', { default: '2027-01-01' })] }],
   },
   rss: {
     name: 'RSS feed', version: '1.0.0', icon: 'rss', description: 'Latest entries of a feed.', author: 'genkan',
@@ -67,13 +67,16 @@ const clampW = (v) => Math.min(6, Math.max(0, Math.round(Number(v) || 0)))
 const clampH = (v) => { v = Math.round(Number(v) || 0); return v <= 0 ? 0 : Math.min(1200, Math.max(80, v)) }
 
 // ---- generated sources (so "Source" / "Preview" show something realistic) ----
+const en = (v) => (typeof v === 'string' ? v : v?.en ?? Object.values(v || {})[0] ?? '')
 const srcOf = (id, d) => {
+  const name = en(d.name), desc = en(d.description)
   const hooks = []
-  if (d.widgets?.length) hooks.push(`export async function widget(ctx) {\n  // ctx.widget = "${d.widgets[0].id}", ctx.config = the instance settings\n  return { title: "${d.name}", body: [{ type: "text", text: "Hello from ${id}" }] }\n}`)
-  if (d.wallpapers?.length) hooks.push(`export async function wallpaper(ctx) {\n  const r = await genkan.fetch("https://${d.permissions?.fetch?.[0] || 'example.com'}/")\n  return { url: r.url, title: "${d.name}" }\n}`)
-  if (d.search) hooks.push(`export async function search(ctx) {\n  return [{ title: "Result for " + ctx.query, copy: ctx.query }]\n}`)
+  if (d.widgets?.length) hooks.push(`export async function widget(ctx) {\n  const { t } = ctx // t(key, params) reads the \`messages\` table above in ctx.lang\n  // ctx.widget = "${d.widgets[0].id}", ctx.config = the instance settings\n  return { title: t("name"), body: [{ type: "text", text: t("hello") }] }\n}`)
+  if (d.wallpapers?.length) hooks.push(`export async function wallpaper(ctx) {\n  const r = await genkan.fetch("https://${d.permissions?.fetch?.[0] || 'example.com'}/")\n  return { url: r.url, title: ctx.t("name") }\n}`)
+  if (d.search) hooks.push(`export async function search(ctx) {\n  return [{ title: ctx.t("result", { q: ctx.query }), copy: ctx.query }]\n}`)
   if (d.schedules?.length) hooks.push(`export async function schedule(ctx) {\n  console.log("sync started")\n}`)
-  return `// ${d.name}: ${d.description}\nexport const manifest = {\n  id: "${id}",\n  name: "${d.name}",\n  version: "${d.version}",\n  description: "${d.description}",\n  permissions: { fetch: ${JSON.stringify(d.permissions?.fetch || [])}, links: "${d.permissions?.links || ''}" },\n}\n\n${hooks.join('\n\n')}\n`
+  const msgs = `export const messages = {\n  en: { name: ${JSON.stringify(name)}, desc: ${JSON.stringify(desc)}, hello: "Hello from ${id}", result: "Result for {q}" },\n  zh: { name: ${JSON.stringify(name)}, desc: ${JSON.stringify(desc)}, hello: "来自 ${id} 的问候", result: "{q} 的结果" },\n}`
+  return `// ${name}: ${desc}\n${msgs}\n\nexport const manifest = {\n  id: "${id}",\n  name: t("name"), // t() in the manifest points at \`messages\`\n  version: "${d.version}",\n  description: t("desc"),\n  permissions: { fetch: ${JSON.stringify(d.permissions?.fetch || [])}, links: "${d.permissions?.links || ''}" },\n}\n\n${hooks.join('\n\n')}\n`
 }
 
 // ---- fake GitHub "third-party" market ----
@@ -234,9 +237,11 @@ export function createPluginsMock({ send, workspaces, bump }) {
     const m = (re) => src.match(re)?.[1]
     const pid = m(/\bid:\s*["']([a-z0-9][a-z0-9-]+)["']/)
     if (!pid) return null
+    // name: t("key") / description: t("key") -> the English text of messages.en.key (the mock does not run JS)
+    const tkey = (f) => { const k = m(new RegExp('\\b' + f + ':\\s*t\\(\\s*["\']([^"\']+)["\']')); return k ? src.match(new RegExp('\\b' + k + ':\\s*["\']([^"\']+)["\']'))?.[1] : undefined }
     const fetchList = (m(/\bfetch:\s*\[([^\]]*)\]/) || '').split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
     return {
-      id: pid, name: m(/\bname:\s*["']([^"']+)["']/) || pid, version: m(/\bversion:\s*["']([^"']+)["']/) || '0.0.1', description: m(/\bdescription:\s*["']([^"']+)["']/) || '', author: '', icon: '',
+      id: pid, name: m(/\bname:\s*["']([^"']+)["']/) || tkey('name') || pid, version: m(/\bversion:\s*["']([^"']+)["']/) || '0.0.1', description: m(/\bdescription:\s*["']([^"']+)["']/) || tkey('description') || '', author: '', icon: '',
       permissions: { fetch: fetchList, links: m(/\blinks:\s*["'](read|write)["']/) || '' }, config_schema: [],
       search: /export\s+(async\s+)?function\s+search/.test(src) ? { name: m(/\bname:\s*["']([^"']+)["']/) || pid, prefix: '' } : null,
     }
@@ -337,7 +342,7 @@ export function createPluginsMock({ send, workspaces, bump }) {
       const pl = installed.find((x) => x.id === mm[1])
       if (!pl?.enabled || !pl.wallpapers?.some((w) => w.id === mm[2])) return send(res, 404, { error: 'unknown wallpaper source' }), true
       wpN++
-      return send(res, 200, { url: `/uploads/plugin-wallpapers/art-${wpN}.svg`, title: 'Mock art #' + wpN, credit: `Mock art #${wpN} · ${pl.name}`, link: 'https://example.com/art', updated_at: now() }), true
+      return send(res, 200, { url: `/uploads/plugin-wallpapers/art-${wpN}.svg`, title: 'Mock art #' + wpN, credit: `Mock art #${wpN} · ${en(pl.name)}`, link: 'https://example.com/art', updated_at: now() }), true
     }
     if (p === '/api/plugins' && m === 'GET') { if (!A()) return true; return send(res, 200, installed.map(adminInfo)), true }
     if (p === '/api/plugins' && m === 'POST') {

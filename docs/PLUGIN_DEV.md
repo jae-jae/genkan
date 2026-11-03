@@ -14,6 +14,7 @@ This guide is self-contained. It assumes you have the **Genkan Agent Skill** (RE
 6. Globals do not persist between calls. Keep state in `genkan.storage`.
 7. Return shapes are sanitized (unknown block types and fields are dropped silently). Compare `result` of `/test` with what you intended.
 8. Hook time budgets: search 2 s, widget/wallpaper/action 10 s, schedule 60 s. Memory 32 MiB.
+9. **Localize with `export const messages = { en: {...}, zh: {...} }`**: `t("key")` in the manifest, `ctx.t("key", params)` in hooks, `ctx.locale` for `Intl`. Never branch on `ctx.lang` (section 2.11).
 
 ## 1. Quick start
 
@@ -22,35 +23,41 @@ This guide is self-contained. It assumes you have the **Genkan Agent Skill** (RE
 Save as `hello-clock.js`:
 
 ```js
+// All text lives here. t("key") in the manifest and ctx.t("key", params) in hooks read it.
+export const messages = {
+  en: { name: "Hello Clock", desc: "Greets you and shows the server time.", widget: "Hello", yourName: "Your name", hello: "Hello, {name}", friend: "friend" },
+  zh: { name: "问候时钟", desc: "问候你并显示服务器时间。", widget: "问候", yourName: "你的名字", hello: "你好，{name}", friend: "朋友" },
+};
+
 export const manifest = {
   id: "hello-clock",
-  name: "Hello Clock",
+  name: t("name"),
   version: "1.0.0",
-  description: "Greets you and shows the server time.",
+  description: t("desc"),
   icon: "clock",
   widgets: [
     {
       id: "main",
-      name: "Hello",
+      name: t("widget"),
       size: "s",
       refresh: 60,
-      config: [{ key: "name", type: "string", label: "Your name", default: "friend" }],
+      config: [{ key: "name", type: "string", label: t("yourName"), default: "friend" }],
     },
   ],
 };
 
 export async function widget(ctx) {
-  const zh = ctx.lang === "zh";
+  const { t, locale } = ctx;
   const cfg = (ctx.instance && ctx.instance.config) || {};
-  const time = new Intl.DateTimeFormat(zh ? "zh-CN" : "en-US", {
+  const time = new Intl.DateTimeFormat(locale, {
     hour: "2-digit", minute: "2-digit", timeZone: "UTC",
   }).format(new Date(ctx.now));
   genkan.log("rendering for", cfg.name);
   return {
-    title: "Hello",
+    title: t("widget"),
     icon: "clock",
     body: [
-      { type: "text", text: (zh ? "你好，" : "Hello, ") + cfg.name, size: "l" },
+      { type: "text", text: t("hello", { name: cfg.name }), size: "l" },
       { type: "text", text: time + " UTC", muted: true },
     ],
   };
@@ -73,7 +80,7 @@ jq -Rs '{source: ., enable: false}' hello-clock.js > /tmp/body.json     # TypeSc
 gk POST /api/plugins @/tmp/body.json | jq '{id, enabled, permissions, widgets: [.widgets[].id], last_error}'
 ```
 
-**Step 3. Test every hook** (works while disabled, ignores caches, never downloads wallpaper images). Body fields: `hook` (`wallpaper|widget|search|schedule|action`), `target` (widget, source or schedule id; default: the first one), `config` (the **widget instance** config, for `widget`/`action`), `instance` (id of a saved widget instance as config base; keeps its secrets), `query` (search; pass the text after the prefix), `action` + `params` (action), `lang` (`zh|en`, default `en`).
+**Step 3. Test every hook** (works while disabled, ignores caches, never downloads wallpaper images). Body fields: `hook` (`wallpaper|widget|search|schedule|action`), `target` (widget, source or schedule id; default: the first one), `config` (the **widget instance** config, for `widget`/`action`), `instance` (id of a saved widget instance as config base; keeps its secrets), `query` (search; pass the text after the prefix), `action` + `params` (action), `lang` (a language code such as `zh` or `en`, default `en`; it drives `ctx.lang`, `ctx.locale` and `ctx.t`).
 
 ```bash
 gk POST /api/plugins/hello-clock/test '{"hook":"widget","target":"main","config":{"name":"Ada"}}' | jq '{ok, error, result, logs, ms}'
@@ -150,7 +157,7 @@ Clean up experiments with `gk DELETE /api/plugins/ID` (also removes its widgets,
 Read the closest one before writing yours. No install needed:
 
 ```bash
-gk GET /api/plugins/catalog | jq -r '.[] | "\(.id)\t\(.description)"'
+gk GET /api/plugins/catalog | jq -r '.[] | "\(.id)\t\(.description | if type == "object" then .en else . end)"'
 gk POST /api/plugins/preview '{"catalog":"pihole"}' | jq -r .source
 ```
 
@@ -158,7 +165,7 @@ gk POST /api/plugins/preview '{"catalog":"pihole"}' | jq -r .source
 |---|---|
 | `pihole` | LAN service with `url`+`allowFetch` and a `secret`, `button` + `action`, two API generations, always-closing a session |
 | `rss` | XML parsing without DOMParser, `allowFetch` for arbitrary feed URLs, relative link resolving |
-| `weather` | Per-instance config (`select`, `required`), two chained APIs, `chart` block, i18n |
+| `weather` | Per-instance config (`select`, `required`), two chained APIs, `chart` block, `messages` + `t()` localization |
 | `hacker-news`, `uptime-summary` | `list`, `stats`, `kv`, `progress`; `uptime-summary` uses `permissions.links` |
 | `world-clock`, `countdown` | Offline widgets, `Intl.DateTimeFormat` with IANA time zones, `number` fields |
 | `calculator`, `github-search` | Search: no prefix with `copy` results; prefix `gh` with abort timer and optional token |
@@ -169,16 +176,18 @@ gk POST /api/plugins/preview '{"catalog":"pihole"}' | jq -r .source
 
 ### 2.1 Plugin file and manifest
 
-One ES module, at most **512 KiB**, valid UTF-8, JavaScript (or TypeScript with `"lang":"ts"`: types are stripped, nothing is type-checked). Imports of any kind are rejected. Top-level code must stay pure (constants, helper functions): it runs with a 2 s limit and **cannot call `genkan.*`** (error `not available while the plugin is being installed`).
+One ES module, at most **512 KiB**, valid UTF-8, JavaScript (or TypeScript with `"lang":"ts"`: types are stripped, nothing is type-checked). Imports of any kind are rejected. Top-level code must stay pure (constants, helper functions): it runs with a 2 s limit and **cannot call `genkan.*`** (error `not available while the plugin is being installed`). The global `t(key)` works here (in the manifest) and nowhere else.
 
 ```js
+export const messages = { en: { name: "My Plugin", main: "Main" }, zh: { name: "我的插件", main: "主面板" } }; // optional, section 2.11
+
 export const manifest = {
-  id: "my-plugin", name: "My Plugin", version: "1.0.0",
+  id: "my-plugin", name: t("name"), version: "1.0.0",
   description: "...", author: "...", homepage: "https://...", icon: "puzzle",
   permissions: { fetch: ["api.example.com"], links: "read" },
   config: [ /* plugin-level ConfigField[] -> ctx.config */ ],
   wallpapers: [{ id: "daily", name: "Daily", refresh: 3600 }],
-  widgets:    [{ id: "main", name: "Main", size: "m", refresh: 300, config: [ /* per-instance -> ctx.instance.config */ ] }],
+  widgets:    [{ id: "main", name: t("main"), size: "m", refresh: 300, config: [ /* per-instance -> ctx.instance.config */ ] }],
   search:     { name: "My search", prefix: "my" },
   schedules:  [{ id: "sync", every: 3600 }],
 };
@@ -187,32 +196,33 @@ export const manifest = {
 | Field | Rule |
 |---|---|
 | `id` | required, `^[a-z0-9][a-z0-9-]{1,39}$` (2-40 chars), unique per server; also the file name, so choose it once |
-| `name` | required, <= 40 chars |
+| `name` | required, <= 40 chars. A **LocalizedString** (section 2.11): `"Plain"`, `{ en: "Weather", zh: "天气" }` or `t("key")` |
 | `version` | required, <= 20 chars; bump it when you publish an update |
-| `description` / `author` | optional, <= 300 / <= 60 chars |
+| `description` / `author` | optional, <= 300 (LocalizedString) / <= 60 chars (plain) |
 | `homepage` | optional `http(s)` URL |
 | `icon` | optional Lucide name `^[a-z0-9][a-z0-9-]{0,39}$`; the UI shows it only if it knows the name (section 2.9) |
 | `permissions.fetch` | <= 30 entries: `host`, `host:port`, `*.suffix` (subdomains only, **not** the bare domain), or `*` (any host; shown with a warning, avoid). Lower-case, no scheme, no path. No port = any port. Redirect targets must match too. May be `[]`. |
 | `permissions.links` | `"read"` = `genkan.links.list`, `workspaces.list`, `categories.list`; `"write"` adds `links.create` / `links.update`. Omitted = none. |
 | `config` | plugin-level fields, <= 30 |
-| `wallpapers[]` | `id` (`^[a-z0-9][a-z0-9_-]{0,39}$`, unique), `name` required <= 40, `refresh` seconds, **>= 300**, default 3600 |
-| `widgets[]` | `id` (same rule), `name` required <= 40, `size` `"s"`, `"m"` or `"l"` (default `"m"`), `refresh` seconds, **>= 30**, default 300, `config` instance fields <= 30 |
-| `search` | `name` required <= 40, `prefix` <= 20 chars, no spaces, lower-cased. Empty prefix = see 2.5 |
-| `schedules[]` | `id`, `every` seconds, **required, >= 60** |
+| `wallpapers[]` | `id` (`^[a-z0-9][a-z0-9_-]{0,39}$`, unique), `name` required <= 40 (LocalizedString), `refresh` seconds, **>= 300**, default 3600 |
+| `widgets[]` | `id` (same rule), `name` required <= 40 (LocalizedString), `size` `"s"`, `"m"` or `"l"` (default `"m"`), `refresh` seconds, **>= 30**, default 300, `config` instance fields <= 30 |
+| `search` | `name` required <= 40 (LocalizedString), `prefix` <= 20 chars, no spaces, lower-cased. Empty prefix = see 2.5 |
+| `schedules[]` | `id`, `name` optional <= 40 (LocalizedString), `every` seconds, **required, >= 60** |
+| `messages` | optional `export const messages = { en: {key: "text"}, zh: {...} }`: at most 32 languages, 500 keys each, key <= 64 chars, text <= 2000 chars, 128 KiB in total (section 2.11) |
 
 At least one of `wallpapers`, `widgets`, `search`, `schedules` is required. Unknown top-level manifest fields are ignored. Limits per server: 50 plugins, 200 widget instances.
 
 ### 2.2 ConfigField
 
 ```js
-{ key: "url", type: "url", label: "Base URL", help: "shown under the input", default: undefined, required: true, allowFetch: true }
+{ key: "url", type: "url", label: t("baseUrl"), help: t("baseUrlHelp"), default: undefined, required: true, allowFetch: true }
 ```
 
 | Property | Rule |
 |---|---|
 | `key` | `^[a-zA-Z][a-zA-Z0-9_]{0,39}$`, unique in its list |
-| `type` | `string`, `text` (multi-line), `number` (`min`, `max`), `boolean`, `select` (`options: [{value,label}]`, 1-50, required), `secret`, `url` (http(s) only) |
-| `label` / `help` | required <= 60 / optional <= 200 chars |
+| `type` | `string`, `text` (multi-line), `number` (`min`, `max`), `boolean`, `select` (`options: [{value, label}]`, 1-50, required; `label` is a LocalizedString), `secret`, `url` (http(s) only) |
+| `label` / `help` | required <= 60 / optional <= 200 chars; LocalizedStrings (a `select` option's `label` too, <= 100). Prefer `t("key")` |
 | `default` | optional, must be valid for the type. The manifest is public: **never put a real secret in a default** |
 | `required` | enforced when saving config or creating a widget (not in `/test`). A field with a `default` counts as satisfied |
 | `allowFetch` | only on `url`. Adds that URL's `host:port` (80/443 when no port is written) to the fetch allow-list for calls that carry the value, and **skips TLS certificate verification for exactly that host** (self-signed homelab HTTPS). Hosts from `permissions.fetch` are always verified |
@@ -242,7 +252,9 @@ Declare a capability without exporting its function and install fails: ``the man
 |---|---|---|
 | `plugin` | all | `{id, version}` |
 | `config` | all | plugin-level config with defaults and **secrets in clear text** |
-| `lang` | all | `"zh"` or `"en"`: the requester's language (`?lang=` or `Accept-Language`); `"en"` for `schedule` and for `/test` without `lang` |
+| `lang` | all | the requester's base language, `"zh"` or `"en"` today but any language code is possible (`?lang=` or `Accept-Language`); `"en"` for `schedule` and for `/test` without `lang`. Use it for APIs that take a language parameter; for text use `t` |
+| `locale` | all | BCP-47 tag for `Intl` / `toLocaleString`: `zh` -> `"zh-CN"`, `en` -> `"en-US"` |
+| `t(key, params?)` | all | translate from your `messages` table in `ctx.lang`; `{name}` placeholders come from `params` (section 2.11) |
 | `now` | all | Unix time in **ms** (number) |
 | `instance` | widget, action | `{id, config}` of the widget instance (`id` is `"test"` in `/test` unless you pass `instance`) |
 | `widget` | widget, action | widget id from the manifest |
@@ -379,15 +391,55 @@ Icon names go in `manifest.icon`, `view.icon`, `stat.icon`, list `icon`, button 
 
 Never include secrets in messages you build yourself (the host masks known secret values, but not derived ones such as `btoa(user:pass)`).
 
-### 2.11 i18n
+### 2.11 Localization
 
-`ctx.lang` is `"zh"` or `"en"`. Widget caches are per language. Keep manifest strings (`name`, `label`, `help`, `description`) in English; translate what the plugin renders:
+Two mechanisms; both read one `messages` table, so a plugin keeps all its text in one place and every language is in sync.
 
 ```js
-const zh = ctx.lang === "zh";
-const T = { loading: zh ? "加载中" : "Loading", blocked: zh ? "已拦截" : "Blocked" };
-new Intl.NumberFormat(zh ? "zh-CN" : "en-US").format(n);
+export const messages = {
+  en: { name: "Weather", city: "City", feels: "Feels like", next: "Next {n} days high" },
+  zh: { name: "天气",    city: "城市", feels: "体感",       next: "未来 {n} 天最高温" },
+};
+
+export const manifest = {
+  id: "weather",
+  name: t("name"),                                         // manifest: global t(key), no params
+  version: "1.0.0",
+  widgets: [{ id: "now", name: t("name"), config: [{ key: "city", type: "string", label: t("city") }] }],
+};
+
+export async function widget(ctx) {
+  const { t, locale } = ctx;                                // hooks: ctx.t(key, params)
+  const day = new Date(ctx.now).toLocaleDateString(locale, { weekday: "long" }); // numbers and dates via Intl
+  return { body: [{ type: "kv", items: [{ k: t("feels"), v: "21°" }] }, { type: "text", text: t("next", { n: 7 }) + " · " + day }] };
+}
 ```
+
+**Recommended style:** `messages` + `t("key")` in the manifest + `const { t } = ctx` in hooks + `ctx.locale` with `Intl`. Provide `en` and `zh` (the UI has those two today). **Do not** write `ctx.lang === "zh" ? ... : ...` branches or bilingual strings like `"Weather. 天气。"`.
+
+`ctx.t(key, params?)`:
+
+- `{name}` is replaced by `params.name` (numbers and booleans are converted like JavaScript `String()`). A placeholder without a param stays as written. `{{` and `}}` give literal braces.
+- Fallback chain, per key: exact language -> base language (`zh-TW` -> `zh`) -> `en` -> the first language alphabetically -> **the key itself**. A missing key never throws, so a typo shows up as the raw key in the UI (and in `/test`).
+- Works in every hook (`widget`, `search`, `wallpaper`, `action`, `schedule`) and in `/test`. `schedule` always runs with `en`.
+
+`messages` limits (install fails with a path like `messages.zh.next must be a string`): an object of language tag -> `{ key: string }`; tags look like BCP-47 (`en`, `zh-CN`, `zh-Hant-TW`); at most 32 languages, 500 keys per language, keys 1-64 chars, texts <= 2000 chars, 128 KiB in total.
+
+**Manifest strings** (LocalizedString) may be written in any of three forms; use whichever fits:
+
+```js
+name: "Weather"                       // plain string, shown as is in every language
+name: { en: "Weather", zh: "天气" }    // inline object (any BCP-47 keys; `en` recommended)
+name: t("name")                       // expanded from `messages` at install time
+```
+
+They apply to `name`, `description`, config `label` / `help`, `select` option `label`, `widgets[].name`, `wallpapers[].name`, `schedules[].name` and `search.name`. The API returns them as the string or the object; the UI picks the text for the current language (same fallback chain), so switching the language in Settings updates names and forms instantly.
+
+`t()` in the manifest rules:
+
+- It exists only while the module is evaluated, takes **no params** (extra arguments are ignored) and is expanded to `{ lang: text }` with the languages that have the key. A key missing from every language, or `t()` without a `messages` export, fails validation and names the field: ``manifest.widgets[0].name: t("zzz") is not defined in any language of `messages` ``.
+- Calling the global `t` inside a hook **throws** (`t() only works while the module is evaluated ... use ctx.t`). Always write `const { t } = ctx` in hooks: the local name shadows the global one.
+- Test it: `gk POST /api/plugins/preview '{"source":...}' | jq .plugin.name` shows the expanded object; `gk POST /api/plugins/ID/test '{"hook":"widget","lang":"zh"}'` renders in Chinese (`lang` defaults to `en`). Widget caches are per language; wallpaper results are cached per source for all languages (a wallpaper `title` / `credit` is in the language of the first request).
 
 ## 3. Recipes
 
@@ -398,50 +450,66 @@ Every plugin below was installed and tested against a real Genkan build.
 `permissions.fetch` stays empty: the user types the address, and `allowFetch` whitelists exactly that `host:port`. The token is a `secret`.
 
 ```js
+export const messages = {
+  en: {
+    name: "NAS Stats", desc: "CPU, memory and disk of a LAN service that serves /api/stats.", widget: "NAS stats",
+    url: "Base URL", urlHelp: "e.g. http://192.168.1.10:8080", token: "API token",
+    setUrl: "Set the base URL in the widget settings", rejected: "token rejected", unreachable: "Cannot reach {base}: {msg}",
+    cpu: "CPU", memory: "Memory", disk: "Disk", uptime: "Uptime", hours: "{n} h",
+  },
+  zh: {
+    name: "NAS 状态", desc: "提供 /api/stats 的局域网服务的 CPU、内存和磁盘。", widget: "NAS 状态",
+    url: "基础地址", urlHelp: "例如 http://192.168.1.10:8080", token: "API 令牌",
+    setUrl: "请先在小组件设置中填写基础地址", rejected: "令牌被拒绝", unreachable: "无法连接 {base}：{msg}",
+    cpu: "CPU", memory: "内存", disk: "磁盘", uptime: "运行时间", hours: "{n} 小时",
+  },
+};
+
 export const manifest = {
   id: "nas-stats",
-  name: "NAS Stats",
+  name: t("name"),
   version: "1.0.0",
-  description: "CPU, memory and disk of a LAN service that serves /api/stats.",
+  description: t("desc"),
   icon: "server",
   permissions: { fetch: [] }, // the host comes from the `url` field below
   widgets: [
     {
       id: "stats",
-      name: "NAS stats",
+      name: t("widget"),
       size: "m",
       refresh: 60,
       config: [
-        { key: "url", type: "url", label: "Base URL", help: "e.g. http://192.168.1.10:8080", required: true, allowFetch: true },
-        { key: "token", type: "secret", label: "API token" },
+        { key: "url", type: "url", label: t("url"), help: t("urlHelp"), required: true, allowFetch: true },
+        { key: "token", type: "secret", label: t("token") },
       ],
     },
   ],
 };
 
 export async function widget(ctx) {
+  const { t } = ctx;
   const cfg = (ctx.instance && ctx.instance.config) || {};
   const view = { title: "NAS", icon: "server", body: [] };
-  if (!cfg.url) return { ...view, error: "Set the base URL in the widget settings" };
+  if (!cfg.url) return { ...view, error: t("setUrl") };
   const base = cfg.url.replace(/\/+$/, "");
   try {
     const res = await fetch(base + "/api/stats", {
       headers: cfg.token ? { Authorization: "Bearer " + cfg.token } : {},
     });
-    if (res.status === 401) throw new Error("token rejected");
+    if (res.status === 401) throw new Error(t("rejected"));
     if (!res.ok) throw new Error("HTTP " + res.status);
     const d = await res.json();
     view.link = base;
     view.body = [
       { type: "stats", items: [
-        { label: "CPU", value: Math.round(d.cpu * 100), unit: "%" },
-        { label: "Memory", value: Math.round(d.mem * 100), unit: "%" },
+        { label: t("cpu"), value: Math.round(d.cpu * 100), unit: "%" },
+        { label: t("memory"), value: Math.round(d.mem * 100), unit: "%" },
       ] },
-      { type: "progress", label: "Disk", value: d.disk, text: Math.round(d.disk * 100) + "%" },
-      { type: "kv", items: [{ k: "Uptime", v: Math.floor(d.uptime / 3600) + " h" }] },
+      { type: "progress", label: t("disk"), value: d.disk, text: Math.round(d.disk * 100) + "%" },
+      { type: "kv", items: [{ k: t("uptime"), v: t("hours", { n: Math.floor(d.uptime / 3600) }) }] },
     ];
   } catch (e) {
-    view.error = "Cannot reach " + base + ": " + (e && e.message ? e.message : e);
+    view.error = t("unreachable", { base, msg: e && e.message ? e.message : e });
   }
   return view;
 }
@@ -459,20 +527,25 @@ Notice `ok: true` with `result.error` when the service is down or the token is w
 Widgets are already cached for `refresh` seconds. Use storage when the upstream should be called **less often than the widget refreshes**, or when you want stale data on failure. Storage is shared by the whole plugin, so include the variable parts in the key.
 
 ```js
+export const messages = {
+  en: { name: "Exchange Rate", desc: "Rates for a base currency, cached for an hour.", widget: "Exchange rates", base: "Base currency", title: "Rates" },
+  zh: { name: "汇率", desc: "某个基准货币的汇率，缓存一小时。", widget: "汇率", base: "基准货币", title: "汇率" },
+};
+
 export const manifest = {
   id: "exchange-rate",
-  name: "Exchange Rate",
+  name: t("name"),
   version: "1.0.0",
-  description: "Rates for a base currency, cached for an hour.",
+  description: t("desc"),
   icon: "trending-up",
   permissions: { fetch: ["open.er-api.com"] },
   widgets: [
     {
       id: "rates",
-      name: "Exchange rates",
+      name: t("widget"),
       size: "s",
       refresh: 300,
-      config: [{ key: "base", type: "string", label: "Base currency", default: "USD" }],
+      config: [{ key: "base", type: "string", label: t("base"), default: "USD" }],
     },
   ],
 };
@@ -495,6 +568,7 @@ async function cached(key, ttlMs, load) {
 }
 
 export async function widget(ctx) {
+  const { t } = ctx;
   const base = String(ctx.instance.config.base).toUpperCase();
   try {
     const rates = await cached("rates:" + base, 3600_000, async () => {
@@ -505,10 +579,11 @@ export async function widget(ctx) {
       if (data.result !== "success") throw new Error(data["error-type"] || "bad response");
       return data.rates;
     });
-    const items = ["EUR", "GBP", "JPY", "CNY"].filter((c) => c !== base).map((c) => ({ k: "1 " + base + " =", v: rates[c].toFixed(2) + " " + c }));
-    return { title: "Rates", icon: "trending-up", body: [{ type: "kv", items }] };
+    const fmt = new Intl.NumberFormat(ctx.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const items = ["EUR", "GBP", "JPY", "CNY"].filter((c) => c !== base).map((c) => ({ k: "1 " + base + " =", v: fmt.format(rates[c]) + " " + c }));
+    return { title: t("title"), icon: "trending-up", body: [{ type: "kv", items }] };
   } catch (e) {
-    return { title: "Rates", icon: "trending-up", body: [], error: String(e.message || e) };
+    return { title: t("title"), icon: "trending-up", body: [], error: String(e.message || e) };
   }
 }
 ```
@@ -518,27 +593,32 @@ export async function widget(ctx) {
 Type `wiki alan turing` and the results appear as a group. The hook has 2 s, so abort early and return `[]` on any failure.
 
 ```js
+export const messages = {
+  en: { name: "Wikipedia Search", desc: 'Type "wiki <words>" in the search box.', group: "Wikipedia", lang: "Wikipedia language", english: "English", german: "Deutsch", chinese: "中文" },
+  zh: { name: "维基百科搜索", desc: '在搜索框输入 "wiki <关键词>"。', group: "维基百科", lang: "维基百科语言", english: "English", german: "Deutsch", chinese: "中文" },
+};
+
 export const manifest = {
   id: "wiki-search",
-  name: "Wikipedia Search",
+  name: t("name"),
   version: "1.0.0",
-  description: 'Type "wiki <words>" in the search box.',
+  description: t("desc"),
   icon: "book-open",
   permissions: { fetch: ["*.wikipedia.org"] }, // matches en.wikipedia.org, de.wikipedia.org, ...
   config: [
     {
       key: "lang",
       type: "select",
-      label: "Wikipedia language",
+      label: t("lang"),
       default: "en",
       options: [
-        { value: "en", label: "English" },
-        { value: "de", label: "Deutsch" },
-        { value: "zh", label: "中文" },
+        { value: "en", label: t("english") },
+        { value: "de", label: t("german") },
+        { value: "zh", label: t("chinese") },
       ],
     },
   ],
-  search: { name: "Wikipedia", prefix: "wiki" },
+  search: { name: t("group"), prefix: "wiki" }, // the group title in the search box follows the UI language
 };
 
 export async function search(ctx) {
@@ -572,23 +652,28 @@ gk GET "/api/plugins/search?q=wiki%20alan%20turing" | jq '.groups'              
 The plugin only returns a URL. The server downloads, checks and stores the image, so both hosts are allowed. Throw on failure.
 
 ```js
+export const messages = {
+  en: { name: "Daily Photo", desc: "A different landscape every day from picsum.photos.", source: "Photo of the day", photoOf: "Photo of {day}" },
+  zh: { name: "每日图片", desc: "来自 picsum.photos 的每日风景图。", source: "每日图片", photoOf: "{day} 的图片" },
+};
+
 export const manifest = {
   id: "daily-photo",
-  name: "Daily Photo",
+  name: t("name"),
   version: "1.0.0",
-  description: "A different landscape every day from picsum.photos.",
+  description: t("desc"),
   icon: "camera",
   // The SERVER downloads the image, so the image hosts must be allowed too.
   // picsum.photos redirects to fastly.picsum.photos, and every redirect target is checked.
   permissions: { fetch: ["picsum.photos", "fastly.picsum.photos"] },
-  wallpapers: [{ id: "daily", name: "Photo of the day", refresh: 3600 }],
+  wallpapers: [{ id: "daily", name: t("source"), refresh: 3600 }],
 };
 
 export async function wallpaper(ctx) {
   const day = new Date(ctx.now).toISOString().slice(0, 10);
   return {
     url: `https://picsum.photos/seed/${day}/1920/1080.jpg`,
-    title: "Photo of " + day,
+    title: ctx.t("photoOf", { day }),
     credit: "picsum.photos",
     link: "https://picsum.photos",
   };
@@ -600,42 +685,49 @@ export async function wallpaper(ctx) {
 A `button` block calls `action(ctx)` with its `action` and `params`. Per-instance state goes under a key that contains `ctx.instance.id`.
 
 ```js
+export const messages = {
+  en: { name: "Click Counter", desc: "A counter with buttons; the count lives in plugin storage.", widget: "Counter", clicks: "Clicks", reset: "Reset", resetDone: "Counter reset", now: "Now {n}" },
+  zh: { name: "点击计数器", desc: "带按钮的计数器；计数保存在插件存储中。", widget: "计数器", clicks: "点击次数", reset: "重置", resetDone: "计数已重置", now: "现在是 {n}" },
+};
+
 export const manifest = {
   id: "click-counter",
-  name: "Click Counter",
+  name: t("name"),
   version: "1.0.0",
-  description: "A counter with buttons; the count lives in plugin storage.",
+  description: t("desc"),
   icon: "plus",
-  widgets: [{ id: "counter", name: "Counter", size: "s", refresh: 300 }],
+  widgets: [{ id: "counter", name: t("widget"), size: "s", refresh: 300 }],
 };
 
 const keyOf = (ctx) => "count:" + ctx.instance.id; // storage is shared by all instances of the plugin
 
 export async function widget(ctx) {
+  const { t } = ctx;
   return {
-    title: "Counter",
+    title: t("widget"),
     icon: "plus",
     body: [
-      { type: "stat", label: "Clicks", value: genkan.storage.get(keyOf(ctx)) || 0 },
+      { type: "stat", label: t("clicks"), value: genkan.storage.get(keyOf(ctx)) || 0 },
       { type: "row", children: [
         { type: "button", label: "+1", action: "inc", params: { by: 1 } },
         { type: "button", label: "+10", action: "inc", params: { by: 10 } },
-        { type: "button", label: "Reset", action: "reset" },
+        { type: "button", label: t("reset"), action: "reset" },
       ] },
     ],
   };
 }
 
 export async function action(ctx) {
+  const { t } = ctx;
   const key = keyOf(ctx);
   if (ctx.action === "reset") {
     genkan.storage.set(key, 0);
-    return { toast: "Counter reset", refresh: true };
+    return { toast: t("resetDone"), refresh: true };
   }
   if (ctx.action === "inc") {
     const n = (genkan.storage.get(key) || 0) + (Number(ctx.params && ctx.params.by) || 1);
     genkan.storage.set(key, n);
-    return { toast: "Now " + n, refresh: true };
+    return { toast: t("now", { n }), refresh: true };
   }
   throw new Error("unknown action: " + ctx.action); // shown to the admin as an error
 }
@@ -650,14 +742,19 @@ gk POST /api/plugins/click-counter/test '{"hook":"action","action":"inc","params
 Needs `permissions.links`. A `schedule` test runs the whole job once, for real.
 
 ```js
+export const messages = {
+  en: { name: "LAN Health Checks", desc: "Turns on health checks for links that point at private addresses.", job: "Tag LAN links" },
+  zh: { name: "局域网健康检查", desc: "为指向内网地址的链接开启健康检查。", job: "标记局域网链接" },
+};
+
 export const manifest = {
   id: "lan-health",
-  name: "LAN Health Checks",
+  name: t("name"),
   version: "1.0.0",
-  description: "Turns on health checks for links that point at private addresses.",
+  description: t("desc"),
   icon: "activity",
   permissions: { links: "write" }, // "read" would allow list() only
-  schedules: [{ id: "tag", every: 3600 }],
+  schedules: [{ id: "tag", name: t("job"), every: 3600 }],
 };
 
 const PRIVATE = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|[^.]+\.lan$|localhost$)/;
@@ -673,7 +770,7 @@ export async function schedule(ctx) {
       changed++;
     }
   }
-  genkan.log("health checks enabled on", changed, "links");
+  genkan.log("health checks enabled on", changed, "links"); // logs are for the admin: plain English is fine
   genkan.storage.set("lastRun", { at: ctx.now, changed });
   return { changed }; // the return value is ignored when scheduled, but test shows it
 }
@@ -684,19 +781,24 @@ export async function schedule(ctx) {
 There is no DOM, so parse text yourself. For small, known formats, `String.match` with regexes is enough (see the built-in `rss` example). For tolerant general parsing, tokenize into a tree:
 
 ```js
+export const messages = {
+  en: { name: "Feed Lite", desc: "Latest items of an RSS or Atom feed, parsed without DOMParser.", feed: "Feed", url: "Feed URL", setUrl: "Set the feed URL in the widget settings", notFeed: "not an RSS or Atom feed", untitled: "(untitled)", failed: "Could not load feed: {msg}" },
+  zh: { name: "轻量订阅", desc: "不使用 DOMParser 解析 RSS / Atom 订阅的最新条目。", feed: "订阅", url: "订阅地址", setUrl: "请先在小组件设置中填写订阅地址", notFeed: "不是 RSS 或 Atom 订阅", untitled: "（无标题）", failed: "订阅加载失败：{msg}" },
+};
+
 export const manifest = {
   id: "feed-lite",
-  name: "Feed Lite",
+  name: t("name"),
   version: "1.0.0",
-  description: "Latest items of an RSS or Atom feed, parsed without DOMParser.",
+  description: t("desc"),
   icon: "rss",
   widgets: [
     {
       id: "feed",
-      name: "Feed",
+      name: t("feed"),
       size: "m",
       refresh: 900,
-      config: [{ key: "url", type: "url", label: "Feed URL", required: true, allowFetch: true }],
+      config: [{ key: "url", type: "url", label: t("url"), required: true, allowFetch: true }],
     },
   ],
 };
@@ -730,26 +832,27 @@ const find = (n, name) => n.children.find((c) => c.name === name);
 const findAll = (n, name) => n.children.filter((c) => c.name === name);
 
 export async function widget(ctx) {
+  const { t } = ctx;
   const cfg = (ctx.instance && ctx.instance.config) || {};
-  const fail = (error) => ({ title: "Feed", icon: "rss", body: [], error });
-  if (!cfg.url) return fail("Set the feed URL in the widget settings");
+  const fail = (error) => ({ title: t("feed"), icon: "rss", body: [], error });
+  if (!cfg.url) return fail(t("setUrl"));
   try {
     const res = await fetch(cfg.url);
     if (!res.ok) throw new Error("HTTP " + res.status);
     const doc = parseXml((await res.text()).slice(0, 2_000_000));
     const feed = find(doc, "rss") ? find(find(doc, "rss"), "channel") : find(doc, "feed"); // RSS 2.0 or Atom
-    if (!feed) throw new Error("not an RSS or Atom feed");
+    if (!feed) throw new Error(t("notFeed"));
     const entries = [...findAll(feed, "item"), ...findAll(feed, "entry")].slice(0, 8);
     const items = entries.map((e) => {
       const atomLink = findAll(e, "link").find((l) => l.attrs.href);
       return {
-        title: (find(e, "title") || {}).text?.trim() || "(untitled)",
+        title: (find(e, "title") || {}).text?.trim() || t("untitled"),
         url: atomLink ? atomLink.attrs.href : (find(e, "link") || {}).text?.trim(),
       };
     });
-    return { title: (find(feed, "title") || {}).text?.trim() || "Feed", icon: "rss", body: [{ type: "list", items }] };
+    return { title: (find(feed, "title") || {}).text?.trim() || t("feed"), icon: "rss", body: [{ type: "list", items }] };
   } catch (e) {
-    return fail("Could not load feed: " + (e && e.message ? e.message : e));
+    return fail(t("failed", { msg: e && e.message ? e.message : e }));
   }
 }
 ```
@@ -779,6 +882,9 @@ export async function widget(ctx) {
 | install | `manifest.widgets[0].refresh must be at least 30` | wallpapers >= 300, widgets >= 30, `schedules[].every` >= 60 |
 | install | `manifest.permissions.fetch[0] must be a host such as "api.example.com", "*.example.com" or "*"` | host only: no `https://`, no path |
 | install | `manifest.widgets[0].config[1].allowFetch is only valid for type "url"` | use `type: "url"` |
+| install | ``manifest.name: t("x") is not defined in any language of `messages` `` | add the key to `messages` (or fix the typo) |
+| install | `messages.zh.k must be a string` / `"zh_CN" is not a language tag` | `messages` is `{ "zh-CN": { key: "text" } }` with BCP-47 tags and string values |
+| hook | `t() only works while the module is evaluated ... use ctx.t` | in hooks write `const { t } = ctx` |
 | install | `load error: Error: not available while the plugin is being installed` | top-level code called `genkan.*`; move it into a hook |
 | PUT source | `manifest.id "a" must stay "b"` | keep the id (or install as a new plugin) |
 | any | `provide exactly one of source, url or catalog` | send one of them |
@@ -865,7 +971,7 @@ Run through this before telling the user the plugin is finished:
 - [ ] `refresh` / `every` values respect the minimums and are not wastefully low.
 - [ ] Installed with `enable:false` and **each hook tested**: `ok: true`, no `result.error`, `logs` clean, `ms` well below the budget, `result` equals the intended output (nothing silently dropped).
 - [ ] Failure paths tested: unreachable host, bad token, empty config -> a clear `error` in the widget, `[]` for search, a thrown `Error` for wallpapers.
-- [ ] Works in both `lang`: `zh` and `en`.
+- [ ] Localized with `messages` (`en` and `zh` have the same keys), `t("key")` in the manifest and `ctx.t` in hooks; no `ctx.lang ===` branches; dates and numbers through `Intl` with `ctx.locale`. Tested with `"lang":"zh"` and `"lang":"en"`.
 - [ ] No state in globals; storage keys include instance or variable parts; storage usage far below 256 KiB.
 - [ ] Plugin enabled, widget added with sensible `w`/`h`, `GET /api/widgets/{id}/data?force=1` returns the expected view.
 - [ ] Debug-only logs and test widgets/plugins removed.

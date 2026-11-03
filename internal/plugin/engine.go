@@ -102,9 +102,10 @@ type instance struct {
 	api  *webapi.API
 	tr   *hostTransport
 
-	track  moejs.Value // (promise, ok, fail) => Promise.resolve(promise).then(ok, fail)
-	allow  atomic.Pointer[allowList]
-	redact atomic.Pointer[[]string]
+	loading atomic.Bool // true while the module's top level runs: the global t() is usable only then
+	track   moejs.Value // (promise, ok, fail) => Promise.resolve(promise).then(ok, fail)
+	allow   atomic.Pointer[allowList]
+	redact  atomic.Pointer[[]string]
 }
 
 var (
@@ -146,6 +147,8 @@ func newInstance(m *Manager, e *entry, name string, mod *moejs.Module, probe boo
 		return nil, err
 	}
 	// load the module (top level) with a deadline
+	in.loading.Store(true)
+	defer in.loading.Store(false)
 	timer := time.AfterFunc(loadTimeout, func() { loop.Interrupt(errTimeout) })
 	err = loop.Run(func(rt *moejs.Runtime) error {
 		if err := rt.Load(mod); err != nil && !errors.Is(err, moejs.ErrModulePending) {
@@ -327,6 +330,8 @@ type callOpts struct {
 	pluginHost []string // allowFetch hosts from the plugin config
 	extraHosts []string // allowFetch hosts from the widget instance config
 	secrets    []string // values to redact from logs and errors
+	lang       string   // request language, for ctx.t
+	msgs       *Messages
 }
 
 // invoke runs one hook of the plugin and returns its result converted to Go
@@ -379,7 +384,12 @@ func (e *entry) invoke(parent context.Context, o callOpts) (res any, err error) 
 		fired   atomic.Bool
 	)
 	runErr := in.loop.Run(func(rt *moejs.Runtime) error {
-		arg, err := rt.FromGo(o.ctx)
+		hctx := make(map[string]any, len(o.ctx)+1)
+		for k, v := range o.ctx {
+			hctx[k] = v
+		}
+		hctx["t"] = moejs.NativeFunc(in.translateFunc(o.msgs, o.lang))
+		arg, err := rt.FromGo(hctx)
 		if err != nil {
 			return err
 		}

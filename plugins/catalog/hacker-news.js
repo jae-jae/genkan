@@ -6,11 +6,40 @@
 // Shows how to fan out requests: one call for the story ids, then all items
 // in parallel (Promise.allSettled so a single failed item doesn't break it).
 
+export const messages = {
+  en: {
+    name: "Hacker News",
+    desc: "Top stories from Hacker News.",
+    widget: "Top stories",
+    list: "List",
+    top: "Top",
+    best: "Best",
+    new: "New",
+    count: "Stories",
+    meta: "{score} pts · {host} · {by}",
+    comments: "{n} comments",
+    failed: "Could not load Hacker News: {msg}",
+  },
+  zh: {
+    name: "Hacker News",
+    desc: "Hacker News 热门文章。",
+    widget: "热门文章",
+    list: "榜单",
+    top: "热门",
+    best: "最佳",
+    new: "最新",
+    count: "文章数",
+    meta: "{score} 分 · {host} · {by}",
+    comments: "{n} 评论",
+    failed: "无法加载 Hacker News：{msg}",
+  },
+};
+
 export const manifest = {
   id: "hacker-news",
-  name: "Hacker News",
+  name: t("name"),
   version: "1.0.0",
-  description: "Top stories from Hacker News. Hacker News 热门。",
+  description: t("desc"),
   author: "genkan",
   homepage: "https://news.ycombinator.com",
   icon: "newspaper",
@@ -18,22 +47,22 @@ export const manifest = {
   widgets: [
     {
       id: "top",
-      name: "Top stories",
+      name: t("widget"),
       size: "m",
       refresh: 600,
       config: [
         {
           key: "kind",
           type: "select",
-          label: "List",
+          label: t("list"),
           default: "top",
           options: [
-            { value: "top", label: "Top" },
-            { value: "best", label: "Best" },
-            { value: "new", label: "New" },
+            { value: "top", label: t("top") },
+            { value: "best", label: t("best") },
+            { value: "new", label: t("new") },
           ],
         },
-        { key: "count", type: "number", label: "Stories", default: 10, min: 1, max: 20 },
+        { key: "count", type: "number", label: t("count"), default: 10, min: 1, max: 20 },
       ],
     },
   ],
@@ -48,7 +77,7 @@ async function getJSON(path) {
 }
 
 export async function widget(ctx) {
-  const zh = ctx.lang === "zh";
+  const { t } = ctx;
   const cfg = (ctx.instance && ctx.instance.config) || {};
   const kind = ["top", "best", "new"].includes(cfg.kind) ? cfg.kind : "top";
   const n = Math.min(20, Math.max(1, Math.floor(Number(cfg.count)) || 10));
@@ -66,14 +95,14 @@ export async function widget(ctx) {
         const host = it.url ? new URL(it.url).hostname.replace(/^www\./, "") : "news.ycombinator.com";
         return {
           title: it.title,
-          subtitle: `${it.score} ${zh ? "分" : "pts"} · ${host} · ${it.by}`,
+          subtitle: t("meta", { score: it.score, host, by: it.by }),
           url: it.url || "https://news.ycombinator.com/item?id=" + it.id,
-          right: (it.descendants || 0) + (zh ? " 评论" : " comments"),
+          right: t("comments", { n: it.descendants || 0 }),
         };
       }),
     });
   } catch (e) {
-    view.error = (zh ? "无法加载 Hacker News：" : "Could not load Hacker News: ") + (e && e.message ? e.message : e);
+    view.error = t("failed", { msg: e && e.message ? e.message : e });
   }
   return view;
 }

@@ -6,7 +6,7 @@ import { ConfigFields, useConfigForm } from './ConfigForm'
 import { Icon } from './icons'
 import { LUCIDE } from './lucide'
 import { Modal } from './parts'
-import { lang, t } from './i18n'
+import { lang, loc, t } from './i18n'
 import { track } from './wtrack'
 import { closeModal, curWs, editMode, isAdmin, load, modal, openSettings, plugins, sortedWs, toast, toastError, widgets, type CtxItem, type ModalState } from './store'
 import type { Block, ListItem, PluginInfo, PluginWidgetDef, StatBlock, WidgetData, WidgetInstance, WidgetView } from './types'
@@ -245,7 +245,8 @@ interface DataState {
 function useWidgetData(inst: WidgetInstance, refreshSec: number, active: boolean) {
   const [st, setSt] = useState<DataState>({ loading: true })
   const reload = useRef<(force: boolean) => void>(() => {})
-  const cfgKey = inst.plugin + '/' + inst.widget + JSON.stringify(inst.config || {})
+  const lg = lang.value // a language switch refetches (the server renders the text in the request language)
+  const cfgKey = inst.plugin + '/' + inst.widget + lg + JSON.stringify(inst.config || {})
   useEffect(() => {
     if (!active) return
     const every = Math.max(30, refreshSec || 300) * 1000
@@ -608,9 +609,9 @@ function Card({ inst, p, def, edit, order }: { inst: WidgetInstance; p?: PluginI
   const lp = useRef({ timer: 0, x: 0, y: 0 })
   useRows(cell)
   const size = def?.size || 'm'
-  const name = def?.name || inst.widget
+  const name = loc(def?.name) || inst.widget
   const v = st.view
-  const err = active ? st.err || v?.error : t('widget.disabled', { name: p?.name || inst.plugin })
+  const err = active ? st.err || v?.error : t('widget.disabled', { name: loc(p?.name) || inst.plugin })
   const title = v?.title || name
   const ic = wIcon(v?.icon) || wIcon(p?.icon)
   const href = httpUrl(v?.link)
@@ -829,9 +830,9 @@ export function WidgetModal({ state }: { state: Extract<ModalState, { kind: 'wid
                     <Icon n={wIcon(p.icon) || 'puzzle'} size={19} />
                   </span>
                   <span class="pl-main">
-                    <b>{d.name}</b>
+                    <b>{loc(d.name)}</b>
                     <small>
-                      {p.name} · {t('widget.size.' + (d.size || 'm'))}
+                      {loc(p.name)} · {t('widget.size.' + (d.size || 'm'))}
                     </small>
                   </span>
                 </button>
@@ -889,8 +890,8 @@ function WidgetForm({ p, d, inst, onBack }: { p: PluginInfo; d: PluginWidgetDef;
   return (
     <form class="form cfg" onSubmit={submit} noValidate data-testid="widget-form">
       <div class="wg-form-h">
-        <b>{d.name}</b>
-        <small>{p.name}</small>
+        <b>{loc(d.name)}</b>
+        <small>{loc(p.name)}</small>
       </div>
       <ConfigFields schema={schema} form={form} secretsSet={isSet} pre="widget-cfg" />
       <div class="field">

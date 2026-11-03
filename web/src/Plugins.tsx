@@ -5,7 +5,7 @@ import { ConfigFields, useConfigForm } from './ConfigForm'
 import { Icon } from './icons'
 import { loadPluginMarket, loadPluginSource, useChunk } from './lazy'
 import { Modal, Switch } from './parts'
-import { lang, t } from './i18n'
+import { lang, loc, t } from './i18n'
 import { closeModal, load, modal, openSettings, settingsTab, showOver, toast, toastError, version, type ModalState } from './store'
 import type { CatalogItem, PluginInfo, PluginLog } from './types'
 import { copyText, safeHref } from './util'
@@ -69,13 +69,13 @@ function SingleModal({ state }: { state: Extract<PermState, { fresh: boolean }> 
   const allow = async () => {
     closeModal()
     if (await setEnabled(p, true)) {
-      toast(t('plugin.enabled', { name: p.name }), 'success')
+      toast(t('plugin.enabled', { name: loc(p.name) }), 'success')
       if (needsConfig(p)) open.value = { id: p.id, panel: 'config' }
     }
   }
   return (
     <Modal
-      title={t('perm.title', { name: p.name })}
+      title={t('perm.title', { name: loc(p.name) })}
       onClose={closeModal}
       testid="plugin-perm-modal"
       focusFirst={false}
@@ -95,12 +95,12 @@ function SingleModal({ state }: { state: Extract<PermState, { fresh: boolean }> 
         <PlIcon p={p} size={40} />
         <div>
           <b>
-            {p.name} <small>v{p.version}</small>
+            {loc(p.name)} <small>v{p.version}</small>
           </b>
           {p.author && <small class="pl-by">{t('plugin.by', { author: p.author })}</small>}
         </div>
       </div>
-      {p.description && <p class="hint">{p.description}</p>}
+      {p.description && <p class="hint">{loc(p.description)}</p>}
       <h3 class="sub first">{t('perm.requests')}</h3>
       <PermList p={p} />
       <p class="hint">{t('perm.note')}</p>
@@ -171,7 +171,7 @@ function BatchModal() {
                 <input
                   type="checkbox"
                   class="mk-chk"
-                  aria-label={t('plugin.enable', { name: p.name })}
+                  aria-label={t('plugin.enable', { name: loc(p.name) })}
                   data-testid="plugin-perm-check"
                   checked={!!chosen[p.id]}
                   onChange={(e) => setChosen({ ...chosen, [p.id]: (e.target as HTMLInputElement).checked })}
@@ -179,7 +179,7 @@ function BatchModal() {
                 <PlIcon p={p} size={32} />
                 <div class="pl-main">
                   <div class="pl-name">
-                    <b>{p.name}</b>
+                    <b>{loc(p.name)}</b>
                     <small>v{p.version}</small>
                     {!fresh && <span class="pl-tag">{t('batch.update')}</span>}
                     <Badges p={p} />
@@ -211,7 +211,7 @@ function CatalogSourceModal({ id }: { id: string }) {
   const { data, err } = usePreviewData({ catalog: id })
   const c = catalog.value?.find((x) => x.id === id)
   const p = data?.plugin
-  const name = p?.name || c?.name || id
+  const name = loc(p?.name) || loc(c?.name) || id
   const installed = c ? c.installed : !!data?.installed
   return (
     <Modal
@@ -267,6 +267,7 @@ export function devPrompt(l: 'zh' | 'en'): string {
         '我想开发一个 Genkan 插件，请按以下步骤做：',
         '',
         `1. 先阅读插件开发指南，并严格遵循：${GUIDE_RAW}`,
+        '   界面文字请做多语言：把中英文放进 `export const messages`，清单里用 t("key")，钩子里用 ctx.t("key", 参数)，不要写 ctx.lang === "zh" 之类的分支。',
         '2. 使用 Genkan Skill（通过它的 REST API 操作我的 Genkan 实例）循环开发：以禁用状态安装插件（POST /api/plugins，enable:false），反复调用 POST /api/plugins/{id}/test 直到通过，并查看 GET /api/plugins/{id}/logs；出错就修改后重新安装。',
         '3. 测试通过后再启用插件（PATCH /api/plugins/{id}，{"enabled":true}）；如果是小组件插件，再把小组件添加到我的页面（POST /api/widgets）。',
         '4. 完成后告诉我插件 id。不要输出 API token。',
@@ -278,6 +279,7 @@ export function devPrompt(l: 'zh' | 'en'): string {
         'I want to develop a Genkan plugin. Please do the following:',
         '',
         `1. Read the plugin development guide first and follow it exactly: ${GUIDE_RAW}`,
+        '   Localize the plugin: keep English and Chinese text in `export const messages`, use t("key") in the manifest and ctx.t("key", params) in hooks, and never branch on ctx.lang.',
         '2. Use the Genkan Skill (its REST API against my Genkan instance) to build it in a loop: install the plugin DISABLED (POST /api/plugins with enable:false), run POST /api/plugins/{id}/test until it passes, check GET /api/plugins/{id}/logs, and fix and reinstall whenever something fails.',
         '3. Only once the test passes, enable it (PATCH /api/plugins/{id} with {"enabled":true}). If it is a widget plugin, also add the widget to my page (POST /api/widgets).',
         '4. When you are done, tell me the plugin id. Never print the API token.',
@@ -457,7 +459,7 @@ function Row({ p }: { p: PluginInfo }) {
     showOver({
       kind: 'confirm',
       title: t('plugin.deleteTitle'),
-      message: t('plugin.deleteMsg', { name: p.name }),
+      message: t('plugin.deleteMsg', { name: loc(p.name) }),
       confirmLabel: t('common.delete'),
       onConfirm: async () => {
         try {
@@ -476,11 +478,11 @@ function Row({ p }: { p: PluginInfo }) {
         <PlIcon p={p} />
         <div class="pl-main">
           <div class="pl-name">
-            <b data-testid="plugin-name">{p.name}</b>
+            <b data-testid="plugin-name">{loc(p.name)}</b>
             <small>v{p.version}</small>
             <Badges p={p} />
           </div>
-          {p.description && <div class="pl-desc">{p.description}</div>}
+          {p.description && <div class="pl-desc">{loc(p.description)}</div>}
           {p.last_error && (
             <div class="pl-error" data-testid="plugin-error" title={p.last_error}>
               <Icon n="triangle-alert" size={13} />
@@ -506,7 +508,7 @@ function Row({ p }: { p: PluginInfo }) {
           <button class="ib danger" aria-label={t('common.delete')} title={t('common.delete')} data-testid="plugin-delete" onClick={askDelete}>
             <Icon n="trash-2" size={16} />
           </button>
-          <Switch label={t('plugin.enable', { name: p.name })} checked={p.enabled} onChange={(v) => setEnabled(p, v)} testid="plugin-toggle" />
+          <Switch label={t('plugin.enable', { name: loc(p.name) })} checked={p.enabled} onChange={(v) => setEnabled(p, v)} testid="plugin-toggle" />
         </div>
       </div>
       {o === 'config' && <ConfigPanel key={p.id + (p.updated_at || '')} p={p} />}
@@ -524,19 +526,19 @@ function CatalogItemRow({ c }: { c: CatalogItem }) {
         <PlIcon p={c} size={34} />
         <div class="pl-main">
           <div class="pl-name">
-            <b>{c.name}</b>
+            <b>{loc(c.name)}</b>
             <small>v{c.version}</small>
             <button
               class="ib xs"
-              aria-label={t('cat.viewSrc', { name: c.name })}
-              title={t('cat.viewSrc', { name: c.name })}
+              aria-label={t('cat.viewSrc', { name: loc(c.name) })}
+              title={t('cat.viewSrc', { name: loc(c.name) })}
               data-testid="plugin-catalog-source"
               onClick={() => showOver({ kind: 'plugin-perm', dlg: 'catalog', id: c.id })}
             >
               <Icon n="code" size={14} />
             </button>
           </div>
-          <div class="pl-desc">{c.description}</div>
+          <div class="pl-desc">{loc(c.description)}</div>
         </div>
         <div class="pl-cat-btns">
           <button
@@ -629,7 +631,7 @@ function AddView() {
           <textarea
             class="pl-src"
             spellcheck={false}
-            placeholder={'export const manifest = {\n  id: "my-plugin", name: "My plugin", version: "1.0.0",\n  search: { name: "Demo" },\n}\nexport async function search(ctx) { return [] }'}
+            placeholder={'export const messages = {\n  en: { name: "My plugin", demo: "Demo" },\n  zh: { name: "我的插件", demo: "演示" },\n}\nexport const manifest = {\n  id: "my-plugin", name: t("name"), version: "1.0.0",\n  search: { name: t("demo") },\n}\nexport async function search(ctx) { return [] }'}
             aria-label={t('plugin.tab.source')}
             data-testid="plugin-source-input"
             value={src}

@@ -9,11 +9,28 @@
 // skipped by walking back one day at a time (max 6 tries).
 // The shared DEMO_KEY is rate limited; get a free key at https://api.nasa.gov.
 
+export const messages = {
+  en: {
+    name: "NASA APOD",
+    desc: "NASA Astronomy Picture of the Day.",
+    key: "NASA API key",
+    keyHelp: "Optional. Leave empty to use the rate-limited DEMO_KEY.",
+    source: "Astronomy Picture of the Day",
+  },
+  zh: {
+    name: "NASA 每日天文图",
+    desc: "NASA 每日天文图（APOD）。",
+    key: "NASA API 密钥",
+    keyHelp: "可选。留空则使用有速率限制的 DEMO_KEY。",
+    source: "每日天文图",
+  },
+};
+
 export const manifest = {
   id: "nasa-apod",
-  name: "NASA APOD",
+  name: t("name"),
   version: "1.0.0",
-  description: "NASA Astronomy Picture of the Day. NASA 每日天文图。",
+  description: t("desc"),
   author: "genkan",
   homepage: "https://apod.nasa.gov",
   icon: "rocket",
@@ -22,11 +39,11 @@ export const manifest = {
     {
       key: "api_key",
       type: "secret",
-      label: "NASA API key",
-      help: "Optional. Leave empty to use the rate-limited DEMO_KEY.",
+      label: t("key"),
+      help: t("keyHelp"),
     },
   ],
-  wallpapers: [{ id: "apod", name: "Astronomy Picture of the Day", refresh: 3600 }],
+  wallpapers: [{ id: "apod", name: t("source"), refresh: 3600 }],
 };
 
 const DAY = 86400000;

@@ -311,21 +311,28 @@ Plugins are single JavaScript (or TypeScript) files that run on the server and a
 A plugin is an ES module (no imports) with this shape:
 
 ```js
-export const manifest = {
-  id: "pi-hole-count", name: "Pi-hole", version: "1.0.0",           // id: [a-z0-9][a-z0-9-]{1,39}
-  permissions: { fetch: [] },                                       // hosts fetch() may reach; default deny, "*" = any host
-  widgets: [{ id: "stats", name: "Queries", size: "s", refresh: 120,
-    config: [{ key: "url", type: "url", label: "Pi-hole URL", required: true, allowFetch: true },   // allowFetch: this host is added to the fetch allow list
-             { key: "token", type: "secret", label: "API token" }] }],
+export const messages = {                       // all text, per language; optional but recommended
+  en: { name: "Pi-hole", queries: "Queries", url: "Pi-hole URL", token: "API token", today: "Queries today" },
+  zh: { name: "Pi-hole", queries: "查询", url: "Pi-hole 地址", token: "API 令牌", today: "今日查询" },
 };
-export async function widget(ctx) {            // ctx.instance.config, ctx.config, ctx.lang, ctx.now
+export const manifest = {
+  id: "pi-hole-count", name: t("name"), version: "1.0.0",           // id: [a-z0-9][a-z0-9-]{1,39}; t("key") in the manifest reads `messages`
+  permissions: { fetch: [] },                                       // hosts fetch() may reach; default deny, "*" = any host
+  widgets: [{ id: "stats", name: t("queries"), size: "s", refresh: 120,
+    config: [{ key: "url", type: "url", label: t("url"), required: true, allowFetch: true },   // allowFetch: this host is added to the fetch allow list
+             { key: "token", type: "secret", label: t("token") }] }],
+};
+export async function widget(ctx) {            // ctx.instance.config, ctx.config, ctx.lang, ctx.locale, ctx.t, ctx.now
+  const { t } = ctx;                           // t(key, params) translates with `messages`
   const r = await fetch(ctx.instance.config.url + "/admin/api.php?summary&auth=" + ctx.instance.config.token);
   const j = await r.json();
-  return { title: "Pi-hole", body: [{ type: "stat", label: "Queries today", value: j.dns_queries_today }] };
+  return { title: t("name"), body: [{ type: "stat", label: t("today"), value: j.dns_queries_today }] };
 }
 ```
 
 Capabilities and the functions they need: `wallpapers` -> `wallpaper(ctx)`, `widgets` -> `widget(ctx)` (+ optional `action(ctx)` for `button` blocks), `search` -> `search(ctx)`, `schedules` -> `schedule(ctx)`. Host API inside plugins: `genkan.log()`, `genkan.storage.get/set/delete/keys` (256 KiB per plugin), `genkan.links.*` / `genkan.workspaces.list` / `genkan.categories.list` (needs `permissions.links`), standard `fetch`, timers, `URL`. Limits: 32 MiB memory, search 2 s, widget/wallpaper/action 10 s, schedule 60 s. Config field types: `string`, `text`, `number`, `boolean`, `select`, `secret`, `url`. Secret values are never returned by the API.
+
+Localization: every user-visible manifest string (`name`, `description`, config `label` / `help`, `select` option labels, widget / wallpaper / schedule / search `name`) may be a plain string, an object `{ "en": "Weather", "zh": "天气" }` or `t("key")` (expanded from `messages` when the plugin is installed). The API returns the string or the object as written, so `name` and `description` in the plugin list and catalog can be objects: take `.en` when you need a single string. In hooks, use `ctx.t(key, params)` (`{name}` placeholders; fallback exact language -> base language -> `en` -> key) and `ctx.locale` (`zh-CN`, `en-US`) for `Intl`; never branch on `ctx.lang`. `POST /api/plugins/{id}/test` accepts `"lang":"zh"`. See `docs/PLUGIN_DEV.md` (Localization).
 
 Write a plugin, install it, then **always run `POST /api/plugins/{id}/test`** and read `error` and `logs` before adding widgets.
 
@@ -342,7 +349,7 @@ gk GET /api/plugins | jq '[.[] | {id, enabled, last_error}]'
 Built-in example plugins that can be installed with `{"catalog":"<id>"}`: `[{id,name,description,icon,version,installed}]` (`calculator`, `weather`, `world-clock`, `countdown`, `hacker-news`, `rss`, `pihole`, `bing-wallpaper`, ...).
 
 ```bash
-gk GET /api/plugins/catalog | jq -r '.[] | "\(.id)\t\(.installed)\t\(.description)"'
+gk GET /api/plugins/catalog | jq -r '.[] | "\(.id)\t\(.installed)\t\(.description | if type == "object" then .en else . end)"'
 ```
 
 ### POST /api/plugins

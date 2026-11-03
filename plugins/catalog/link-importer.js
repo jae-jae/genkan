@@ -13,17 +13,38 @@
 // The result of each run is kept in plugin storage under "lastSync" and
 // written to the plugin log.
 
+export const messages = {
+  en: {
+    name: "Link Importer",
+    desc: "Import links from a JSON URL on a schedule.",
+    url: "JSON URL",
+    urlHelp: "Array of {title, url, category}",
+    workspace: "Workspace",
+    workspaceHelp: "Name or id. Empty = the first workspace.",
+    noUrl: "JSON URL is not configured",
+  },
+  zh: {
+    name: "链接导入",
+    desc: "定时从 JSON 地址导入链接。",
+    url: "JSON 地址",
+    urlHelp: "由 {title, url, category} 组成的数组",
+    workspace: "工作空间",
+    workspaceHelp: "名称或 id。留空 = 第一个工作空间。",
+    noUrl: "尚未设置 JSON 地址",
+  },
+};
+
 export const manifest = {
   id: "link-importer",
-  name: "Link Importer",
+  name: t("name"),
   version: "1.0.0",
-  description: "Import links from a JSON URL on a schedule. 定时从 JSON 导入链接。",
+  description: t("desc"),
   author: "genkan",
   icon: "download",
   permissions: { fetch: [], links: "write" },
   config: [
-    { key: "url", type: "url", label: "JSON URL", help: "Array of {title, url, category}", required: true, allowFetch: true },
-    { key: "workspace", type: "string", label: "Workspace", help: "Name or id. Empty = the first workspace." },
+    { key: "url", type: "url", label: t("url"), help: t("urlHelp"), required: true, allowFetch: true },
+    { key: "workspace", type: "string", label: t("workspace"), help: t("workspaceHelp") },
   ],
   schedules: [{ id: "sync", every: 3600 }],
 };
@@ -48,7 +69,7 @@ export async function schedule(ctx) {
     return r;
   };
 
-  if (!ctx.config.url) return record({ error: "JSON URL is not configured" });
+  if (!ctx.config.url) return record({ error: ctx.t("noUrl") });
 
   try {
     const res = await fetch(ctx.config.url, { headers: { Accept: "application/json" } });

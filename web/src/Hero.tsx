@@ -49,6 +49,7 @@ function usePluginSearch(query: string) {
   const [groups, setGroups] = useState<SearchGroup[]>([])
   const seq = useRef(0)
   const on = hasSearchPlugin.value
+  const lg = lang.value // group names come back in the UI language
   useEffect(() => {
     const my = ++seq.current
     if (!on || !query) {
@@ -64,7 +65,7 @@ function usePluginSearch(query: string) {
       if (my === seq.current) setGroups(out)
     }, 250)
     return () => clearTimeout(id)
-  }, [query, on])
+  }, [query, on, lg])
   return groups
 }
 

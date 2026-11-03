@@ -194,6 +194,20 @@ func installHost(in *instance, m *Manager, probe bool) error {
 	}); err != nil {
 		return err
 	}
+	// t(key): manifest-time marker for a `messages` entry (expanded by inspect).
+	// It is not language aware; inside hooks it fails and points to ctx.t.
+	if err := rt.SetGlobal("t", moejs.NativeFunc(func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+		if !in.loading.Load() {
+			return moejs.Undefined(), errors.New("t() only works while the module is evaluated (in the manifest); inside hooks use ctx.t(key, params)")
+		}
+		k := moejs.Arg(args, 0)
+		if !k.IsString() {
+			return moejs.Undefined(), errors.New("t(key): key must be a string")
+		}
+		return rt.FromGo(map[string]any{markerKey: k.String()})
+	})); err != nil {
+		return err
+	}
 	return rt.SetGlobal("console", map[string]any{
 		"log":   moejs.NativeFunc(logf("info")),
 		"info":  moejs.NativeFunc(logf("info")),
@@ -218,4 +232,27 @@ func (in *instance) logText(v moejs.Value) string {
 		return "[object]"
 	}
 	return v.String()
+}
+
+// translateFunc is ctx.t(key, params?) for one hook call. It never throws: a
+// missing key gives the key, unusable params are ignored.
+func (in *instance) translateFunc(ms *Messages, lang string) moejs.NativeFunc {
+	return func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+		kv := moejs.Arg(args, 0)
+		key := ""
+		switch {
+		case kv.IsString():
+			key = kv.String()
+		case kv.IsUndefined() || kv.IsNull():
+		default:
+			key = in.logText(kv)
+		}
+		var params map[string]any
+		if pv := moejs.Arg(args, 1); pv.IsObject() {
+			if g, err := in.rt.ToGoWith(pv, moejs.DecodeOptions{MaxBytes: maxTParams}); err == nil {
+				params, _ = g.(map[string]any)
+			}
+		}
+		return in.rt.FromGo(ms.T(lang, key, params))
+	}
 }

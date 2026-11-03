@@ -729,3 +729,105 @@ func TestWidgetLayoutREST(t *testing.T) {
 		t.Fatalf("%+v", ws)
 	}
 }
+
+const locPlugin = `export const messages = { en: { n: "Locale demo", g: "Group", hi: "Hello {q}" }, zh: { n: "本地化演示", g: "分组", hi: "你好 {q}" } };
+export const manifest = {
+  id: "loc-demo", name: t("n"), version: "1", description: { en: "English text", zh: "中文说明" },
+  config: [{ key: "city", type: "string", label: t("n"), required: true }],
+  widgets: [{ id: "w", name: t("n"), config: [{ key: "x", type: "string", label: t("g"), required: true }] }],
+  search: { name: t("g"), prefix: "" },
+};
+export async function widget(ctx) { return { title: ctx.t("n"), body: [{ type: "text", text: ctx.t("hi", { q: ctx.locale }) }] } }
+export async function search(ctx) { return [{ title: ctx.t("hi", { q: ctx.query }) }] }
+`
+
+func TestPluginLocalization(t *testing.T) {
+	e := setup(t)
+	admin := e.admin()
+	var inf map[string]any
+	admin.mustJSON("POST", "/api/plugins", jsonBody(map[string]any{"source": locPlugin}), &inf)
+	wantName := map[string]any{"en": "Locale demo", "zh": "本地化演示"}
+	if fmt.Sprint(inf["name"]) != fmt.Sprint(wantName) {
+		t.Fatalf("install response: %v", inf["name"])
+	}
+
+	// bootstrap, plugin list, preview and the catalog all carry the objects
+	var boot struct {
+		Plugins []map[string]any `json:"plugins"`
+	}
+	admin.mustJSON("GET", "/api/bootstrap", "", &boot)
+	var found map[string]any
+	for _, p := range boot.Plugins {
+		if p["id"] == "loc-demo" {
+			found = p
+		}
+	}
+	if found == nil || fmt.Sprint(found["name"]) != fmt.Sprint(wantName) || fmt.Sprint(found["description"]) != fmt.Sprint(map[string]any{"en": "English text", "zh": "中文说明"}) {
+		t.Fatalf("bootstrap: %v", found)
+	}
+	var list []map[string]any
+	admin.mustJSON("GET", "/api/plugins", "", &list)
+	if fmt.Sprint(list[0]["name"]) != fmt.Sprint(wantName) {
+		t.Fatalf("list: %v", list[0]["name"])
+	}
+	var pv struct {
+		Plugin map[string]any `json:"plugin"`
+	}
+	admin.mustJSON("POST", "/api/plugins/preview", jsonBody(map[string]any{"source": locPlugin}), &pv)
+	if fmt.Sprint(pv.Plugin["name"]) != fmt.Sprint(wantName) {
+		t.Fatalf("preview: %v", pv.Plugin["name"])
+	}
+	var cat []map[string]any
+	admin.mustJSON("GET", "/api/plugins/catalog", "", &cat)
+	for _, c := range cat {
+		if c["id"] == "weather" {
+			if n, ok := c["name"].(map[string]any); !ok || n["en"] != "Weather" || n["zh"] != "天气" {
+				t.Fatalf("catalog weather: %v", c["name"])
+			}
+		}
+	}
+
+	// search: the group name is resolved for the request language
+	var sr struct {
+		Groups []struct{ Name string } `json:"groups"`
+	}
+	for q, want := range map[string]string{"?lang=zh": "分组", "?lang=en": "Group", "?lang=fr": "Group"} {
+		admin.mustJSON("GET", "/api/plugins/search"+q+"&q=hey", "", &sr)
+		if len(sr.Groups) != 1 || sr.Groups[0].Name != want {
+			t.Errorf("search %s: %+v", q, sr)
+		}
+	}
+	if code, b := admin.do("GET", "/api/plugins/search?q=hey", ""); code != 200 || !strings.Contains(string(b), `"name":"Group"`) {
+		t.Errorf("default language: %d %s", code, b)
+	}
+
+	// widget data and config errors follow the language
+	var w map[string]any
+	admin.mustJSON("POST", "/api/widgets", `{"plugin":"loc-demo","widget":"w","config":{"x":"a"}}`, &w)
+	var d struct {
+		View struct {
+			Title string
+			Body  []map[string]any
+		}
+	}
+	admin.mustJSON("GET", "/api/widgets/"+w["id"].(string)+"/data?lang=zh", "", &d)
+	if d.View.Title != "本地化演示" || d.View.Body[0]["text"] != "你好 zh-CN" {
+		t.Errorf("zh: %+v", d.View)
+	}
+	admin.mustJSON("GET", "/api/widgets/"+w["id"].(string)+"/data?lang=en", "", &d)
+	if d.View.Title != "Locale demo" || d.View.Body[0]["text"] != "Hello en-US" {
+		t.Errorf("en: %+v", d.View)
+	}
+	code, b := admin.do("POST", "/api/widgets?lang=zh", `{"plugin":"loc-demo","widget":"w","config":{}}`)
+	if code != 400 || !strings.Contains(string(b), "分组 is required") {
+		t.Errorf("zh error: %d %s", code, b)
+	}
+	code, b = admin.do("POST", "/api/widgets?lang=en", `{"plugin":"loc-demo","widget":"w","config":{}}`)
+	if code != 400 || !strings.Contains(string(b), "Group is required") {
+		t.Errorf("en error: %d %s", code, b)
+	}
+	code, b = admin.do("PATCH", "/api/plugins/loc-demo?lang=zh", `{"config":{}}`)
+	if code != 400 || !strings.Contains(string(b), "本地化演示 is required") {
+		t.Errorf("patch zh error: %d %s", code, b)
+	}
+}

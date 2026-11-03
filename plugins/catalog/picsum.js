@@ -5,17 +5,22 @@
 //          answers image requests with a redirect, and every redirect target
 //          must be on the allow-list too).
 
+export const messages = {
+  en: { name: "Picsum Photos", desc: "Random landscape photos from picsum.photos.", source: "Random photo" },
+  zh: { name: "Picsum 图库", desc: "来自 picsum.photos 的随机风景图。", source: "随机图片" },
+};
+
 export const manifest = {
   id: "picsum",
-  name: "Picsum Photos",
+  name: t("name"),
   version: "1.0.0",
-  description: "Random landscape photos from picsum.photos. 随机风景图。",
+  description: t("desc"),
   author: "genkan",
   homepage: "https://picsum.photos",
   icon: "camera",
   permissions: { fetch: ["picsum.photos", "fastly.picsum.photos"] },
   config: [],
-  wallpapers: [{ id: "random", name: "Random photo", refresh: 3600 }],
+  wallpapers: [{ id: "random", name: t("source"), refresh: 3600 }],
 };
 
 export async function wallpaper(ctx) {

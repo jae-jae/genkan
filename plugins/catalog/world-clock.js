@@ -14,30 +14,48 @@
 //
 // Implementation notes: time zones come from Intl.DateTimeFormat's `timeZone`
 // option (moejs reads the host's tz database, so the Genkan binary should
-// embed `time/tzdata`). We only ask Intl for the numeric wall-clock *parts*
-// in en-US and format them ourselves, which keeps the output independent of
-// locale data. Fixed offsets don't need Intl at all (that is also the
-// fallback when a zone name is unknown to the runtime: it is shown as invalid).
+// embed `time/tzdata`). We ask Intl for the numeric wall-clock *parts* in
+// en-US and format "MM/DD" and "HH:mm" ourselves; only the weekday name is
+// localized (Intl with ctx.locale). Fixed offsets don't need the tz database
+// at all (that is also the fallback when a zone name is unknown to the
+// runtime: it is shown as invalid).
+
+export const messages = {
+  en: {
+    name: "World Clock",
+    desc: "Clocks for several time zones, offline.",
+    zones: "Time zones",
+    zonesHelp: "IANA names separated by commas or new lines; optional label: Home=Europe/Berlin",
+    unknownZone: "Unknown time zone: {zone}",
+  },
+  zh: {
+    name: "世界时钟",
+    desc: "多个时区的时钟（离线）。",
+    zones: "时区",
+    zonesHelp: "IANA 时区名，用逗号或换行分隔；可加标签，例如 Home=Europe/Berlin",
+    unknownZone: "未知时区：{zone}",
+  },
+};
 
 export const manifest = {
   id: "world-clock",
-  name: "World Clock",
+  name: t("name"),
   version: "1.0.0",
-  description: "Clocks for several time zones, offline. 世界时钟（离线）。",
+  description: t("desc"),
   author: "genkan",
   icon: "clock",
   widgets: [
     {
       id: "clock",
-      name: "World clock",
+      name: t("name"),
       size: "m",
       refresh: 30, // the minimum; the display has minute resolution
       config: [
         {
           key: "zones",
           type: "text",
-          label: "Time zones",
-          help: "IANA names separated by commas or new lines; optional label: Home=Europe/Berlin",
+          label: t("zones"),
+          help: t("zonesHelp"),
           default: "UTC, Asia/Tokyo, Europe/London, America/New_York",
         },
       ],
@@ -46,10 +64,6 @@ export const manifest = {
 };
 
 const DEFAULT_ZONES = "UTC, Asia/Tokyo, Europe/London, America/New_York";
-const WEEKDAYS = {
-  en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-  zh: ["周日", "周一", "周二", "周三", "周四", "周五", "周六"],
-};
 const pad = (n) => String(n).padStart(2, "0");
 
 // "UTC+8", "GMT-05:30", "+0530", "Z" -> offset in minutes, or null.
@@ -88,7 +102,7 @@ function fromWall(wall, offsetMin) {
     day: d.getUTCDate(),
     hour: d.getUTCHours(),
     minute: d.getUTCMinutes(),
-    weekday: d.getUTCDay(),
+    wall,
     offsetMin,
   };
 }
@@ -99,7 +113,9 @@ function offsetLabel(min) {
 }
 
 export async function widget(ctx) {
-  const zh = ctx.lang === "zh";
+  const { t, locale } = ctx;
+  // "Mon" / "周一": the wall-clock instant is already shifted, so format it as UTC.
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
   const cfg = (ctx.instance && ctx.instance.config) || {};
   const specs = String(cfg.zones || "").trim() || DEFAULT_ZONES;
 
@@ -114,16 +130,16 @@ export async function widget(ctx) {
       const zone = (eq >= 0 ? spec.slice(eq + 1) : spec).trim();
       const label = eq >= 0 ? spec.slice(0, eq).trim() : zone.split("/").pop().replace(/_/g, " ");
       try {
-        const t = wallClock(zone, ctx.now);
+        const c = wallClock(zone, ctx.now);
         return {
           title: label,
-          subtitle: `${WEEKDAYS[zh ? "zh" : "en"][t.weekday]} ${pad(t.month)}/${pad(t.day)} · ${offsetLabel(t.offsetMin)}`,
-          right: `${pad(t.hour)}:${pad(t.minute)}`,
+          subtitle: `${weekday.format(c.wall)} ${pad(c.month)}/${pad(c.day)} · ${offsetLabel(c.offsetMin)}`,
+          right: `${pad(c.hour)}:${pad(c.minute)}`,
         };
       } catch (e) {
-        return { title: label, subtitle: (zh ? "未知时区：" : "Unknown time zone: ") + zone, right: "--:--" };
+        return { title: label, subtitle: t("unknownZone", { zone }), right: "--:--" };
       }
     });
 
-  return { title: zh ? "世界时钟" : "World Clock", icon: "clock", body: [{ type: "list", items }] };
+  return { title: t("name"), icon: "clock", body: [{ type: "list", items }] };
 }

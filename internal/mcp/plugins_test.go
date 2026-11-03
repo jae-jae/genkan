@@ -203,3 +203,42 @@ func TestWidgetLayoutTools(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+// Localized manifest strings reach MCP clients as they are (plain string or { lang: text }).
+func TestPluginToolsLocalizedStrings(t *testing.T) {
+	s, _ := newPluginSrv(t)
+	src := `export const messages = { en: { n: "Loc", c: "City" }, zh: { n: "本地化", c: "城市" } };
+export const manifest = { id: "mcp-loc", name: t("n"), version: "1", description: "plain",
+  config: [{ key: "city", type: "string", label: t("c") }], widgets: [{ id: "w", name: { en: "W", zh: "组件" } }] };
+export async function widget(ctx) { return { body: [{ type: "text", text: ctx.t("n") }] } }`
+	r := call(t, s, "install_plugin", map[string]any{"source": src})
+	if r["isError"] != nil {
+		t.Fatalf("install: %v", r)
+	}
+	p := structured(t, r)["plugin"].(map[string]any)
+	name, _ := p["name"].(map[string]any)
+	if name["en"] != "Loc" || name["zh"] != "本地化" || p["description"] != "plain" {
+		t.Fatalf("name/description: %v %v", p["name"], p["description"])
+	}
+	field := p["config_schema"].([]any)[0].(map[string]any)["label"].(map[string]any)
+	wname := p["widgets"].([]any)[0].(map[string]any)["name"].(map[string]any)
+	if field["zh"] != "城市" || wname["zh"] != "组件" {
+		t.Fatalf("label/widget: %v %v", field, wname)
+	}
+	// the catalog entries are objects too
+	found := false
+	for _, c := range structured(t, call(t, s, "list_plugins", nil))["catalog"].([]any) {
+		if c := c.(map[string]any); c["id"] == "weather" {
+			n, ok := c["name"].(map[string]any)
+			found = ok && n["zh"] == "天气"
+		}
+	}
+	if !found {
+		t.Error("catalog weather name is not a localized object")
+	}
+	// test_plugin runs with ctx.t (default language en)
+	tr := call(t, s, "test_plugin", map[string]any{"id": "mcp-loc", "hook": "widget"})
+	if b, _ := json.Marshal(tr); !strings.Contains(string(b), "Loc") {
+		t.Fatalf("test: %s", b)
+	}
+}

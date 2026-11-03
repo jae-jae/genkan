@@ -9,7 +9,7 @@ import (
 	"github.com/jae-jae/genkan/internal/plugin"
 )
 
-const pluginDocs = " Plugin authoring guide: docs/PLUGINS.md (an ES module exporting `manifest` and async hook functions wallpaper/widget/search/schedule/action). 插件开发说明见 docs/PLUGINS.md。"
+const pluginDocs = " Plugin authoring guide: docs/PLUGINS.md (an ES module exporting `manifest`, optionally `messages` for localization with t()/ctx.t, and async hook functions wallpaper/widget/search/schedule/action). 插件开发说明见 docs/PLUGINS.md。"
 
 var errNoPlugins = errors.New("plugins are not available")
 
@@ -29,7 +29,7 @@ func (s *Server) pluginTools() []tool {
 	return []tool{
 		{
 			name: "list_plugins", title: "List plugins", readOnly: true, idempotent: true,
-			desc:   "List installed plugins (manifest, enabled flag, current config with secrets blanked and secrets_set, last_error) and the built-in example catalog that can be installed with install_plugin {catalog}." + pluginDocs,
+			desc:   "List installed plugins (manifest, enabled flag, current config with secrets blanked and secrets_set, last_error) and the built-in example catalog that can be installed with install_plugin {catalog}. User-visible manifest strings (name, description, labels) are either a plain string or an object {language: text}, e.g. {\"en\":\"Weather\",\"zh\":\"天气\"}." + pluginDocs,
 			schema: obj(M{}),
 			fn: func(json.RawMessage) (any, error) {
 				m, err := mgr()

@@ -14,11 +14,60 @@
 // The one secret field serves both: password for v6, API token for v5. The
 // version is detected by probing /api/auth, which only v6 answers with JSON.
 
+export const messages = {
+  en: {
+    name: "Pi-hole",
+    desc: "Pi-hole queries, blocked count and pause button.",
+    widget: "Pi-hole stats",
+    url: "Pi-hole URL",
+    urlHelp: "e.g. http://192.168.1.2 or http://pi.hole",
+    password: "Password / API token",
+    passwordHelp: "v6: web password or app password. v5: API token. May be empty if none is set.",
+    setUrl: "Set the Pi-hole URL in the widget settings",
+    queries: "Queries",
+    blocked: "Blocked",
+    rate: "Block rate",
+    status: "Status",
+    blocking: "Blocking",
+    paused: "Paused",
+    blocklist: "Blocklist",
+    clients: "Clients",
+    pause: "Pause blocking for 5 min",
+    resume: "Resume blocking",
+    unreachable: "Cannot reach Pi-hole: {msg}",
+    pausedToast: "Blocking paused for 5 minutes",
+    resumedToast: "Blocking resumed",
+  },
+  zh: {
+    name: "Pi-hole",
+    desc: "Pi-hole 查询与拦截统计，带暂停按钮。",
+    widget: "Pi-hole 统计",
+    url: "Pi-hole 地址",
+    urlHelp: "例如 http://192.168.1.2 或 http://pi.hole",
+    password: "密码 / API 令牌",
+    passwordHelp: "v6：网页密码或应用密码。v5：API 令牌。未设置时可留空。",
+    setUrl: "请先设置 Pi-hole 地址",
+    queries: "今日查询",
+    blocked: "已拦截",
+    rate: "拦截率",
+    status: "状态",
+    blocking: "拦截中",
+    paused: "已暂停",
+    blocklist: "规则域名",
+    clients: "活跃客户端",
+    pause: "暂停拦截 5 分钟",
+    resume: "恢复拦截",
+    unreachable: "无法连接 Pi-hole：{msg}",
+    pausedToast: "已暂停拦截 5 分钟",
+    resumedToast: "已恢复拦截",
+  },
+};
+
 export const manifest = {
   id: "pihole",
-  name: "Pi-hole",
+  name: t("name"),
   version: "1.0.0",
-  description: "Pi-hole queries, blocked count and pause button. Pi-hole 统计与暂停按钮。",
+  description: t("desc"),
   author: "genkan",
   homepage: "https://pi-hole.net",
   icon: "shield",
@@ -26,12 +75,12 @@ export const manifest = {
   widgets: [
     {
       id: "stats",
-      name: "Pi-hole stats",
+      name: t("widget"),
       size: "m",
       refresh: 60,
       config: [
-        { key: "url", type: "url", label: "Pi-hole URL", help: "e.g. http://192.168.1.2 or http://pi.hole", required: true, allowFetch: true },
-        { key: "password", type: "secret", label: "Password / API token", help: "v6: web password or app password. v5: API token. May be empty if none is set." },
+        { key: "url", type: "url", label: t("url"), help: t("urlHelp"), required: true, allowFetch: true },
+        { key: "password", type: "secret", label: t("password"), help: t("passwordHelp") },
       ],
     },
   ],
@@ -117,44 +166,44 @@ async function connect(rawUrl, secret) {
 const errText = (e) => (e && e.message ? e.message : String(e));
 
 export async function widget(ctx) {
-  const zh = ctx.lang === "zh";
+  const { t, locale } = ctx;
   const cfg = (ctx.instance && ctx.instance.config) || {};
   const view = { title: "Pi-hole", icon: "shield", body: [] };
-  if (!cfg.url) return { ...view, error: zh ? "请先设置 Pi-hole 地址" : "Set the Pi-hole URL in the widget settings" };
+  if (!cfg.url) return { ...view, error: t("setUrl") };
   view.link = String(cfg.url).replace(/\/+$/, "").replace(/\/admin$/, "") + "/admin";
 
   let client;
   try {
     client = await connect(cfg.url, cfg.password || "");
     const s = await client.summary();
-    const n = (x) => (typeof x === "number" ? x.toLocaleString(zh ? "zh-CN" : "en-US") : String(x ?? "-"));
+    const n = (x) => (typeof x === "number" ? x.toLocaleString(locale) : String(x ?? "-"));
     const pct = Number(s.percent) || 0;
 
     view.body = [
       {
         type: "stats",
         items: [
-          { label: zh ? "今日查询" : "Queries", value: n(s.total) },
-          { label: zh ? "已拦截" : "Blocked", value: n(s.blocked) },
-          { label: zh ? "拦截率" : "Block rate", value: pct.toFixed(1), unit: "%" },
+          { label: t("queries"), value: n(s.total) },
+          { label: t("blocked"), value: n(s.blocked) },
+          { label: t("rate"), value: pct.toFixed(1), unit: "%" },
         ],
       },
       { type: "progress", value: Math.min(1, Math.max(0, pct / 100)), text: pct.toFixed(1) + "%" },
       {
         type: "kv",
         items: [
-          { k: zh ? "状态" : "Status", v: s.enabled ? (zh ? "拦截中" : "Blocking") : zh ? "已暂停" : "Paused" },
-          { k: zh ? "规则域名" : "Blocklist", v: n(s.domains) },
-          { k: zh ? "活跃客户端" : "Clients", v: n(s.clients) },
+          { k: t("status"), v: s.enabled ? t("blocking") : t("paused") },
+          { k: t("blocklist"), v: n(s.domains) },
+          { k: t("clients"), v: n(s.clients) },
           { k: "Pi-hole", v: "v" + client.version },
         ],
       },
       s.enabled
-        ? { type: "button", label: zh ? "暂停拦截 5 分钟" : "Pause blocking for 5 min", action: "pause", icon: "pin-off" }
-        : { type: "button", label: zh ? "恢复拦截" : "Resume blocking", action: "resume", icon: "check" },
+        ? { type: "button", label: t("pause"), action: "pause", icon: "pin-off" }
+        : { type: "button", label: t("resume"), action: "resume", icon: "check" },
     ];
   } catch (e) {
-    view.error = (zh ? "无法连接 Pi-hole：" : "Cannot reach Pi-hole: ") + errText(e);
+    view.error = t("unreachable", { msg: errText(e) });
   } finally {
     if (client) await client.close();
   }
@@ -163,7 +212,7 @@ export async function widget(ctx) {
 
 // Button handler: ctx.action is "pause" or "resume".
 export async function action(ctx) {
-  const zh = ctx.lang === "zh";
+  const { t } = ctx;
   const cfg = (ctx.instance && ctx.instance.config) || {};
   if (!cfg.url) throw new Error("Pi-hole URL is not configured");
   if (ctx.action !== "pause" && ctx.action !== "resume") throw new Error("unknown action: " + ctx.action);
@@ -176,7 +225,7 @@ export async function action(ctx) {
   }
   genkan.log("pihole:", ctx.action);
   return {
-    toast: ctx.action === "pause" ? (zh ? "已暂停拦截 5 分钟" : "Blocking paused for 5 minutes") : zh ? "已恢复拦截" : "Blocking resumed",
+    toast: t(ctx.action === "pause" ? "pausedToast" : "resumedToast"),
     refresh: true,
   };
 }

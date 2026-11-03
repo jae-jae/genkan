@@ -40,7 +40,8 @@ func (s *Server) pluginRoutes() {
 	m.HandleFunc("POST /api/widgets/{id}/action", s.guard(permAdmin, s.handleWidgetAction))
 }
 
-// pluginLang picks the caller's language: ?lang=zh|en, else Accept-Language.
+// pluginLang picks the caller's language: ?lang=, else Accept-Language (base
+// language such as "zh", "en", "ja").
 func pluginLang(r *http.Request) string {
 	if l := r.URL.Query().Get("lang"); l != "" {
 		return plugin.NormLang(l)
@@ -167,6 +168,7 @@ func (s *Server) handlePluginPatch(w http.ResponseWriter, r *http.Request, _ Rol
 	if !readJSON(w, r, &req, maxJSONBody) {
 		return
 	}
+	req.Lang = pluginLang(r)
 	inf, err := s.plugins.Patch(r.PathValue("id"), req)
 	if err != nil {
 		failPlugin(w, err)
@@ -235,6 +237,7 @@ func (s *Server) handleWidgetCreate(w http.ResponseWriter, r *http.Request, _ Ro
 	if !readJSON(w, r, &req, maxJSONBody) {
 		return
 	}
+	req.Lang = pluginLang(r)
 	out, err := s.plugins.AddWidget(req)
 	if err != nil {
 		failPlugin(w, err)
@@ -248,6 +251,7 @@ func (s *Server) handleWidgetUpdate(w http.ResponseWriter, r *http.Request, _ Ro
 	if !readJSON(w, r, &p, maxJSONBody) {
 		return
 	}
+	p.Lang = pluginLang(r)
 	out, err := s.plugins.UpdateWidget(r.PathValue("id"), p)
 	if err != nil {
 		failPlugin(w, err)

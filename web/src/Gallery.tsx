@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks'
 import { Icon } from './icons'
-import { t } from './i18n'
+import { loc, t } from './i18n'
 import { gallery, loadGallery, plugins, showOver, uploadWallpapers, uploading, version, deleteWallpaper } from './store'
 import { DEFAULT_WALLPAPER, PRESETS, hueOf } from './util'
 
@@ -13,7 +13,7 @@ export function WallpaperGallery({ value, onPick, manage }: { value: string; onP
   const files = gallery.value
   const cur = value || DEFAULT_WALLPAPER
   const up = uploading.value
-  const pluginSources = plugins.value.flatMap((p) => (p.enabled ? p.wallpapers || [] : []).map((w) => ({ value: `plugin:${p.id}/${w.id}`, name: w.name, plugin: p.name })))
+  const pluginSources = plugins.value.flatMap((p) => (p.enabled ? p.wallpapers || [] : []).map((w) => ({ value: `plugin:${p.id}/${w.id}`, name: loc(w.name), plugin: loc(p.name) })))
   useEffect(() => void loadGallery(), [version.value])
 
   const upload = async (list: FileList | File[] | null | undefined) => {

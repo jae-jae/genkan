@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ApiError, get, post, put } from './api'
 import { Icon } from './icons'
-import { lang, t } from './i18n'
+import { lang, loc, t } from './i18n'
 import { Modal } from './parts'
 import { closeModal, sortedWs, toast, widgets } from './store'
 import type { PluginInfo, PluginLog, PluginTestResult } from './types'
@@ -21,7 +21,7 @@ function hooksOf(p: PluginInfo): Hook[] {
   return h
 }
 const targetsOf = (p: PluginInfo, h: Hook): { id: string; name: string }[] =>
-  h === 'wallpaper' ? (p.wallpapers || []).map((w) => ({ id: w.id, name: w.name })) : h === 'widget' || h === 'action' ? (p.widgets || []).map((w) => ({ id: w.id, name: w.name })) : h === 'schedule' ? (p.schedules || []).map((s) => ({ id: s.id, name: s.id })) : []
+  h === 'wallpaper' ? (p.wallpapers || []).map((w) => ({ id: w.id, name: loc(w.name) })) : h === 'widget' || h === 'action' ? (p.widgets || []).map((w) => ({ id: w.id, name: loc(w.name) })) : h === 'schedule' ? (p.schedules || []).map((s) => ({ id: s.id, name: loc(s.name) || s.id })) : []
 
 const fmtTs = (ts: string | number) => {
   const d = new Date(ts)
@@ -338,7 +338,7 @@ export default function SourceModal({ plugin, onSaved }: { plugin: PluginInfo; o
 
   return (
     <Modal
-      title={t('src.title', { name: info.name })}
+      title={t('src.title', { name: loc(info.name) })}
       onClose={requestClose}
       wide
       cls="modal-src"

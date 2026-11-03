@@ -40,12 +40,13 @@ func (m *Manager) call(parent context.Context, e *entry, rec store.Plugin, r hoo
 		"plugin": map[string]any{"id": rec.ID, "version": e.man.Version},
 		"config": cfg,
 		"lang":   r.lang,
+		"locale": Locale(r.lang),
 		"now":    float64(nowMs()),
 	}
 	for k, v := range r.fields {
 		jsctx[k] = v
 	}
-	o := callOpts{hook: r.hook, timeout: r.timeout, ctx: jsctx}
+	o := callOpts{hook: r.hook, timeout: r.timeout, ctx: jsctx, lang: r.lang, msgs: e.man.messages}
 	o.pluginHost = fetchHostsFromConfig(e.man.ConfigSchema, cfg)
 	o.secrets = secretValues(e.man.ConfigSchema, rec.Config)
 	if r.instSchema != nil || r.instID != "" {
@@ -123,6 +124,7 @@ type WidgetAdd struct {
 	Config      map[string]any `json:"config"`
 	W           int            `json:"w"` // columns 0..6 (clamped)
 	H           int            `json:"h"` // pixels, 0 = auto, else 80..1200 (clamped)
+	Lang        string         `json:"-"` // language of error messages
 }
 
 func (m *Manager) widgetDecl(plugin, widget string) (*entry, *WidgetDecl, error) {
@@ -146,7 +148,7 @@ func (m *Manager) AddWidget(in WidgetAdd) (WidgetOut, error) {
 	if err != nil {
 		return WidgetOut{}, err
 	}
-	cfg, err := cleanConfig(d.Config, in.Config, nil, true)
+	cfg, err := cleanConfig(d.Config, in.Config, nil, true, NormLang(in.Lang))
 	if err != nil {
 		return WidgetOut{}, invalidf("%v", err)
 	}
@@ -165,6 +167,7 @@ type WidgetPatch struct {
 	W           *int           `json:"w"`
 	H           *int           `json:"h"`
 	Merge       bool           `json:"-"`
+	Lang        string         `json:"-"` // language of error messages
 }
 
 func (m *Manager) UpdateWidget(id string, p WidgetPatch) (WidgetOut, error) {
@@ -192,7 +195,7 @@ func (m *Manager) UpdateWidget(id string, p WidgetPatch) (WidgetOut, error) {
 				}
 			}
 		}
-		clean, err := cleanConfig(d.Config, in, w.Config, true)
+		clean, err := cleanConfig(d.Config, in, w.Config, true, NormLang(p.Lang))
 		if err != nil {
 			return WidgetOut{}, invalidf("%v", err)
 		}
@@ -353,7 +356,8 @@ func (m *Manager) Action(ctx context.Context, id string, req ActionRequest, lang
 
 // Search ---------------------------------------------------------------------------------------
 
-// SearchGroup is one plugin's results.
+// SearchGroup is one plugin's results. Name is the search name resolved for
+// the request language.
 type SearchGroup struct {
 	Plugin  string         `json:"plugin"`
 	Name    string         `json:"name"`
@@ -435,7 +439,7 @@ func (m *Manager) Search(ctx context.Context, q, lang string) []SearchGroup {
 				return
 			}
 			if rs := v.([]SearchResult); len(rs) > 0 {
-				res[i] = &SearchGroup{Plugin: j.rec.ID, Name: j.e.man.Search.Name, Icon: j.e.man.Icon, Results: rs}
+				res[i] = &SearchGroup{Plugin: j.rec.ID, Name: j.e.man.Search.Name.Resolve(lang), Icon: j.e.man.Icon, Results: rs}
 			}
 		}()
 	}
@@ -527,7 +531,7 @@ func (m *Manager) Test(ctx context.Context, id string, req TestRequest) (TestRes
 			}
 			base, instID = w.Config, w.ID
 		}
-		cfg, err := cleanConfig(d.Config, req.Config, base, false)
+		cfg, err := cleanConfig(d.Config, req.Config, base, false, hr.lang)
 		if err != nil {
 			return TestResult{}, invalidf("%v", err)
 		}

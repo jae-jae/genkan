@@ -19,14 +19,19 @@
 //
 // No eval / new Function: this is a small recursive-descent parser.
 
+export const messages = {
+  en: { name: "Calculator", desc: "Inline calculator in the search box." },
+  zh: { name: "计算器", desc: "搜索框内联计算器。" },
+};
+
 export const manifest = {
   id: "calculator",
-  name: "Calculator",
+  name: t("name"),
   version: "1.0.0",
-  description: "Inline calculator in the search box. 搜索框内联计算器。",
+  description: t("desc"),
   author: "genkan",
   icon: "calculator",
-  search: { name: "Calculator", prefix: "" },
+  search: { name: t("name"), prefix: "" },
 };
 
 const CONSTS = { pi: Math.PI, e: Math.E };

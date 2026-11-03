@@ -1,5 +1,6 @@
 import { computed, effect, signal } from '@preact/signals'
 import { lsGet, lsSet } from './util'
+import type { LString } from './types'
 
 /** Resolved UI language. */
 export type Lang = 'zh' | 'en'
@@ -745,4 +746,26 @@ export function t(key: string, vars?: Record<string, string | number>): string {
   let s = dicts[lang.value][key] ?? en[key] ?? key
   if (vars) for (const k in vars) s = s.split('{' + k + '}').join(String(vars[k]))
   return s
+}
+
+/**
+ * Resolves a plugin-provided LString (plain string, or { en, zh, … }) in the UI language: exact tag, base language
+ * ("zh-TW" -> "zh"), "en", then the first tag alphabetically. Same chain as the server (docs/PLUGINS.md §12).
+ * Reads the `lang` signal, so a component that calls it re-renders when the language changes.
+ */
+export function loc(v: LString | null | undefined, l: string = lang.value): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  const by: Record<string, string> = {}
+  for (const k of Object.keys(v)) by[k.toLowerCase()] = v[k]
+  let tag = l.toLowerCase().replace(/_/g, '-')
+  while (tag) {
+    if (tag in by) return by[tag]
+    const i = tag.lastIndexOf('-')
+    if (i < 0) break
+    tag = tag.slice(0, i)
+  }
+  if ('en' in by) return by.en
+  const first = Object.keys(v).sort()[0]
+  return first === undefined ? '' : v[first]
 }

@@ -16,11 +16,17 @@
 一个插件 = **一个 ES module 源文件**（`.js`；也接受 TypeScript，用 `moejs.CompileTS` 编译，由安装请求的 `lang: "ts"` 指定）。插件 ID 取自 manifest。
 
 ```js
+// 界面文字放进 messages，manifest 里用 t("key") 引用，钩子里用 ctx.t("key", params)（详见 §12）
+export const messages = {
+  en: { name: "Weather", desc: "Open-Meteo weather, no API key." },
+  zh: { name: "天气",    desc: "Open-Meteo 天气，无需 API key。" },
+}
+
 export const manifest = {
   id: "weather",                 // 必填，^[a-z0-9][a-z0-9-]{1,39}$，全局唯一
-  name: "天气",                  // 必填，≤ 40 字符
+  name: t("name"),               // 必填，≤ 40 字符。可见文字都是 LocalizedString：普通字符串、{ en, zh } 对象或 t("key")（§12）
   version: "1.0.0",              // 必填，≤ 20 字符
-  description: "Open-Meteo 天气", // 可选，≤ 300
+  description: t("desc"),        // 可选，≤ 300（LocalizedString）
   author: "genkan",              // 可选，≤ 60
   homepage: "https://...",       // 可选 http(s)
   icon: "cloud",                 // 可选，Lucide 名（前端 LUCIDE 表中有的才显示，否则回退为 puzzle/默认图标）
@@ -34,11 +40,11 @@ export const manifest = {
   config: [ /* ConfigField[] 见下 */ ],
 
   // 提供的能力，全部可选，至少一项
-  wallpapers: [{ id: "daily", name: "每日壁纸", refresh: 3600 }],               // refresh 秒，≥ 300，默认 3600
-  widgets:    [{ id: "current", name: "当前天气", size: "s", refresh: 600,     // size: "s"|"m"|"l"；refresh 秒 ≥ 30，默认 300
+  wallpapers: [{ id: "daily", name: "每日壁纸", refresh: 3600 }],               // name ≤ 40（LocalizedString）；refresh 秒，≥ 300，默认 3600
+  widgets:    [{ id: "current", name: "当前天气", size: "s", refresh: 600,     // name ≤ 40（LocalizedString）；size: "s"|"m"|"l"；refresh 秒 ≥ 30，默认 300
                  config: [ /* 实例级 ConfigField[]，每个小组件实例单独填写 */ ] }],
-  search:     { name: "计算器", prefix: "" },                                  // prefix 非空时仅当查询以 "<prefix> " 开头才调用，并把去掉前缀后的文本作为 ctx.query
-  schedules:  [{ id: "sync", every: 3600 }],                                    // every 秒 ≥ 60
+  search:     { name: "计算器", prefix: "" },                                  // name ≤ 40（LocalizedString）；prefix 非空时仅当查询以 "<prefix> " 开头才调用，并把去掉前缀后的文本作为 ctx.query
+  schedules:  [{ id: "sync", name: "同步", every: 3600 }],                      // name 可选（LocalizedString，≤ 40）；every 秒 ≥ 60
 }
 
 export async function wallpaper(ctx) { /* → WallpaperResult */ }
@@ -56,11 +62,11 @@ export async function action(ctx)    { /* → { toast?: string, refresh?: boolea
 {
   key: string            // ^[a-zA-Z][a-zA-Z0-9_]{0,39}$
   type: "string" | "text" | "number" | "boolean" | "select" | "secret" | "url"
-  label: string          // ≤ 60
-  help?: string          // ≤ 200
+  label: LocalizedString // ≤ 60（每种语言各自 ≤ 60，见 §12）
+  help?: LocalizedString // ≤ 200
   default?: any
   required?: boolean
-  options?: { value: string, label: string }[]   // select 必填
+  options?: { value: string, label: LocalizedString }[]   // select 必填，label ≤ 100
   min?: number, max?: number                       // number
   allowFetch?: boolean   // 仅 type:"url"：把此 URL 的主机（含端口）加入 fetch 白名单。用于 homelab 内网服务（如 Pi-hole 地址由用户填写）
 }
@@ -92,6 +98,8 @@ genkan.workspaces.list() / genkan.categories.list()   // 需 "read"
 genkan.version                      // 服务器版本字符串
 ```
 
+全局 `t(key)` 仅在模块求值期间（即写 `manifest` 时）可用，返回一个占位标记，安装时展开为 LocalizedString（§12）；在钩子里调用会抛错并提示改用 `ctx.t`。
+
 此外有标准 `fetch`/`URL`/`URLSearchParams`/`AbortController`/`TextDecoder` 等（来自 webapi），以及 `setTimeout` 等定时器。没有 `require`、`import`（禁止导入其它模块）、文件系统。
 
 ### 2.2 ctx 对象
@@ -106,7 +114,9 @@ genkan.version                      // 服务器版本字符串
   query?: string,              // search：去掉前缀后的查询
   action?: string, params?: any, // action
   schedule?: string,           // schedule：任务 id
-  lang: "zh" | "en",           // 请求方语言（Accept-Language/前端传参），定时任务为 "en"
+  lang: string,                // 请求方语言的基础语言（"zh"、"en"…；Accept-Language/前端传参），定时任务为 "en"
+  locale: string,              // 给 Intl / toLocaleString 用的 BCP-47 标签：zh → "zh-CN"，en → "en-US"
+  t: (key: string, params?: object) => string,   // 翻译（§12）
   now: number                  // ms 时间戳
 }
 ```
@@ -185,7 +195,7 @@ type Block =
 | `GET /api/bootstrap` | public | 新增 `plugins: PluginInfo[]`（访客也可见，但不含 config）、`widgets: WidgetInstance[]` |
 | `GET /api/plugins` | admin | `PluginInfo[]`，含 `config`（secret 置空）、`secrets_set`、`source_url`、最近错误 |
 | `POST /api/plugins` | admin | 安装或更新。body：`{ source: string, lang?: "js"\|"ts", enable?: bool }` 或 `{ url: string, enable?: bool }`（服务端下载，≤ 512 KiB）或 `{ catalog: "<id>" }`（从内置示例安装）。同 ID 已存在 → 更新源码（保留配置/实例）。返回 `PluginInfo` |
-| `GET /api/plugins/catalog` | admin | 内置示例插件列表：`{ id, name, description, icon, version, installed: bool }[]` |
+| `GET /api/plugins/catalog` | admin | 内置示例插件列表：`{ id, name, description, icon, version, installed: bool }[]`（`name`/`description` 为 LocalizedString：字符串或 `{ lang: text }`） |
 | `GET /api/plugins/{id}/source` | admin | `{ source, lang }` |
 | `PATCH /api/plugins/{id}` | admin | `{ enabled?: bool, config?: object }` |
 | `DELETE /api/plugins/{id}` | admin | 卸载 |
@@ -201,7 +211,7 @@ type Block =
 | `GET /api/plugins/search?q=` | read | 并发调用所有已启用的搜索插件（无前缀的仅当 q ≥ 2 字符），总时长 ≤ 2 s，返回 `{ groups: { plugin, name, icon, results: SearchResult[] }[] }`；超时/出错的插件被忽略 |
 | `GET /uploads/plugin-wallpapers/{name}` | read | 复用现有 `/uploads/{kind}/{name}` |
 
-`PluginInfo`：
+`PluginInfo`（所有 LocalizedString 字段——`name`、`description`、`label`、`help`、选项 `label`、`widgets[].name`、`wallpapers[].name`、`schedules[].name`、`search.name`——原样返回字符串或 `{ lang: text }` 对象，由前端用 `loc()` 解析；`search` 接口的分组 `name` 是例外，服务端已按请求语言解析为字符串）：
 
 ```ts
 { id, name, version, description, author, homepage, icon, enabled: boolean,
@@ -353,3 +363,59 @@ JSON 形状与 11.1–11.4 一致，以下为实现时确定的细节。
 - 配置：环境变量 `GENKAN_GITHUB_TOKEN`；`plugin.Config`/`server.Config` 的 `GitHubToken`、`GitHubAPI`、`GitHubRaw`、`GitHubClient`（后三者供测试覆盖）。
 
 **MCP**：新增 `preview_plugin`、`get_plugin_source`、`update_plugin_source`（共 26 个工具）。`preview_plugin` 在 `error` 非空时以 `isError` 返回结构化结果。MCP 不提供市场工具（第三方浏览只在 UI/REST 中）。
+
+## 12. 本地化（i18n）
+
+插件的可见文字分两类，各有一个机制：**运行时文字**（钩子返回的内容）用 `messages` 表和 `ctx.t`；**清单文字**（名称、描述、配置项标签……）用 LocalizedString。两者可以共用同一张 `messages` 表：清单里写 `t("key")`。
+
+### 12.1 `messages` 表与 `ctx.t`
+
+```js
+export const messages = {
+  en: { feels: "Feels like", next7: "Next {n} days high" },
+  zh: { feels: "体感",       next7: "未来 {n} 天最高温" },
+}
+export async function widget(ctx) {
+  const { t } = ctx
+  return { body: [{ type: "text", text: t("next7", { n: 7 }) }] }
+}
+```
+
+- `messages` 可选。存在时必须是 `{ 语言标签: { key: 文本 } }`。校验（失败则安装被拒绝，错误信息带路径）：
+  - 语言标签形如 BCP-47（`en`、`zh-CN`、`zh-Hant-TW`、`es-419`，正则 `^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$`，≤ 35 字符），大小写不敏感且不可重复（`zh-CN` 与 `zh-cn` 冲突）。
+  - 每个值必须是字符串。
+  - 上限：**最多 32 种语言**；**每种语言最多 500 个 key**；key 长 1–64 字符，不含控制字符；文本 ≤ 2000 字符，不含除 `\n`、`\t` 以外的控制字符；整张表序列化后 ≤ 128 KiB。
+- `ctx.t(key, params?)`：
+  - **插值**：`{name}` 用 `params.name` 替换（数字、布尔、字符串按 JavaScript `String()` 的方式转文本，对象/数组为 JSON）。参数缺失时占位符原样保留。参数值只替换一次，不会被再次展开。
+  - **转义**：`{{` 得到字面量 `{`，`}}` 得到 `}`。
+  - **回退链**（按 key 逐级查找）：完全匹配的语言 → 基础语言（`zh-TW` → `zh`；`zh-Hant-TW` → `zh-Hant` → `zh`）→ `en` → 按字母序第一张表 → key 本身。语言标签大小写不敏感。找不到 key 绝不抛错，返回 key 原文（不插值）。
+  - `key` 不是字符串时按空字符串处理；`params` 不是对象时忽略。
+  - `ctx.t` 在 `wallpaper`、`widget`、`search`、`action`、`schedule` 以及 `/test` 中都可用，语言即 `ctx.lang`（定时任务为 `en`）。
+- `ctx.lang`：请求方语言的基础语言。服务端不把语言限制在 zh/en：`Accept-Language`/`?lang=` 的第一项取其基础语言子标签（`fr-CA` → `fr`，无法识别则 `en`）。当前界面只有 zh/en，但插件应按“任意语言”来写（让 `t` 的回退链处理）。
+- `ctx.locale`：给 `Intl`、`toLocaleString` 的 BCP-47 标签。带地区的语言原样使用；`zh` → `zh-CN`，`en` → `en-US`，另有 `ja-JP`、`ko-KR`、`de-DE`、`fr-FR`、`es-ES`、`it-IT`、`pt-BR`、`ru-RU`；其它语言用语言码本身。
+
+### 12.2 清单里的 LocalizedString
+
+下列字段都可以是**普通字符串**、**`{ 语言: 文本 }` 对象**，或 **`t("key")`**：`name`、`description`、配置项（插件级与小组件实例级）的 `label`/`help`、`select` 选项的 `label`、`widgets[].name`、`wallpapers[].name`、`schedules[].name`、`search.name`。
+
+```js
+name: "Weather"                          // 普通字符串（兼容旧插件）
+name: { en: "Weather", zh: "天气" }       // 内联对象
+name: t("name")                          // 引用 messages 表
+```
+
+校验：对象至少有一种语言，最多 32 种；语言标签同上；每个值是非空字符串（去首尾空白后），长度不超过该字段原有的限制（name 40、description 300、label 60、help 200、选项 label 100），无控制字符。`en` 推荐但不是必须。普通字符串的规则不变。
+
+**清单里的 `t(key)`**：
+
+- 全局 `t` 只在模块求值期间可用（也就是写 `manifest` 的时候）。它返回一个惰性标记 `{ "$t": key }`；安装/预览时，服务端用 `messages` 把每个标记展开为 `{ 语言: messages[语言][key] }`，只包含有该 key 的语言。之后走与内联对象完全相同的 LocalizedString 校验。**前端和 API 永远看不到标记**。
+- 清单里的 `t` 不带参数；多传的参数被忽略（`t("w", { n: 1 })` 得到的仍是模板 `Widget {n}`）。
+- key 在所有语言里都不存在，或没有导出 `messages` → 校验失败，错误信息给出字段路径和 key，例如 ``manifest.widgets[0].name: t("zzz") is not defined in any language of `messages` ``。
+- 在钩子里调用全局 `t` 会**抛出错误**（`t() only works while the module is evaluated … use ctx.t(key, params)`），而不是悄悄返回标记。钩子里要用 `ctx.t`；在函数里写 `const { t } = ctx` 会遮蔽全局 `t`，这是推荐写法。
+
+### 12.3 线路格式与解析
+
+- API 把 LocalizedString 原样返回：字符串或对象（PluginInfo、目录、预览、市场扫描、bootstrap、MCP 工具结果都一样）。键的顺序按字母序。
+- 前端用同一个小函数 `loc(v)`（`web/src/i18n.ts`）按当前界面语言解析，回退链与 `ctx.t` 相同：完全匹配 → 基础语言 → `en` → 字母序第一种语言。因此在设置里切换语言，插件名称、描述、配置表单、小组件选择器、壁纸库立即更新；小组件的文字由服务端按请求语言生成，切换语言后会重新拉取。
+- 需要单个字符串的服务端位置按请求语言解析：搜索接口分组的 `name`、配置校验错误里的字段名（`城市 is required`）。日志和插件错误信息不翻译。
+- 小组件数据缓存按语言分别保存；搜索结果同样按语言区分。壁纸结果按来源缓存、与语言无关（避免不同语言的访问者得到不同的图片），所以壁纸的 `title`/`credit` 使用第一次请求时的语言。

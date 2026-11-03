@@ -4,7 +4,7 @@ import { signal } from '@preact/signals'
 import { useEffect, useState } from 'preact/hooks'
 import { ApiError, get, post } from './api'
 import { Icon } from './icons'
-import { t } from './i18n'
+import { loc, t } from './i18n'
 import { toast, toastError } from './store'
 import type { MarketList, MarketPlugin, MarketRepo, MarketScan } from './types'
 import { hueOf, safeHref } from './util'
@@ -109,7 +109,7 @@ const valid = (x: MarketPlugin) => !!x.plugin && !x.error
 async function runInstall(repo: string, items: MarketPlugin[]) {
   if (busy.value || !items.length) return
   progRepo.value = repo
-  const ok = await installMany(items.map((x) => ({ url: x.url, name: x.plugin?.name || x.path })))
+  const ok = await installMany(items.map((x) => ({ url: x.url, name: loc(x.plugin?.name) || x.path })))
   if (!ok.length) return
   const done = new Set(ok)
   const sc = scans.value[repo]
@@ -147,7 +147,7 @@ function PluginRow({ x }: { x: MarketPlugin }) {
           type="checkbox"
           class="mk-chk"
           id={'mk-' + x.url}
-          aria-label={p?.name || x.path}
+          aria-label={loc(p?.name) || x.path}
           data-testid="market-plugin-check"
           disabled={!ok}
           checked={!!sel.value[x.url]}
@@ -156,12 +156,12 @@ function PluginRow({ x }: { x: MarketPlugin }) {
         {p ? <PlIcon p={p} size={32} /> : <span class="ico ico-lucide pl-ico" style={{ '--s': '32px', '--h': 355 } as any}><Icon n="triangle-alert" size={17} /></span>}
         <label class="pl-main" for={'mk-' + x.url}>
           <span class="pl-name">
-            <b data-testid="market-plugin-name">{p?.name || x.path}</b>
+            <b data-testid="market-plugin-name">{loc(p?.name) || x.path}</b>
             {p && <small>v{p.version}</small>}
             {p && <Badges p={p} />}
           </span>
           <span class="mk-path" title={x.url}>{x.path}</span>
-          {p?.description && <span class="pl-desc">{p.description}</span>}
+          {p?.description && <span class="pl-desc">{loc(p.description)}</span>}
           {p && <PermChips p={p} />}
           {x.error && (
             <span class="pl-error" data-testid="market-plugin-error" title={x.error}>

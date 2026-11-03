@@ -9,20 +9,43 @@
 // flag of each link, so this widget honestly reports *monitoring coverage*:
 // totals plus a per-workspace breakdown.
 
+export const messages = {
+  en: {
+    name: "Uptime Summary",
+    desc: "Links with health checks enabled, per workspace.",
+    widget: "Health check coverage",
+    title: "Monitoring",
+    links: "Links",
+    monitored: "Monitored",
+    coverage: "Coverage",
+    failed: "Could not read links: {msg}",
+  },
+  zh: {
+    name: "健康检查概览",
+    desc: "按工作空间统计已启用健康检查的链接。",
+    widget: "健康检查覆盖率",
+    title: "监控概览",
+    links: "链接",
+    monitored: "已监控",
+    coverage: "监控覆盖率",
+    failed: "读取链接失败：{msg}",
+  },
+};
+
 export const manifest = {
   id: "uptime-summary",
-  name: "Uptime Summary",
+  name: t("name"),
   version: "1.0.0",
-  description: "Links with health checks enabled, per workspace. 健康检查链接汇总。",
+  description: t("desc"),
   author: "genkan",
   icon: "activity",
   permissions: { links: "read" },
-  widgets: [{ id: "summary", name: "Health check coverage", size: "s", refresh: 300, config: [] }],
+  widgets: [{ id: "summary", name: t("widget"), size: "s", refresh: 300, config: [] }],
 };
 
 export async function widget(ctx) {
-  const zh = ctx.lang === "zh";
-  const title = zh ? "监控概览" : "Monitoring";
+  const { t } = ctx;
+  const title = t("title");
   try {
     const links = genkan.links.list();
     const monitored = links.filter((l) => l.health_check);
@@ -42,13 +65,13 @@ export async function widget(ctx) {
       {
         type: "stats",
         items: [
-          { label: zh ? "链接" : "Links", value: links.length },
-          { label: zh ? "已监控" : "Monitored", value: monitored.length, icon: "activity" },
+          { label: t("links"), value: links.length },
+          { label: t("monitored"), value: monitored.length, icon: "activity" },
         ],
       },
       {
         type: "progress",
-        label: zh ? "监控覆盖率" : "Coverage",
+        label: t("coverage"),
         value: links.length ? monitored.length / links.length : 0,
         text: links.length ? Math.round((monitored.length / links.length) * 100) + "%" : "-",
       },
@@ -58,6 +81,6 @@ export async function widget(ctx) {
     }
     return { title, icon: "activity", body };
   } catch (e) {
-    return { title, icon: "activity", body: [], error: (zh ? "读取链接失败：" : "Could not read links: ") + (e && e.message ? e.message : e) };
+    return { title, icon: "activity", body: [], error: t("failed", { msg: e && e.message ? e.message : e }) };
   }
 }

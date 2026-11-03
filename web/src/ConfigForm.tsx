@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks'
 import { Switch } from './parts'
-import { t } from './i18n'
+import { loc, t } from './i18n'
 import type { ConfigField } from './types'
 
 type Vals = Record<string, string | boolean>
@@ -86,7 +86,7 @@ function Field({ f, form, isSet, pre }: { f: ConfigField; form: ConfigFormState;
   let control
   switch (f.type) {
     case 'boolean':
-      control = <Switch id={id} label={f.label} checked={!!v} onChange={(x) => form.set(f.key, x)} testid={tid} />
+      control = <Switch id={id} label={loc(f.label)} checked={!!v} onChange={(x) => form.set(f.key, x)} testid={tid} />
       break
     case 'text':
       control = <textarea id={id} data-testid={tid} rows={4} value={String(v ?? '')} onInput={inp} />
@@ -100,7 +100,7 @@ function Field({ f, form, isSet, pre }: { f: ConfigField; form: ConfigFormState;
           {!f.required && !(f.options || []).some((o) => o.value === '') && <option value="" />}
           {(f.options || []).map((o) => (
             <option key={o.value} value={o.value}>
-              {o.label}
+              {loc(o.label)}
             </option>
           ))}
         </select>
@@ -138,13 +138,13 @@ function Field({ f, form, isSet, pre }: { f: ConfigField; form: ConfigFormState;
     <div class={'field cfg-field' + (bool ? ' cfg-bool' : '')} data-type={f.type}>
       <div class="cfg-head">
         <label for={id}>
-          {f.label}
+          {loc(f.label)}
           {f.required && <span class="req" aria-hidden="true"> *</span>}
         </label>
         {bool && control}
       </div>
       {!bool && control}
-      {f.help && <small class="cfg-help">{f.help}</small>}
+      {f.help && <small class="cfg-help">{loc(f.help)}</small>}
       {err && (
         <small class="cfg-err" role="alert" data-testid={pre + '-error-' + f.key}>
           {err}

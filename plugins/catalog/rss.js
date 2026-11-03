@@ -10,24 +10,53 @@
 // regex-based parser. It is not a validating XML parser, but handles CDATA,
 // entities, namespaces and both feed dialects.
 
+export const messages = {
+  en: {
+    name: "RSS Reader",
+    desc: "Latest items of an RSS or Atom feed.",
+    widget: "Feed",
+    url: "Feed URL",
+    title: "Title",
+    titleHelp: "Optional; defaults to the feed's own title.",
+    count: "Items",
+    setUrl: "Set the feed URL in the widget settings",
+    noEntries: "no entries found (not RSS/Atom?)",
+    untitled: "(untitled)",
+    failed: "Could not load feed: {msg}",
+  },
+  zh: {
+    name: "RSS 阅读器",
+    desc: "RSS / Atom 订阅的最新条目。",
+    widget: "订阅",
+    url: "订阅地址",
+    title: "标题",
+    titleHelp: "可选；默认使用订阅源自己的标题。",
+    count: "条目数",
+    setUrl: "请先设置订阅地址",
+    noEntries: "没有找到条目（不是 RSS/Atom？）",
+    untitled: "（无标题）",
+    failed: "订阅加载失败：{msg}",
+  },
+};
+
 export const manifest = {
   id: "rss",
-  name: "RSS Reader",
+  name: t("name"),
   version: "1.0.0",
-  description: "Latest items of an RSS or Atom feed. RSS / Atom 订阅。",
+  description: t("desc"),
   author: "genkan",
   icon: "rss",
   permissions: { fetch: [] },
   widgets: [
     {
       id: "feed",
-      name: "Feed",
+      name: t("widget"),
       size: "m",
       refresh: 900,
       config: [
-        { key: "url", type: "url", label: "Feed URL", required: true, allowFetch: true },
-        { key: "title", type: "string", label: "Title", help: "Optional; defaults to the feed's own title." },
-        { key: "count", type: "number", label: "Items", default: 8, min: 1, max: 20 },
+        { key: "url", type: "url", label: t("url"), required: true, allowFetch: true },
+        { key: "title", type: "string", label: t("title"), help: t("titleHelp") },
+        { key: "count", type: "number", label: t("count"), default: 8, min: 1, max: 20 },
       ],
     },
   ],
@@ -113,30 +142,28 @@ function parseFeed(xml) {
   };
 }
 
-function shortDate(s, zh) {
-  const t = Date.parse(s);
-  if (isNaN(t)) return "";
-  const d = new Date(t);
-  const mo = d.getUTCMonth() + 1;
-  return zh ? `${mo}月${d.getUTCDate()}日` : d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+function shortDate(s, locale) {
+  const ms = Date.parse(s);
+  if (isNaN(ms)) return "";
+  return new Date(ms).toLocaleDateString(locale, { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 // ---- widget ----------------------------------------------------------------
 
 export async function widget(ctx) {
-  const zh = ctx.lang === "zh";
+  const { t, locale } = ctx;
   const cfg = (ctx.instance && ctx.instance.config) || {};
   const title = cfg.title || "RSS";
   const fail = (error) => ({ title, icon: "rss", body: [], error });
 
-  if (!cfg.url) return fail(zh ? "请先设置订阅地址" : "Set the feed URL in the widget settings");
+  if (!cfg.url) return fail(t("setUrl"));
   const n = Math.min(20, Math.max(1, Math.floor(Number(cfg.count)) || 8));
 
   try {
     const res = await fetch(cfg.url, { headers: { Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*" } });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const feed = parseFeed((await res.text()).slice(0, 2_000_000));
-    if (feed.items.length === 0) throw new Error(zh ? "没有找到条目（不是 RSS/Atom？）" : "no entries found (not RSS/Atom?)");
+    if (feed.items.length === 0) throw new Error(t("noEntries"));
 
     return {
       title: cfg.title || feed.title || "RSS",
@@ -152,16 +179,16 @@ export async function widget(ctx) {
               if (u.protocol === "http:" || u.protocol === "https:") url = u.href;
             } catch (e) {}
             return {
-              title: it.title || it.link || "(untitled)",
+              title: it.title || it.link || t("untitled"),
               subtitle: it.summary.slice(0, 120) || undefined,
               url,
-              right: shortDate(it.date, zh) || undefined,
+              right: shortDate(it.date, locale) || undefined,
             };
           }),
         },
       ],
     };
   } catch (e) {
-    return fail((zh ? "订阅加载失败：" : "Could not load feed: ") + (e && e.message ? e.message : e));
+    return fail(t("failed", { msg: e && e.message ? e.message : e }));
   }
 }

@@ -8,9 +8,9 @@ import { paint } from './highlight'
 import './plStrings'
 import { Icon } from './icons'
 import { LUCIDE } from './lucide'
-import { lang, t } from './i18n'
+import { lang, loc, t } from './i18n'
 import { load, showOver, toast, toastError } from './store'
-import type { ConfigField, PluginInfo, PluginPreview } from './types'
+import type { ConfigField, LString, PluginInfo, PluginPreview } from './types'
 import { hueOf } from './util'
 
 // ---------- state ----------
@@ -89,7 +89,7 @@ export async function install(body: Record<string, unknown>, key: string): Promi
     view.value = 'list'
     if (!isRisky(info) || (prev?.enabled && permKey(prev) === permKey(info))) {
       if (await setEnabled(info, true)) {
-        toast(t(prev ? 'plugin.updated' : 'plugin.installed', { name: info.name }), 'success')
+        toast(t(prev ? 'plugin.updated' : 'plugin.installed', { name: loc(info.name) }), 'success')
         if (needsConfig(info)) open.value = { id: info.id, panel: 'config' }
       }
     } else showOver({ kind: 'plugin-perm', plugin: info, fresh: !prev })
@@ -140,7 +140,7 @@ export async function installMany(items: { url: string; name: string }[]): Promi
 }
 
 // ---------- small components ----------
-export function PlIcon({ p, size = 36 }: { p: { id: string; icon?: string; name: string }; size?: number }) {
+export function PlIcon({ p, size = 36 }: { p: { id: string; icon?: string; name: LString }; size?: number }) {
   return (
     <span class="ico ico-lucide pl-ico" style={{ '--s': size + 'px', '--h': hueOf(p.id) } as any}>
       <Icon n={plIcon(p.icon)} size={Math.round(size * 0.55)} />
@@ -443,7 +443,7 @@ export function PreviewPanel({ body, testid = 'plugin-preview' }: { body: Record
             <PlIcon p={p} size={32} />
             <div class="pl-main">
               <div class="pl-name">
-                <b data-testid={testid + '-name'}>{p.name}</b>
+                <b data-testid={testid + '-name'}>{loc(p.name)}</b>
                 <small>v{p.version}</small>
                 <Badges p={p} />
               </div>
@@ -473,7 +473,7 @@ function CfgList({ title, fields, testid }: { title?: string; fields: ConfigFiel
         {fields.map((f) => (
           <li key={f.key} data-testid={testid + '-field'} data-key={f.key}>
             <code>{f.key}</code>
-            <span class="pv-cfg-l">{f.label}</span>
+            <span class="pv-cfg-l">{loc(f.label)}</span>
             <span class="pv-cfg-m">
               {f.type}
               {f.required ? ' · ' + t('cat.required') : ''}
@@ -487,14 +487,14 @@ function CfgList({ title, fields, testid }: { title?: string; fields: ConfigFiel
 
 /** Name, version, author, description, capabilities, permissions and settings of a plugin (from its manifest). */
 export function PluginDetails({ p, testid }: { p: PluginInfo; testid: string }) {
-  const groups = [{ title: '', fields: schemaOf(p) }, ...(p.widgets || []).map((w) => ({ title: w.name, fields: w.config || [] }))].filter((g) => g.fields.length)
+  const groups = [{ title: '', fields: schemaOf(p) }, ...(p.widgets || []).map((w) => ({ title: loc(w.name), fields: w.config || [] }))].filter((g) => g.fields.length)
   return (
     <div class="pv-det" data-testid={testid}>
       <div class="pv-sum">
         <PlIcon p={p} size={40} />
         <div class="pl-main">
           <div class="pl-name">
-            <b data-testid={testid + '-name'}>{p.name}</b>
+            <b data-testid={testid + '-name'}>{loc(p.name)}</b>
             <small data-testid={testid + '-version'}>v{p.version}</small>
           </div>
           {p.author && (
@@ -506,7 +506,7 @@ export function PluginDetails({ p, testid }: { p: PluginInfo; testid: string }) 
       </div>
       {p.description && (
         <p class="hint" data-testid={testid + '-desc'}>
-          {p.description}
+          {loc(p.description)}
         </p>
       )}
       <h4 class="pl-h">{t('cat.caps')}</h4>

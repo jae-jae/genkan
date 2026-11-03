@@ -16,9 +16,9 @@ import (
 // form is the metadata part of PluginInfo (docs/PLUGINS.md §5).
 type Manifest struct {
 	ID           string          `json:"id"`
-	Name         string          `json:"name"`
+	Name         LocalizedString `json:"name"`
 	Version      string          `json:"version"`
-	Description  string          `json:"description"`
+	Description  LocalizedString `json:"description"`
 	Author       string          `json:"author"`
 	Homepage     string          `json:"homepage"`
 	Icon         string          `json:"icon"`
@@ -28,6 +28,8 @@ type Manifest struct {
 	Widgets      []WidgetDecl    `json:"widgets"`
 	Search       *SearchDecl     `json:"search"`
 	Schedules    []ScheduleDecl  `json:"schedules"`
+
+	messages *Messages // the module's `messages` table (not part of the wire format)
 }
 
 type Permissions struct {
@@ -36,45 +38,46 @@ type Permissions struct {
 }
 
 type ConfigOption struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
+	Value string          `json:"value"`
+	Label LocalizedString `json:"label"`
 }
 
 type ConfigField struct {
-	Key        string         `json:"key"`
-	Type       string         `json:"type"`
-	Label      string         `json:"label"`
-	Help       string         `json:"help,omitempty"`
-	Default    any            `json:"default,omitempty"`
-	Required   bool           `json:"required,omitempty"`
-	Options    []ConfigOption `json:"options,omitempty"`
-	Min        *float64       `json:"min,omitempty"`
-	Max        *float64       `json:"max,omitempty"`
-	AllowFetch bool           `json:"allowFetch,omitempty"`
+	Key        string          `json:"key"`
+	Type       string          `json:"type"`
+	Label      LocalizedString `json:"label"`
+	Help       LocalizedString `json:"help,omitzero"`
+	Default    any             `json:"default,omitempty"`
+	Required   bool            `json:"required,omitempty"`
+	Options    []ConfigOption  `json:"options,omitempty"`
+	Min        *float64        `json:"min,omitempty"`
+	Max        *float64        `json:"max,omitempty"`
+	AllowFetch bool            `json:"allowFetch,omitempty"`
 }
 
 type WallpaperDecl struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Refresh int    `json:"refresh"`
+	ID      string          `json:"id"`
+	Name    LocalizedString `json:"name"`
+	Refresh int             `json:"refresh"`
 }
 
 type WidgetDecl struct {
-	ID      string        `json:"id"`
-	Name    string        `json:"name"`
-	Size    string        `json:"size"`
-	Refresh int           `json:"refresh"`
-	Config  []ConfigField `json:"config"`
+	ID      string          `json:"id"`
+	Name    LocalizedString `json:"name"`
+	Size    string          `json:"size"`
+	Refresh int             `json:"refresh"`
+	Config  []ConfigField   `json:"config"`
 }
 
 type SearchDecl struct {
-	Name   string `json:"name"`
-	Prefix string `json:"prefix"`
+	Name   LocalizedString `json:"name"`
+	Prefix string          `json:"prefix"`
 }
 
 type ScheduleDecl struct {
-	ID    string `json:"id"`
-	Every int    `json:"every"`
+	ID    string          `json:"id"`
+	Name  LocalizedString `json:"name,omitzero"`
+	Every int             `json:"every"`
 }
 
 // Defaults and limits from the contract.
@@ -256,13 +259,13 @@ func parseManifest(raw any) (*Manifest, error) {
 	if !store.ValidPluginID(m.ID) {
 		return nil, fmt.Errorf("manifest.id %q is invalid: use 2-40 characters of a-z, 0-9 and '-', starting with a letter or digit", m.ID)
 	}
-	if m.Name, err = o.str("name", p, true, 40); err != nil {
+	if m.Name, err = o.lstr("name", p, true, 40); err != nil {
 		return nil, err
 	}
 	if m.Version, err = o.str("version", p, true, 20); err != nil {
 		return nil, err
 	}
-	if m.Description, err = o.str("description", p, false, 300); err != nil {
+	if m.Description, err = o.lstr("description", p, false, 300); err != nil {
 		return nil, err
 	}
 	if m.Author, err = o.str("author", p, false, 60); err != nil {
@@ -334,7 +337,7 @@ func parseManifest(raw any) (*Manifest, error) {
 			if d.ID, err = srcID(wo, path, seen); err != nil {
 				return nil, err
 			}
-			if d.Name, err = wo.str("name", path, true, 40); err != nil {
+			if d.Name, err = wo.lstr("name", path, true, 40); err != nil {
 				return nil, err
 			}
 			if d.Refresh, err = wo.intField("refresh", path, defaultWallpaperRefresh, minWallpaperRefresh); err != nil {
@@ -360,7 +363,7 @@ func parseManifest(raw any) (*Manifest, error) {
 			if d.ID, err = srcID(wo, path, seen); err != nil {
 				return nil, err
 			}
-			if d.Name, err = wo.str("name", path, true, 40); err != nil {
+			if d.Name, err = wo.lstr("name", path, true, 40); err != nil {
 				return nil, err
 			}
 			if d.Size, err = wo.str("size", path, false, 1); err != nil {
@@ -391,7 +394,7 @@ func parseManifest(raw any) (*Manifest, error) {
 			return nil, err
 		}
 		d := &SearchDecl{}
-		if d.Name, err = so.str("name", "manifest.search", true, 40); err != nil {
+		if d.Name, err = so.lstr("name", "manifest.search", true, 40); err != nil {
 			return nil, err
 		}
 		if d.Prefix, err = so.str("prefix", "manifest.search", false, 20); err != nil {
@@ -418,6 +421,9 @@ func parseManifest(raw any) (*Manifest, error) {
 			}
 			var d ScheduleDecl
 			if d.ID, err = srcID(so, path, seen); err != nil {
+				return nil, err
+			}
+			if d.Name, err = so.lstr("name", path, false, 40); err != nil {
 				return nil, err
 			}
 			if _, ok := so["every"]; !ok {
@@ -486,10 +492,10 @@ func parseFields(v any, path string) ([]ConfigField, error) {
 		default:
 			return nil, fmt.Errorf("%s.type %q is not one of string, text, number, boolean, select, secret, url", fp, f.Type)
 		}
-		if f.Label, err = fo.str("label", fp, true, 60); err != nil {
+		if f.Label, err = fo.lstr("label", fp, true, 60); err != nil {
 			return nil, err
 		}
-		if f.Help, err = fo.str("help", fp, false, 200); err != nil {
+		if f.Help, err = fo.lstr("help", fp, false, 200); err != nil {
 			return nil, err
 		}
 		if rv, ok := fo["required"]; ok && rv != nil {
@@ -540,7 +546,7 @@ func parseFields(v any, path string) ([]ConfigField, error) {
 				if opt.Value, err = oo.str("value", op, true, 100); err != nil {
 					return nil, err
 				}
-				if opt.Label, err = oo.str("label", op, true, 100); err != nil {
+				if opt.Label, err = oo.lstr("label", op, true, 100); err != nil {
 					return nil, err
 				}
 				f.Options = append(f.Options, opt)
@@ -626,8 +632,9 @@ func checkValue(f *ConfigField, v any) (any, error) {
 // cleanConfig validates in against schema and returns the config to store.
 // Unknown keys are dropped. Empty values and null remove a key (back to its
 // default), except secrets: "" or omitted keeps the stored value (prev) and
-// null clears it. With checkRequired, missing required values are an error.
-func cleanConfig(schema []ConfigField, in, prev map[string]any, checkRequired bool) (map[string]any, error) {
+// null clears it. With checkRequired, missing required values are an error;
+// field labels in errors are resolved with lang.
+func cleanConfig(schema []ConfigField, in, prev map[string]any, checkRequired bool, lang string) (map[string]any, error) {
 	out := map[string]any{}
 	for i := range schema {
 		f := &schema[i]
@@ -642,14 +649,14 @@ func cleanConfig(schema []ConfigField, in, prev map[string]any, checkRequired bo
 			default:
 				nv, err := checkValue(f, v)
 				if err != nil {
-					return nil, fmt.Errorf("%s %v", f.Label, err)
+					return nil, fmt.Errorf("%s %v", f.Label.Resolve(lang), err)
 				}
 				out[f.Key] = nv
 			}
 		} else if present && v != nil && v != "" {
 			nv, err := checkValue(f, v)
 			if err != nil {
-				return nil, fmt.Errorf("%s %v", f.Label, err)
+				return nil, fmt.Errorf("%s %v", f.Label.Resolve(lang), err)
 			}
 			if s, isStr := nv.(string); !isStr || s != "" {
 				out[f.Key] = nv
@@ -658,7 +665,7 @@ func cleanConfig(schema []ConfigField, in, prev map[string]any, checkRequired bo
 		if checkRequired && f.Required {
 			_, has := out[f.Key]
 			if !has && f.Type != "boolean" && f.Default == nil {
-				return nil, fmt.Errorf("%s is required", f.Label)
+				return nil, fmt.Errorf("%s is required", f.Label.Resolve(lang))
 			}
 		}
 	}

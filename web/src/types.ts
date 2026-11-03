@@ -73,14 +73,16 @@ export interface WallpaperFile {
 }
 
 // ---------- plugins (docs/PLUGINS.md) ----------
+/** A user-visible manifest string: plain, or one text per language tag. Show it with `loc()` (i18n.ts), never directly. */
+export type LString = string | Record<string, string>
 export interface ConfigField {
   key: string
   type: 'string' | 'text' | 'number' | 'boolean' | 'select' | 'secret' | 'url'
-  label: string
-  help?: string
+  label: LString
+  help?: LString
   default?: unknown
   required?: boolean
-  options?: { value: string; label: string }[]
+  options?: { value: string; label: LString }[]
   min?: number
   max?: number
   allowFetch?: boolean
@@ -88,21 +90,21 @@ export interface ConfigField {
 export type WidgetSize = 's' | 'm' | 'l'
 export interface PluginWidgetDef {
   id: string
-  name: string
+  name: LString
   size?: WidgetSize
   refresh?: number
   config?: ConfigField[] | null
 }
 export interface PluginWallpaperDef {
   id: string
-  name: string
+  name: LString
   refresh?: number
 }
 export interface PluginInfo {
   id: string
-  name: string
+  name: LString
   version: string
-  description?: string
+  description?: LString
   author?: string
   homepage?: string
   icon?: string
@@ -111,8 +113,8 @@ export interface PluginInfo {
   config_schema?: ConfigField[] | null
   wallpapers?: PluginWallpaperDef[] | null
   widgets?: PluginWidgetDef[] | null
-  search?: { name: string; prefix?: string } | null
-  schedules?: { id: string; every: number }[] | null
+  search?: { name: LString; prefix?: string } | null
+  schedules?: { id: string; name?: LString; every: number }[] | null
   // admin only
   config?: Record<string, any> | null
   secrets_set?: string[] | null
@@ -123,8 +125,8 @@ export interface PluginInfo {
 }
 export interface CatalogItem {
   id: string
-  name: string
-  description: string
+  name: LString
+  description: LString
   icon: string
   version: string
   installed: boolean

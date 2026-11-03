@@ -147,10 +147,24 @@ func (m *Manager) inspect(source, lang string) (*Manifest, *moejs.Module, error)
 	if err != nil {
 		return nil, nil, fmt.Errorf("manifest is not usable: %v", err)
 	}
+	var msgs *Messages
+	if mv, ok := in.rt.Export("messages"); ok && !mv.IsUndefined() && !mv.IsNull() {
+		mraw, err := in.rt.ToGoWith(mv, moejs.DecodeOptions{MaxBytes: maxMessagesJSON})
+		if err != nil {
+			return nil, nil, fmt.Errorf("messages is not usable: %v", err)
+		}
+		if msgs, err = parseMessages(mraw); err != nil {
+			return nil, nil, err
+		}
+	}
+	if raw, err = expandMarkers(raw, "manifest", msgs); err != nil {
+		return nil, nil, err
+	}
 	man, err := parseManifest(raw)
 	if err != nil {
 		return nil, nil, err
 	}
+	man.messages = msgs
 	exports := map[string]bool{}
 	for _, n := range mod.Exports() {
 		exports[n] = true
@@ -301,7 +315,7 @@ func (m *Manager) info(rec store.Plugin, admin bool) Info {
 	if e.man != nil {
 		inf.Manifest = *e.man
 	} else {
-		inf.Manifest = Manifest{ID: rec.ID, Name: rec.ID, Permissions: Permissions{Fetch: []string{}}, ConfigSchema: []ConfigField{}, Wallpapers: []WallpaperDecl{}, Widgets: []WidgetDecl{}, Schedules: []ScheduleDecl{}}
+		inf.Manifest = Manifest{ID: rec.ID, Name: Plain(rec.ID), Permissions: Permissions{Fetch: []string{}}, ConfigSchema: []ConfigField{}, Wallpapers: []WallpaperDecl{}, Widgets: []WidgetDecl{}, Schedules: []ScheduleDecl{}}
 	}
 	inf.Enabled = rec.Enabled
 	if admin {
@@ -486,12 +500,12 @@ func trimErr(err error) string {
 
 // CatalogItem describes a built-in example plugin.
 type CatalogItem struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Icon        string `json:"icon"`
-	Version     string `json:"version"`
-	Installed   bool   `json:"installed"`
+	ID          string          `json:"id"`
+	Name        LocalizedString `json:"name"`
+	Description LocalizedString `json:"description"`
+	Icon        string          `json:"icon"`
+	Version     string          `json:"version"`
+	Installed   bool            `json:"installed"`
 }
 
 func (m *Manager) loadCatalog() {
@@ -554,6 +568,7 @@ type PatchRequest struct {
 	Enabled *bool          `json:"enabled"`
 	Config  map[string]any `json:"config"`
 	Merge   bool           `json:"-"`
+	Lang    string         `json:"-"` // language of error messages
 }
 
 func (m *Manager) Patch(id string, p PatchRequest) (Info, error) {
@@ -583,7 +598,7 @@ func (m *Manager) Patch(id string, p PatchRequest) (Info, error) {
 				}
 			}
 		}
-		clean, err := cleanConfig(e.man.ConfigSchema, in, rec.Config, true)
+		clean, err := cleanConfig(e.man.ConfigSchema, in, rec.Config, true, NormLang(p.Lang))
 		if err != nil {
 			return Info{}, invalidf("%v", err)
 		}
@@ -647,8 +662,10 @@ func (m *Manager) forgetCache(plugin string) {
 
 func (m *Manager) forgetWidget(id string) {
 	m.cmu.Lock()
-	for _, lang := range []string{"zh", "en"} {
-		delete(m.cache, "w|"+id+"|"+lang)
+	for k := range m.cache {
+		if strings.HasPrefix(k, "w|"+id+"|") {
+			delete(m.cache, k)
+		}
 	}
 	m.cmu.Unlock()
 }
@@ -661,15 +678,6 @@ func hashJSON(vs ...any) string {
 		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))[:16]
-}
-
-// NormLang maps an Accept-Language style value to "zh" or "en".
-func NormLang(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	if strings.HasPrefix(s, "zh") {
-		return "zh"
-	}
-	return "en"
 }
 
 func nowMs() int64 { return time.Now().UnixMilli() }

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- 1. frontend (runs natively on the build platform; its output is arch-independent) ----
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi

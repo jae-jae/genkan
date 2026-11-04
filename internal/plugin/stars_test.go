@@ -109,6 +109,12 @@ func (g *ghStub) pagesOf(repo string) []int {
 // installStars installs github-stars from the catalog, pointed at the stub.
 func installStars(t *testing.T, e *tenv, g *ghStub) {
 	t.Helper()
+	installStarsAt(t, e, g, time.Time{})
+}
+
+// installStarsAt freezes the plugin's clock when at is nonzero.
+func installStarsAt(t *testing.T, e *tenv, g *ghStub, at time.Time) {
+	t.Helper()
 	b, err := fs.ReadFile(plugins.Catalog(), "github-stars.js")
 	if err != nil {
 		t.Fatal(err)
@@ -117,6 +123,13 @@ func installStars(t *testing.T, e *tenv, g *ghStub) {
 	src = strings.Replace(src, `fetch: ["api.github.com"]`, `fetch: ["127.0.0.1"]`, 1)
 	if !strings.Contains(src, g.ts.URL) || !strings.Contains(src, "127.0.0.1") {
 		t.Fatal("could not point the plugin at the stub")
+	}
+	if !at.IsZero() {
+		// The JS engine shares immutable built-ins, so replace calls in this test's source.
+		if !strings.Contains(src, "Date.now()") {
+			t.Fatal("could not freeze the plugin clock")
+		}
+		src = strings.ReplaceAll(src, "Date.now()", strconv.FormatInt(at.UnixMilli(), 10))
 	}
 	e.install(src)
 	if _, err := e.m.Patch("github-stars", PatchRequest{Config: map[string]any{"token": "tok-1"}}); err != nil {
@@ -428,15 +441,41 @@ func TestStarsSharedSeriesAndPrune(t *testing.T) {
 }
 
 func TestStarsCompactionAndWidgetNumbers(t *testing.T) {
+	// Shifting the samples back two hours spans an extra UTC date from 00:01
+	// through 02:00. Daily compaction therefore keeps 55 old buckets then, not 54.
+	for _, tc := range []struct {
+		clock   string
+		oldDays int
+	}{
+		{"00:00", 54},
+		{"00:01", 55},
+		{"01:11", 55}, // time of the original CI failure
+		{"02:00", 55},
+		{"02:01", 54},
+		{"12:00", 54},
+		{"23:59", 54},
+	} {
+		t.Run(tc.clock, func(t *testing.T) {
+			at, err := time.Parse(time.RFC3339, "2026-11-04T"+tc.clock+":00Z")
+			if err != nil {
+				t.Fatal(err)
+			}
+			testStarsCompactionAndWidgetNumbers(t, at, tc.oldDays)
+		})
+	}
+}
+
+func testStarsCompactionAndWidgetNumbers(t *testing.T, at time.Time, wantDays int) {
+	t.Helper()
 	e := newEnv(t)
 	g := newGHStub(t)
 	g.set("a/b", 100000)
-	installStars(t, e, g)
+	installStarsAt(t, e, g, at)
 	w := starsWidget(t, e, "a/b", "30d")
 	ent, _, _ := e.m.entryFor("github-stars")
 
 	// 60 days of hourly samples growing by 1 star per 2 hours; the last one is a minute old
-	now := time.Now().Unix()
+	now := at.Unix()
 	var seed [][2]int64
 	for h := 60 * 24; h >= 0; h-- {
 		ts := now - 60 - int64(h)*3600
@@ -460,7 +499,7 @@ func TestStarsCompactionAndWidgetNumbers(t *testing.T) {
 		t.Errorf("deltas %v", items)
 	}
 	pts := chartPts(t, v)
-	if first := time.UnixMilli(int64(pts[0][0])); time.Since(first) < 29*24*time.Hour || time.Since(first) > 31*24*time.Hour {
+	if first := time.UnixMilli(int64(pts[0][0])); at.Sub(first) < 29*24*time.Hour || at.Sub(first) > 31*24*time.Hour {
 		t.Errorf("30d chart starts at %v", first)
 	}
 	if len(pts) > 500 {
@@ -493,8 +532,8 @@ func TestStarsCompactionAndWidgetNumbers(t *testing.T) {
 			t.Errorf("day %d has %d points", d, n)
 		}
 	}
-	if recent < 160 || recent > 170 || len(days) < 50 || len(days) > 54 {
-		t.Errorf("recent %d, old days %d, total %d", recent, len(days), len(got))
+	if recent != 167 || len(days) != wantDays {
+		t.Errorf("recent %d (want 167), old days %d (want %d), total %d", recent, len(days), wantDays, len(got))
 	}
 	if !sort.SliceIsSorted(got, func(i, j int) bool { return got[i][0] < got[j][0] }) {
 		t.Error("series not sorted")

@@ -20,7 +20,9 @@ import (
 	"github.com/jae-jae/genkan/internal/favicon"
 	"github.com/jae-jae/genkan/internal/health"
 	"github.com/jae-jae/genkan/internal/mcp"
+	"github.com/jae-jae/genkan/internal/plugin"
 	"github.com/jae-jae/genkan/internal/store"
+	"github.com/jae-jae/genkan/plugins"
 )
 
 // Config holds the server's dependencies.
@@ -31,6 +33,11 @@ type Config struct {
 	DataDir string
 	Web     fs.FS
 	Version string
+	// GitHubToken (GENKAN_GITHUB_TOKEN) is optional; it raises the GitHub API
+	// rate limit of the third-party plugin market.
+	GitHubToken string
+	// GitHubAPI / GitHubRaw override the GitHub base URLs (tests).
+	GitHubAPI, GitHubRaw string
 }
 
 type Role int
@@ -83,6 +90,7 @@ type Server struct {
 	broker  *Broker
 	limiter *auth.Limiter
 	mcp     *mcp.Server
+	plugins *plugin.Manager
 	static  *static
 	mux     *http.ServeMux
 
@@ -104,7 +112,12 @@ func New(cfg Config) *Server {
 		iconQ:   make(chan store.Link, 1024),
 	}
 	s.bgCtx, s.bgCancel = context.WithCancel(context.Background())
+	s.plugins = plugin.New(plugin.Config{
+		Store: cfg.Store, DataDir: cfg.DataDir, Version: cfg.Version,
+		Catalog: plugins.Catalog(), OnLinksCreated: s.fetchIcons, GitHubToken: cfg.GitHubToken, GitHubAPI: cfg.GitHubAPI, GitHubRaw: cfg.GitHubRaw,
+	})
 	s.mcp = mcp.New(cfg.Store, cfg.Version)
+	s.mcp.Plugins = s.plugins
 	s.mcp.OnLinksCreated = s.fetchIcons
 	cfg.Store.OnChange(func(v int64) {
 		s.broker.PublishChange(v)
@@ -134,6 +147,7 @@ func (s *Server) Broker() *Broker { return s.broker }
 // Close stops SSE streams and background workers and waits for them.
 func (s *Server) Close() {
 	s.broker.Close()
+	s.plugins.Close()
 	s.bgCancel()
 	s.wg.Wait()
 }

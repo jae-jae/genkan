@@ -31,7 +31,9 @@ type env struct {
 	ws  string
 }
 
-func setup(t *testing.T) *env {
+func setup(t *testing.T) *env { t.Helper(); return setupCfg(t, nil) }
+
+func setupCfg(t *testing.T, mod func(*Config)) *env {
 	t.Helper()
 	dir := t.TempDir()
 	st, err := store.Open(dir)
@@ -44,7 +46,11 @@ func setup(t *testing.T) *env {
 		"favicon.svg":     {Data: []byte("<svg xmlns='http://www.w3.org/2000/svg'/>")},
 	}
 	hc := health.New(st, nil)
-	srv := New(Config{Store: st, Health: hc, Favicon: favicon.NewFetcher(dir + "/uploads/icons"), DataDir: dir, Web: web, Version: "test"})
+	cfg := Config{Store: st, Health: hc, Favicon: favicon.NewFetcher(dir + "/uploads/icons"), DataDir: dir, Web: web, Version: "test"}
+	if mod != nil {
+		mod(&cfg)
+	}
+	srv := New(cfg)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(func() {
 		ts.CloseClientConnections()

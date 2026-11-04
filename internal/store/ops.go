@@ -153,6 +153,9 @@ func (s *Store) CreateWorkspace(in WorkspaceInput) (Workspace, error) {
 	}
 	var w Workspace
 	err = s.commit(true, func() (bool, error) {
+		if err := s.checkWallpaperPlugin(wp); err != nil {
+			return false, err
+		}
 		w = Workspace{ID: NewID(), Name: name, Icon: icon, Wallpaper: wp, Sort: s.nextWorkspaceSort()}
 		s.d.Workspaces = append(s.d.Workspaces, w)
 		return true, nil
@@ -183,6 +186,9 @@ func (s *Store) UpdateWorkspace(id string, p WorkspacePatch) (Workspace, error) 
 			if w.Wallpaper, err = cleanWallpaper(*p.Wallpaper); err != nil {
 				return false, err
 			}
+			if err := s.checkWallpaperPlugin(w.Wallpaper); err != nil {
+				return false, err
+			}
 		}
 		s.d.Workspaces[i] = w
 		out = w
@@ -192,7 +198,8 @@ func (s *Store) UpdateWorkspace(id string, p WorkspacePatch) (Workspace, error) 
 }
 
 func (s *Store) DeleteWorkspace(id string) error {
-	return s.commit(true, func() (bool, error) {
+	var gone []WidgetRef
+	err := s.commit(true, func() (bool, error) {
 		i := s.wsIndex(id)
 		if i < 0 {
 			return false, notFound("workspace", id)
@@ -215,8 +222,29 @@ func (s *Store) DeleteWorkspace(id string) error {
 			}
 		}
 		s.d.Links = links
+		ws := s.d.Widgets[:0]
+		for _, w := range s.d.Widgets {
+			if w.WorkspaceID != id {
+				ws = append(ws, w)
+			} else {
+				gone = append(gone, WidgetRef{ID: w.ID, Plugin: w.Plugin})
+			}
+		}
+		s.d.Widgets = ws
 		return true, nil
 	})
+	if err == nil {
+		s.widgetsGone(gone)
+	}
+	return err
+}
+
+// checkWallpaperPlugin rejects plugin:<id>/<source> wallpapers of plugins that are not installed.
+func (s *Store) checkWallpaperPlugin(wp string) error {
+	if p, _, ok := parsePluginWallpaper(wp); ok && s.plIndex(p) < 0 {
+		return invalid("wallpaper plugin %q is not installed", p)
+	}
+	return nil
 }
 
 func (s *Store) ReorderWorkspaces(ids []string) error {

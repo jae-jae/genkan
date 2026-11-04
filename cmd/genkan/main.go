@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata" // the scratch image has no zoneinfo; plugins (world-clock) use IANA time zones
 
 	"github.com/jae-jae/genkan/internal/auth"
 	"github.com/jae-jae/genkan/internal/favicon"
@@ -109,12 +110,13 @@ func run() error {
 		}
 	})
 	srv = server.New(server.Config{
-		Store:   st,
-		Health:  hc,
-		Favicon: favicon.NewFetcher(filepath.Join(dataDir, "uploads", "icons")),
-		DataDir: dataDir,
-		Web:     web.FS(),
-		Version: version,
+		Store:       st,
+		Health:      hc,
+		Favicon:     favicon.NewFetcher(filepath.Join(dataDir, "uploads", "icons")),
+		DataDir:     dataDir,
+		Web:         web.FS(),
+		Version:     version,
+		GitHubToken: env("GENKAN_GITHUB_TOKEN", ""),
 	})
 
 	hcDone := make(chan struct{})

@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Api, adminContext, openMainMenu, openSettings, openWsMenu, origin, touchGesture } from '../helpers'
+import { Api, adminContext, mainMenuItem, openMainMenu, openSettings, openWsMenu, origin, touchGesture } from '../helpers'
 import { CATEGORIES, SERVICES, WORKSPACES, svcUrl } from '../fixtures/homelab'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -375,7 +375,7 @@ test('desktop: capsule context menu', async ({ browser }) => {
 test('desktop: settings, AI tab (token stays masked)', async ({ browser }) => {
   const { ctx, page } = await newPage(browser, { viewport: DESKTOP })
   await openHome(page)
-  await page.getByTestId('ai-btn').click()
+  await mainMenuItem(page, 'ai-btn')
   await expect(page.getByTestId('settings-panel-ai')).toBeVisible()
   await expect(page.getByTestId('token-value')).toHaveAttribute('data-masked', '1')
   await shot(page, 'desktop-settings-ai')

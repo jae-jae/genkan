@@ -45,6 +45,7 @@ The REST API (which the Skill uses) and the MCP tools are described in [`docs/SP
 - **Beautiful UI**: wallpapers and frosted-glass capsules, desktop and mobile
 - **Smart sorting**: by usage frequency (default), recent, or custom drag order
 - **Quick search**: `/` or `Ctrl/⌘+K`, across all workspaces, web fallback
+- **Plugins**: JavaScript plugins add wallpaper sources, dashboard widgets, search providers and scheduled jobs; they run server-side in a sandboxed pure-Go engine ([moejs](https://github.com/MoeForge/moejs)), and your AI can write and install them for you
 - **Health checks** and automatic favicons
 - **Fast and tiny**: single Go binary, ~11 MB image, ~6 MB RAM
 - **Private**: self-hosted, login plus read-only guest mode, no telemetry
@@ -77,6 +78,12 @@ volumes:
 ```
 
 Images are published for `linux/amd64` and `linux/arm64` (Raspberry Pi, Apple Silicon, NAS).
+
+## Plugins
+
+Plugins are single JavaScript (or TypeScript) files that extend Genkan with wallpaper sources, widgets on the board, search providers (a calculator in the search box, say) and scheduled jobs. They run on the server in a sandbox (memory and time limits, no filesystem, network access only to the hosts the plugin declares and you approve) and only return declarative JSON, so the browser never executes plugin code.
+
+Install the built-in examples (calculator, world clock, countdown, weather, RSS, Pi-hole and more) from Settings → Plugins, paste your own source or a URL, or ask your AI assistant to write one with the Skill / MCP tools. The plugin contract is documented in [`docs/PLUGINS.md`](docs/PLUGINS.md) (Chinese).
 
 ## Configuration
 

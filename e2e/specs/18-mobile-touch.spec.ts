@@ -83,7 +83,7 @@ test.describe('mobile: touch interactions (390x844)', () => {
     await expect(page.getByTestId('link-modal')).toHaveCount(0)
   })
 
-  test('descriptions are shown (truncated) in the two-column grid; topbar incl. the AI button fits', async ({ page }) => {
+  test('descriptions are shown (truncated) in the two-column grid; topbar incl. the plugins button fits', async ({ page }) => {
     await openApp(page)
     await expect(linkCap(page, 'a').locator('.cap-desc')).toHaveText('Photo backup and gallery for the whole family')
     const a = (await linkCap(page, 'a').boundingBox())!
@@ -95,12 +95,13 @@ test.describe('mobile: touch interactions (390x844)', () => {
     const d = linkCap(page, 'a').locator('.cap-desc')
     expect(await d.evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true)
     expect(a.height).toBeLessThan(90)
-    for (const id of ['ws-menu-btn', 'ai-btn', 'edit-toggle', 'menu-btn']) {
+    for (const id of ['ws-menu-btn', 'plugins-btn', 'edit-toggle', 'menu-btn']) {
       const bb = (await page.getByTestId(id).boundingBox())!
       expect(bb.x, id).toBeGreaterThanOrEqual(0)
       expect(bb.x + bb.width, id).toBeLessThanOrEqual(390)
     }
-    // AI button opens the AI tab on mobile too
+    // the AI item of the main menu opens the AI tab on mobile too
+    await page.getByTestId('menu-btn').tap()
     await page.getByTestId('ai-btn').tap()
     await expect(page.getByTestId('settings-panel-ai')).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0)
@@ -108,6 +109,7 @@ test.describe('mobile: touch interactions (390x844)', () => {
 
   test('Settings tabs, AI tab and gallery fit the phone screen', async ({ page }) => {
     await openApp(page)
+    await page.getByTestId('menu-btn').tap()
     await page.getByTestId('ai-btn').tap()
     for (const tab of ['ai', 'appearance', 'content']) {
       await page.getByTestId(`settings-tab-${tab}`).tap()

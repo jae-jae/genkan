@@ -74,6 +74,7 @@ export function pageMenu(): CtxItem[] {
       icon: 'folder-plus',
       onSelect: () => ws && (modal.value = { kind: 'category', workspace_id: ws.id }),
     },
+    { id: 'ctx-add-widget', label: t('widget.add'), icon: 'puzzle', onSelect: () => (modal.value = { kind: 'widget' }) },
     { id: 'sep1', label: '', sep: true, onSelect() {} },
     { id: 'ctx-wallpaper', label: t('ctx.wallpaper'), icon: 'image', onSelect: () => openSettings('appearance') },
     { id: 'ctx-edit-mode', label: t('top.edit'), icon: 'pencil', checked: editMode.value, onSelect: () => (editMode.value = !editMode.value) },

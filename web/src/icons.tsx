@@ -15,14 +15,14 @@ export function Icon({ n, size = 18, filled }: { n: string; size?: number; fille
       aria-hidden="true"
       focusable="false"
       data-icon={n}
-      dangerouslySetInnerHTML={{ __html: LUCIDE[n] || LUCIDE['layout-grid'] }}
+      dangerouslySetInnerHTML={{ __html: (Object.hasOwn(LUCIDE, n) && LUCIDE[n]) || LUCIDE['layout-grid'] }}
     />
   )
 }
 
 export const wsIconName = (icon: string) => {
   const n = icon.startsWith('lucide:') ? icon.slice(7) : ''
-  return n && LUCIDE[n] ? n : 'layout-grid'
+  return n && Object.hasOwn(LUCIDE, n) ? n : 'layout-grid'
 }
 /** Workspace icon: value is `lucide:<name>`; anything else (legacy emoji) falls back to layout-grid. */
 export const WsIcon = ({ icon, size = 17 }: { icon: string; size?: number }) => <Icon n={wsIconName(icon)} size={size} />

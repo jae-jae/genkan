@@ -4,13 +4,15 @@ import { Board } from './Board'
 import { CtxMenu, onPageContextMenu } from './ContextMenu'
 import { CategoryModal, ConfirmModal, LinkEditor, WorkspaceModal } from './Editors'
 import { Hero, focusSearch, searchFocused } from './Hero'
+import { loadPlugins, loadWidgets, useChunk } from './lazy'
 import { Toasts } from './parts'
 import { SettingsModal } from './Settings'
 import { Topbar } from './Topbar'
 import { Wallpaper } from './Wallpaper'
+import { WidgetSlot } from './WidgetSlot'
 import { t } from './i18n'
 import { DEFAULT_WALLPAPER } from './util'
-import { curWs, editMode, isAdmin, load, loadError, loaded, modal, role, setWs, setupRequired, settings, showLogin, sortedWs } from './store'
+import { curWs, editMode, isAdmin, load, loadError, loaded, modal, role, setWs, setupRequired, settings, showLogin, sortedWs, type ModalState } from './store'
 
 function isTyping(el: Element | null) {
   if (!el) return false
@@ -81,6 +83,15 @@ function useSwipe() {
   }, [])
 }
 
+function WidgetModalHost({ state }: { state: Extract<ModalState, { kind: 'widget' }> }) {
+  const m = useChunk(loadWidgets)
+  return m ? <m.WidgetModal state={state} /> : null
+}
+function PermModalHost({ state }: { state: Extract<ModalState, { kind: 'plugin-perm' }> }) {
+  const m = useChunk(loadPlugins)
+  return m ? <m.PermModal state={state} /> : null
+}
+
 function ModalHost() {
   const m = modal.value
   if (!m) return null
@@ -95,6 +106,10 @@ function ModalHost() {
       return <SettingsModal state={m} />
     case 'confirm':
       return <ConfirmModal state={m} />
+    case 'widget':
+      return <WidgetModalHost key={m.id || 'new'} state={m} />
+    case 'plugin-perm':
+      return <PermModalHost state={m} />
   }
 }
 
@@ -131,6 +146,7 @@ export function App() {
       <div class="page" data-role={role.value}>
         <Topbar />
         <Hero />
+        <WidgetSlot />
         <Board />
         <footer class="foot" aria-hidden="true">
           {isAdmin.value && editMode.value ? t('edit.hint') : ''}

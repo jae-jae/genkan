@@ -16,7 +16,7 @@ test.describe('page context menu (right-click on the background)', () => {
     const menu = page.getByTestId('ctx-menu-page')
     await expect(menu).toBeVisible()
     await expect(menu).toHaveAttribute('role', 'menu')
-    expect(await itemIds(page, 'ctx-menu-page')).toEqual(['ctx-new-link', 'ctx-new-category', 'ctx-wallpaper', 'ctx-edit-mode', 'ctx-ai', 'ctx-settings'])
+    expect(await itemIds(page, 'ctx-menu-page')).toEqual(['ctx-new-link', 'ctx-new-category', 'ctx-add-widget', 'ctx-wallpaper', 'ctx-edit-mode', 'ctx-ai', 'ctx-settings'])
     await expect(page.getByTestId('ctx-new-link')).toBeFocused() // first item focused
     await expect(page.getByTestId('ctx-new-link')).toHaveText('New link')
     await expect(page.getByTestId('ctx-wallpaper')).toHaveText('Change wallpaper')

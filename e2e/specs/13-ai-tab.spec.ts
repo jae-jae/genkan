@@ -1,17 +1,20 @@
-import { expect, openApp, openSettings, origin, test, toggleEdit } from '../helpers'
+import { expect, mainMenuItem, openApp, openMainMenu, openSettings, origin, test, toggleEdit } from '../helpers'
 
-test.describe('AI tab and top-right AI button', () => {
-  test('the AI button (between the edit toggle and the menu) opens Settings straight on the AI tab', async ({ page }) => {
+test.describe('AI tab and top-right AI / plugins entries', () => {
+  test('the AI item of the main menu (above Settings) opens Settings straight on the AI tab', async ({ page }) => {
     await openApp(page)
+    // no longer a top-bar button: top-right group is edit toggle, plugins button, main menu
+    await expect(page.getByTestId('ai-btn')).toHaveCount(0)
+    const x = async (id: string) => (await page.getByTestId(id).boundingBox())!.x
+    expect(await x('edit-toggle')).toBeLessThan(await x('plugins-btn'))
+    expect(await x('plugins-btn')).toBeLessThan(await x('menu-btn'))
+
+    await openMainMenu(page)
     const ai = page.getByTestId('ai-btn')
     await expect(ai).toBeVisible()
-    await expect(ai).toHaveAttribute('aria-label', 'AI')
+    await expect(ai).toHaveAttribute('role', 'menuitem')
     await expect(ai.locator('svg[data-icon="bot"]')).toHaveCount(1)
-    // order in the top-right group: edit toggle, AI, main menu
-    const x = async (id: string) => (await page.getByTestId(id).boundingBox())!.x
-    expect(await x('edit-toggle')).toBeLessThan(await x('ai-btn'))
-    expect(await x('ai-btn')).toBeLessThan(await x('menu-btn'))
-
+    expect((await ai.boundingBox())!.y).toBeLessThan((await page.getByTestId('settings-btn').boundingBox())!.y)
     await ai.click()
     await expect(page.getByTestId('settings-modal')).toBeVisible()
     await expect(page.getByTestId('settings-tab-ai')).toHaveAttribute('aria-selected', 'true')
@@ -21,15 +24,24 @@ test.describe('AI tab and top-right AI button', () => {
     await expect(page.getByTestId('settings-modal')).toHaveCount(0)
     // works while editing too
     await toggleEdit(page)
-    await ai.click()
+    await mainMenuItem(page, 'ai-btn')
     await expect(page.getByTestId('settings-panel-ai')).toBeVisible()
+  })
+
+  test('the plugins button opens Settings on the Plugins tab', async ({ page }) => {
+    await openApp(page)
+    const pb = page.getByTestId('plugins-btn')
+    await expect(pb.locator('svg[data-icon="puzzle"]')).toHaveCount(1)
+    await pb.click()
+    await expect(page.getByTestId('settings-tab-plugins')).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByTestId('plugins-tab')).toBeVisible()
   })
 
   test('the tab is called "AI" (no "AI / MCP" anywhere), in the documented order, in both languages', async ({ page }) => {
     await openApp(page)
     await openSettings(page)
     const ids = await page.locator('[data-testid^="settings-tab-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')!.replace('settings-tab-', '')))
-    expect(ids).toEqual(['general', 'appearance', 'content', 'ai', 'security', 'data', 'about'])
+    expect(ids).toEqual(['general', 'appearance', 'content', 'plugins', 'ai', 'security', 'data', 'about'])
     await expect(page.getByTestId('settings-tab-mcp')).toHaveCount(0)
     await expect(page.getByTestId('settings-tab-ai')).toHaveText('AI')
     await page.getByTestId('settings-tab-ai').click()
@@ -39,7 +51,7 @@ test.describe('AI tab and top-right AI button', () => {
 
     await page.evaluate(() => localStorage.setItem('genkan.lang', 'zh'))
     await page.reload()
-    await expect(page.getByTestId('ai-btn')).toBeVisible()
+    await expect(page.getByTestId('plugins-btn')).toBeVisible()
     await openSettings(page)
     await expect(page.getByTestId('settings-tab-ai')).toHaveText('AI')
     await expect(page.getByTestId('settings-tab-content')).toHaveText('内容')

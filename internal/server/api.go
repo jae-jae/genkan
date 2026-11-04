@@ -18,6 +18,7 @@ import (
 	"github.com/jae-jae/genkan/internal/auth"
 	"github.com/jae-jae/genkan/internal/health"
 	"github.com/jae-jae/genkan/internal/media"
+	"github.com/jae-jae/genkan/internal/plugin"
 	"github.com/jae-jae/genkan/internal/store"
 	"github.com/jae-jae/genkan/skills"
 )
@@ -66,6 +67,8 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/token/regenerate", s.guard(permAdmin, s.handleTokenRegenerate))
 	m.HandleFunc("GET /api/skill", s.guard(permAdmin, s.handleSkill))
 
+	s.pluginRoutes()
+
 	m.HandleFunc("GET /api/events", s.guard(permRead, s.handleEvents))
 	m.HandleFunc("GET /uploads/{kind}/{name}", s.guard(permRead, s.handleUpload))
 	m.HandleFunc("/mcp", s.handleMCP)
@@ -85,6 +88,8 @@ type bootstrapResp struct {
 	Categories []store.Category         `json:"categories"`
 	Links      []store.Link             `json:"links"`
 	Health     map[string]health.Result `json:"health"`
+	Plugins    []plugin.Info            `json:"plugins"`
+	Widgets    []plugin.WidgetOut       `json:"widgets"`
 	Version    int64                    `json:"version"`
 	// ServerVersion is the binary's build version (-ldflags "-X main.version=..."); only sent to logged-in roles.
 	ServerVersion string `json:"server_version,omitempty"`
@@ -106,7 +111,10 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request, role Ro
 		b.Settings = map[string]string{"title": snap.Settings.Title}
 		b.Workspaces, b.Categories, b.Links = []store.Workspace{}, []store.Category{}, []store.Link{}
 		b.Health = map[string]health.Result{}
+		b.Plugins, b.Widgets = []plugin.Info{}, []plugin.WidgetOut{}
 	} else {
+		b.Plugins = s.plugins.Infos(false)
+		b.Widgets = s.plugins.Present(snap.Widgets, role == RoleAdmin)
 		b.Settings = snap.Settings
 		b.Workspaces, b.Categories, b.Links = snap.Workspaces, snap.Categories, snap.Links
 		b.Health = s.healthSnapshot()
@@ -452,7 +460,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request, _ Role) {
 // Export / import -------------------------------------------------------------------
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request, _ Role) {
-	b, err := json.MarshalIndent(s.st.Export(), "", "  ")
+	exp := s.st.Export()
+	if v := r.URL.Query().Get("plugin_data"); v == "1" || strings.EqualFold(v, "true") {
+		exp.PluginData = s.plugins.ExportData()
+	}
+	b, err := json.MarshalIndent(exp, "", "  ")
 	if err != nil {
 		fail(w, err)
 		return
@@ -473,12 +485,35 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request, _ Role) {
 	if !readJSON(w, r, &req, maxImportBody) {
 		return
 	}
-	nw, nl, err := s.st.Import(req.Mode, req.Data)
+	for _, p := range req.Data.Plugins { // vet imported plugin code before it is stored
+		id, err := s.plugins.Validate(p.Source, p.Lang)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "plugin "+p.ID+": "+err.Error())
+			return
+		}
+		if id != p.ID {
+			writeErr(w, http.StatusBadRequest, "plugin "+p.ID+": manifest.id is "+id)
+			return
+		}
+	}
+	if req.Data.PluginData != nil {
+		if err := plugin.ValidatePluginData(req.Data.PluginData); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	res, err := s.st.ImportData(req.Mode, req.Data)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"ok": true, "workspaces": nw, "links": nl})
+	if req.Data.PluginData != nil {
+		if err := s.plugins.RestoreData(req.Data.PluginData, res); err != nil {
+			fail(w, err)
+			return
+		}
+	}
+	writeJSON(w, r, http.StatusOK, map[string]any{"ok": true, "workspaces": res.Workspaces, "links": res.Links, "plugins": res.Plugins, "widgets": res.Widgets})
 }
 
 // API token ------------------------------------------------------------
@@ -740,7 +775,7 @@ func (s *Server) handleWallpaperDelete(w http.ResponseWriter, r *http.Request, _
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, _ Role) {
 	kind, name := r.PathValue("kind"), r.PathValue("name")
-	if (kind != "wallpapers" && kind != "icons") || !media.SafeName(name) {
+	if (kind != "wallpapers" && kind != "icons" && kind != store.PluginWallpaperDir) || !media.SafeName(name) {
 		http.NotFound(w, r)
 		return
 	}

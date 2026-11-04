@@ -1,7 +1,7 @@
 import { signal, computed, batch } from '@preact/signals'
 import { ApiError, get, post, patch, del, setUnauthorizedHandler } from './api'
 import { t } from './i18n'
-import type { Bootstrap, Category, HealthMap, Link, Role, Settings, WallpaperFile, Workspace } from './types'
+import type { Bootstrap, Category, HealthMap, Link, PluginInfo, Role, Settings, WallpaperFile, WidgetInstance, Workspace } from './types'
 import { lsGet, lsSet, sortLinks } from './util'
 
 export const DEFAULTS: Settings = {
@@ -23,6 +23,8 @@ export const workspaces = signal<Workspace[]>([])
 export const categories = signal<Category[]>([])
 export const links = signal<Link[]>([])
 export const health = signal<HealthMap>({})
+export const plugins = signal<PluginInfo[]>([])
+export const widgets = signal<WidgetInstance[]>([])
 export const version = signal(0)
 export const serverVersion = signal('')
 export const wsId = signal(lsGet('genkan.ws') || '')
@@ -34,6 +36,13 @@ export type ModalState =
   | { kind: 'workspace'; id?: string }
   | { kind: 'category'; id?: string; workspace_id: string }
   | { kind: 'settings'; tab?: string }
+  | { kind: 'widget'; id?: string }
+  | { kind: 'plugin-perm'; plugin: PluginInfo; fresh: boolean }
+  // other plugin dialogs reuse this kind: it is the one App.tsx already renders (via the lazy Plugins chunk)
+  | { kind: 'plugin-perm'; dlg: 'source'; plugin: PluginInfo }
+  | { kind: 'plugin-perm'; dlg: 'batch' | 'ai' }
+  | { kind: 'plugin-perm'; dlg: 'catalog'; id: string }
+  | { kind: 'plugin-perm'; dlg: 'data'; plugin: PluginInfo }
   | {
       kind: 'confirm'
       title: string
@@ -94,6 +103,8 @@ export const ctx = signal<CtxState | null>(null)
 export const closeCtx = () => (ctx.value = null)
 
 export const isAdmin = computed(() => role.value === 'admin')
+/** true when at least one enabled plugin provides search (no plugin search requests otherwise) */
+export const hasSearchPlugin = computed(() => plugins.value.some((p) => p.enabled && !!p.search))
 export const sortedWs = computed(() => workspaces.value.slice().sort((a, b) => a.sort - b.sort))
 export const curWs = computed(() => sortedWs.value.find((w) => w.id === wsId.value) || sortedWs.value[0] || null)
 
@@ -123,15 +134,15 @@ export function toastError(e: unknown) {
 
 // ---------- bootstrap ----------
 let inflight = false
-let again = false
+let want = 0 // bumped by every load() call
 export async function load(): Promise<void> {
-  if (inflight) {
-    again = true
-    return
-  }
+  const mine = ++want
+  if (inflight) return // the running request is now stale (want moved on): its answer is dropped and the finally block fetches again
   inflight = true
   try {
     const b = await get<Bootstrap>('/api/bootstrap')
+    // a reload was requested while this one was in flight (an SSE change racing a PATCH): this response may predate the change
+    if (mine !== want) return
     batch(() => {
       role.value = b.auth.role
       setupRequired.value = b.auth.setup_required
@@ -140,6 +151,8 @@ export async function load(): Promise<void> {
       categories.value = b.categories || []
       links.value = b.links || []
       health.value = b.health || {}
+      plugins.value = b.plugins || []
+      widgets.value = b.widgets || []
       version.value = b.version || 0
       serverVersion.value = b.server_version || ''
       loadError.value = false
@@ -154,10 +167,7 @@ export async function load(): Promise<void> {
     if (!loaded.value) loadError.value = true
   } finally {
     inflight = false
-    if (again) {
-      again = false
-      load()
-    }
+    if (mine !== want) load()
   }
 }
 

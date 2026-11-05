@@ -18,6 +18,7 @@ run: build
 test:
 	go vet ./...
 	go test -race ./...
+	bash scripts/next-version_test.sh
 
 e2e:
 	cd e2e && (if [ -f package-lock.json ]; then npm ci; else npm install; fi) && npx playwright install chromium && npx playwright test

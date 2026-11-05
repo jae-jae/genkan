@@ -557,7 +557,8 @@ func (s *Server) buildTools() []tool {
 			},
 		},
 	}
-	return append(tools, s.pluginTools()...)
+	tools = append(tools, s.pluginTools()...)
+	return append(tools, s.updateTools()...)
 }
 
 func normURL(u string) string {

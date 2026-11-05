@@ -23,7 +23,7 @@ const id = () => Math.random().toString(36).slice(2, 14).padEnd(12, 'a')
 const now = () => new Date().toISOString()
 const ago = (m) => new Date(Date.now() - m * 60000).toISOString()
 
-const settings = { title: 'Genkan', sort_mode: 'frequency', guest_access: false, search_engine: 'https://www.google.com/search?q=%s', open_in_new_tab: true, health_interval: 60, show_clock: true }
+const settings = { title: 'Genkan', sort_mode: 'frequency', guest_access: false, search_engine: 'https://www.google.com/search?q=%s', open_in_new_tab: true, health_interval: 60, show_clock: true, update_check: true }
 let workspaces = [], categories = [], links = []
 const newToken = () => 'gk_' + Array.from({ length: 32 }, () => 'abcdefghijklmnopqrstuvwxyz234567'[Math.floor(Math.random() * 32)]).join('')
 let apiToken = newToken()
@@ -70,6 +70,34 @@ function seed() {
   for (const l of links) if (l.health_check) health[l.id] = { status: Math.random() > 0.12 ? 'up' : 'down', latency_ms: Math.round(5 + Math.random() * 60), checked_at: now(), code: 200 }
 }
 seed()
+
+
+// ---- self-update (docs/UPDATES.md §6): a fake v1.0.0 that finds v1.2.0 and "installs" it in ~8 s. MOCK_UPDATE=none|dev|unsupported|rolledback changes the scenario.
+const UPD_REPO = 'https://github.com/jae-jae/genkan'
+const upd = {
+  current: 'v1.0.0', dev: process.env.MOCK_UPDATE === 'dev', repo: UPD_REPO, env_disabled: false, checking: false, checked_at: Date.now() - 600000, error: '',
+  dismissed: '', rolled_back: process.env.MOCK_UPDATE === 'rolledback' ? 'v1.1.0' : '',
+  apply: process.env.MOCK_UPDATE === 'unsupported' ? { supported: false, reason: 'noexec' } : process.env.MOCK_UPDATE === 'dev' ? { supported: false, reason: 'dev' } : { supported: true, reason: '' },
+  job: { phase: 'idle', version: '', progress: 0, error: '' },
+  releases: process.env.MOCK_UPDATE === 'none' || process.env.MOCK_UPDATE === 'dev' ? [] : [
+    { version: 'v1.2.0', name: 'v1.2.0', published_at: Date.now() - 2 * 86400000, url: UPD_REPO + '/releases/tag/v1.2.0', notes: "## What's Changed\n### Features\n* Add a media widget for video and audio by @jae in https://github.com/jae-jae/genkan/pull/21\n* **Self-update** from Settings, with automatic rollback (#22)\n\n### Fixes\n- Keep the *search* focus after closing a dialog\n- Fix `health_interval` below 15 s\n\nSee [the docs](https://github.com/jae-jae/genkan#readme) or https://example.com/changes.\n\n**Full Changelog**: https://github.com/jae-jae/genkan/compare/v1.1.0...v1.2.0" },
+    { version: 'v1.1.0', name: 'v1.1.0', published_at: Date.now() - 20 * 86400000, url: UPD_REPO + '/releases/tag/v1.1.0', notes: "## What's Changed\n* Add the plugin market by @jae in https://github.com/jae-jae/genkan/pull/15\n" },
+  ],
+}
+let updTimers = []
+const updStatus = () => {
+  const available = upd.releases.length > 0 && !upd.dev
+  const { down, ...rest } = upd
+  return { ...rest, check_enabled: settings.update_check !== false, checking: false, latest: available ? upd.releases[0].version : '', available, rolled_back: upd.rolled_back }
+}
+function updApply(version) {
+  const set = (phase, progress = 0) => (upd.job = { phase, version, progress, error: '' })
+  set('downloading', 0)
+  for (let i = 1; i <= 10; i++) updTimers.push(setTimeout(() => set('downloading', i / 10), i * 300))
+  updTimers.push(setTimeout(() => set('verifying'), 3400), setTimeout(() => set('installing'), 4200), setTimeout(() => set('restarting'), 5000))
+  // the server "restarts": for a few seconds the API is unreachable, then the new version answers
+  updTimers.push(setTimeout(() => (upd.down = true), 5400), setTimeout(() => { upd.down = false; upd.current = version; upd.releases = upd.releases.filter((r) => r.version > version); upd.job = { phase: 'idle', version: '', progress: 0, error: '' } }, 8000))
+}
 
 const sse = new Set()
 const bump = () => { version++; for (const r of sse) r.write(`event: change\ndata: ${JSON.stringify({ version })}\n\n`) }
@@ -130,6 +158,25 @@ async function api(req, res, url) {
     if (body.old_password !== password) return send(res, 401, { error: 'wrong password' })
     if ((body.new_password || '').length < 6) return send(res, 400, { error: 'password too short' })
     password = body.new_password; return send(res, 200, { ok: true })
+  }
+  if (p === '/api/update' && m === 'GET') { if (!A()) return; if (upd.down) return req.socket.destroy(); return send(res, 200, updStatus()) }
+  if (p === '/api/update/check' && m === 'POST') {
+    if (!A()) return
+    if (upd.dev) return send(res, 400, { error: 'development build' })
+    upd.checked_at = Date.now(); return send(res, 200, updStatus())
+  }
+  if (p === '/api/update/apply' && m === 'POST') {
+    if (!A()) return
+    if (!updStatus().apply.supported) return send(res, 400, { error: 'self-update is not available: ' + upd.apply.reason })
+    if (!upd.releases.some((r) => r.version === body.version)) return send(res, 400, { error: 'unknown version' })
+    if (['downloading', 'verifying', 'installing', 'restarting'].includes(upd.job.phase)) return send(res, 409, { error: 'already running' })
+    updApply(body.version); return send(res, 202, updStatus())
+  }
+  if (p === '/api/update/dismiss' && m === 'POST') {
+    if (!A()) return
+    if (body.rolled_back) upd.rolled_back = ''
+    else if (body.version) upd.dismissed = body.version
+    return send(res, 200, updStatus())
   }
   if (p === '/api/events' && m === 'GET') {
     if (!R()) return

@@ -1,17 +1,28 @@
 name: CI
 
+# Pull requests: test only.
+# Push to main: test, then release (see docs/UPDATES.md section 2).
+# workflow_dispatch: manual release from main with an explicit bump.
+
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the version to bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
   contents: read
 
+# only pull-request runs are superseded; runs on main are never cancelled
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -40,43 +51,208 @@ jobs:
 
       - run: go vet ./...
       - run: go test -race ./...
+      - name: Release script
+        run: bash scripts/next-version_test.sh
 
-  docker:
+  release:
     needs: test
-    if: github.event_name == 'push'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    # one release at a time, queued rather than cancelled, so two merges never
+    # compute the same version
+    concurrency:
+      group: release
+      cancel-in-progress: false
     permissions:
-      contents: read
+      contents: write
       packages: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # all tags and history, to find the highest version
+          persist-credentials: false
 
+      # Decides what this run does. Outputs:
+      #   build    false when this commit is already part of a release (re-run)
+      #   publish  false for a release:skip merge (only the sha-<short> image)
+      #   version  vX.Y.Z (empty unless publish is true)
+      #   short    7-character commit id
+      - name: Plan release
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          DISPATCH_BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          short=${GITHUB_SHA::7}
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+
+          # Re-run safety. A release tag is only created by the last step of
+          # this job, so a tag on (or, for pushes, after) this commit means it
+          # has been released already. Never create a second version for it.
+          if [ "$EVENT" = workflow_dispatch ]; then
+            existing=$(git tag --list 'v*' --points-at "$GITHUB_SHA" | grep -E "$semver" | sort -V | tail -n 1 || true)
+          else
+            existing=$(git tag --list 'v*' --contains "$GITHUB_SHA" | grep -E "$semver" | sort -V | tail -n 1 || true)
+          fi
+          if [ -n "$existing" ]; then
+            echo "::notice::$GITHUB_SHA is already released as $existing, nothing to do"
+            { echo "build=false"; echo "publish=false"; echo "version="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          highest=$(git tag --list 'v*' | grep -E "$semver" | sort -V | tail -n 1 || true)
+
+          # Labels of the merged PR(s) of one commit, one "pr:<label>,<label>"
+          # line per PR. Empty output means a direct push (no PR).
+          pr_labels() {
+            gh api "repos/$GITHUB_REPOSITORY/commits/$1/pulls" \
+              --jq '.[] | select(.merged_at != null and .base.ref == "main") | "pr:" + ([.labels[].name] | join(","))'
+          }
+
+          # rank: 0 nothing to release, 1 patch, 2 minor, 3 major
+          rank=1
+          if [ "$EVENT" = workflow_dispatch ]; then
+            case "$DISPATCH_BUMP" in minor) rank=2 ;; major) rank=3 ;; esac
+          elif [ -n "$highest" ]; then
+            # Every merge since the last release counts, not only the pushed
+            # one: a queued run may have been dropped, and its labels must not
+            # be lost. The highest bump wins; a PR labelled release:skip adds
+            # nothing, so the release is skipped only when every PR is.
+            commits=$(git rev-list --first-parent "$highest..$GITHUB_SHA")
+            [ -n "$commits" ] || commits=$GITHUB_SHA
+            rank=0
+            for commit in $commits; do
+              prs=$(pr_labels "$commit")
+              if [ -z "$prs" ] && [ "$commit" = "$GITHUB_SHA" ]; then
+                # the PR association can lag right after the push
+                for attempt in 1 2; do
+                  sleep "${PULL_RETRY_DELAY:-5}"
+                  prs=$(pr_labels "$commit")
+                  [ -z "$prs" ] || break
+                done
+              fi
+              if [ -z "$prs" ]; then
+                r=1 # direct push
+                [ "$rank" -ge "$r" ] || rank=$r
+                continue
+              fi
+              while IFS= read -r pr; do
+                case ",${pr#pr:}," in
+                  *,release:skip,*) r=0 ;;
+                  *,release:major,*) r=3 ;;
+                  *,release:minor,*) r=2 ;;
+                  *) r=1 ;;
+                esac
+                [ "$rank" -ge "$r" ] || rank=$r
+              done <<< "$prs"
+            done
+          fi
+          echo "bump rank over ${highest:-<no tag>}..$short: $rank"
+
+          if [ "$rank" -eq 0 ]; then
+            echo "::notice::every merge since ${highest} is release:skip, only the sha-$short image is pushed"
+            { echo "build=true"; echo "publish=false"; echo "version="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          bump=patch
+          [ "$rank" -ne 2 ] || bump=minor
+          [ "$rank" -ne 3 ] || bump=major
+          version=$(bash scripts/next-version.sh "$highest" "$bump")
+          echo "::notice::releasing $version ($bump bump of '${highest:-none}')"
+          { echo "build=true"; echo "publish=true"; echo "version=$version"; } >> "$GITHUB_OUTPUT"
+
+      # ---- release assets: the frontend is built once, both binaries embed it ----
+      - uses: actions/setup-go@v7
+        if: steps.plan.outputs.publish == 'true'
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v7
+        if: steps.plan.outputs.publish == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build frontend
+        if: steps.plan.outputs.publish == 'true'
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build tarballs and checksums
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          num=${VERSION#v}
+          mkdir -p dist
+          mtime=$(git log -1 --format=%ct "$GITHUB_SHA")
+          for arch in amd64 arm64; do
+            tmp=$(mktemp -d)
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch \
+              go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$tmp/genkan" ./cmd/genkan
+            chmod 0755 "$tmp/genkan"
+            if [ "$arch" = amd64 ]; then
+              # the runner is linux/amd64: the binary must report its version
+              [ "$("$tmp/genkan" version)" = "genkan $VERSION" ] || { echo "unexpected 'genkan version' output"; exit 1; }
+            fi
+            tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$mtime" \
+              -C "$tmp" -czf "dist/genkan_${num}_linux_${arch}.tar.gz" genkan
+          done
+          cd dist
+          sha256sum genkan_*.tar.gz > checksums.txt
+          cat checksums.txt
+
+      - name: Sign checksums
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          GENKAN_RELEASE_KEY: ${{ secrets.GENKAN_RELEASE_KEY }}
+        run: |
+          set -euo pipefail
+          go run ./tools/relsign sign dist/checksums.txt
+          test -s dist/checksums.txt.sig
+
+      # ---- container image ----
       - uses: docker/setup-qemu-action@v4
+        if: steps.plan.outputs.build == 'true'
       - uses: docker/setup-buildx-action@v4
+        if: steps.plan.outputs.build == 'true'
 
       - uses: docker/login-action@v4
+        if: steps.plan.outputs.build == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute version
-        id: ver
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then v="$GITHUB_REF_NAME"; else v="sha-${GITHUB_SHA::7}"; fi
-          echo "value=$v" >> "$GITHUB_OUTPUT"
-
+      # A release gets vX.Y.Z, X.Y.Z, X.Y, X, latest and sha-<short>; a
+      # release:skip merge only sha-<short>. The semver value falls back to a
+      # dummy so the (disabled) semver tags always parse.
       - name: Image metadata
         id: meta
+        if: steps.plan.outputs.build == 'true'
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           flavor: latest=false
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-,format=short
+            type=raw,value=${{ steps.plan.outputs.version || 'v0.0.0' }},enable=${{ steps.plan.outputs.publish == 'true' }}
+            type=semver,pattern={{version}},value=${{ steps.plan.outputs.version || 'v0.0.0' }},enable=${{ steps.plan.outputs.publish == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.plan.outputs.version || 'v0.0.0' }},enable=${{ steps.plan.outputs.publish == 'true' }}
+            type=semver,pattern={{major}},value=${{ steps.plan.outputs.version || 'v0.0.0' }},enable=${{ steps.plan.outputs.publish == 'true' }}
+            type=raw,value=latest,enable=${{ steps.plan.outputs.publish == 'true' }}
+            type=raw,value=sha-${{ steps.plan.outputs.short }}
           labels: |
             org.opencontainers.image.title=Genkan
             org.opencontainers.image.description=Lightweight self-hosted homelab navigation page
@@ -84,12 +260,32 @@ jobs:
             org.opencontainers.image.licenses=MIT
 
       - uses: docker/build-push-action@v7
+        if: steps.plan.outputs.build == 'true'
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          build-args: VERSION=${{ steps.ver.outputs.value }}
+          build-args: VERSION=${{ steps.plan.outputs.version || format('sha-{0}', steps.plan.outputs.short) }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # ---- last step: the tag and the release appear only once everything exists ----
+      - name: Create GitHub release
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          num=${VERSION#v}
+          gh release create "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --generate-notes \
+            "dist/genkan_${num}_linux_amd64.tar.gz" \
+            "dist/genkan_${num}_linux_arm64.tar.gz" \
+            dist/checksums.txt \
+            dist/checksums.txt.sig

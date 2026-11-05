@@ -48,4 +48,28 @@ Only the optimized files under `docs/images/` are committed; raw captures are se
 - No new runtime dependencies without a good reason; the frontend should stay tiny (watch the gzip sizes printed by `npm run build`).
 - Don't commit secrets, tokens, personal hostnames or local paths.
 
+## Releases
+
+Every merge to `main` is released automatically; nobody tags by hand. The pipeline lives in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and the contract in [`docs/UPDATES.md`](docs/UPDATES.md).
+
+Labels on the merged PR decide the version (the next one after the highest `vX.Y.Z` tag; the first is `v1.0.0`):
+
+| Label | Effect |
+| --- | --- |
+| `release:major` | bump `X` (also lists the PR under "Breaking changes" in the notes) |
+| `release:minor` | bump `Y` |
+| none | bump `Z` (patch). A direct push without a PR is a patch too |
+| `release:skip` | no release and no `latest` image; only `sha-<commit>` is pushed. Use it for docs, CI and test-only changes |
+| `feature`, `bug`, `dependencies` | only group the PR in the generated notes (see [`.github/release.yml`](.github/release.yml)) |
+
+On merge the workflow runs the tests, then builds the linux amd64/arm64 tarballs, `checksums.txt` and its ed25519 signature `checksums.txt.sig`, pushes the multi-arch image (`vX.Y.Z`, `X.Y.Z`, `X.Y`, `X`, `latest`, `sha-<commit>`), and finally creates the GitHub Release with generated notes. Running installs pick the release up through Settings, which verifies the signature with the public key embedded in `internal/update`. A maintainer can also start a release from the Actions tab (Run workflow, choose `patch|minor|major`).
+
+### One-time maintainer setup
+
+1. Generate the signing key pair: `go run ./tools/relsign keygen`. It prints the private key (64 bytes) and the public key (32 bytes), both base64. Alternatively `-out PREFIX` writes `PREFIX.key` (0600) and `PREFIX.pub`.
+2. Store the private key as the repository secret `GENKAN_RELEASE_KEY` (Settings, Secrets and variables, Actions). Keep a backup somewhere safe and never commit it. Without the secret the release job fails.
+3. Put the public key into `internal/update` (the embedded key), and commit it before the first release. The public key cannot be changed for installs that already run, so do not lose the private key.
+4. Create the labels: `release:major`, `release:minor`, `release:skip`, `feature`, `bug` (and `dependencies`, which Dependabot already uses).
+5. Check locally with `go run ./tools/relsign verify checksums.txt checksums.txt.sig <public key>` on a downloaded release.
+
 By contributing you agree that your contribution is licensed under the [MIT License](LICENSE).

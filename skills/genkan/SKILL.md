@@ -46,7 +46,7 @@ The helper does not fail on HTTP errors, so look for an `error` key in the outpu
 - **Wallpaper** (per workspace): `preset:dusk|aurora|ocean|forest|sakura|graphite` (default `preset:dusk`) or `upload:<file>` from the gallery (`POST /api/uploads/wallpaper`, `GET /api/wallpapers`).
 - **Pinned**: a pinned link is shown in the pinned row at the top of its workspace AND still in its category. `sort` orders links inside a category, `pin_sort` orders the pinned row. Newly pinned links go to the end of the pinned row.
 - **Sort modes** (`settings.sort_mode`): `frequency` (most clicked first), `recent` (last used first), `custom` (by `sort`). Link order only follows `sort` in `custom` mode; categories and workspaces are always in custom order. Do not change the mode unless the user asks.
-- **Settings**: `title`, `sort_mode`, `guest_access`, `search_engine`, `open_in_new_tab`, `health_interval`, `show_clock`.
+- **Settings**: `title`, `sort_mode`, `guest_access`, `search_engine`, `open_in_new_tab`, `health_interval`, `show_clock`, `update_check`.
 
 ## Workflow
 

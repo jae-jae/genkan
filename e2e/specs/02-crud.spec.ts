@@ -29,7 +29,8 @@ test.describe('workspaces', () => {
     await page.getByTestId('ws-name').fill('Movies')
     await page.getByTestId('ws-save').click()
     await expect(page.getByTestId('ws-menu-btn')).toHaveAttribute('data-ws-name', 'Movies')
-    expect((await api.bootstrap()).workspaces.map((w) => w.name)).toEqual(['Home', 'Movies'])
+    // the UI renames optimistically; the PATCH may still be in flight
+    await expect.poll(async () => (await api.bootstrap()).workspaces.map((w) => w.name)).toEqual(['Home', 'Movies'])
 
     // switching back and forth changes the wallpaper
     await switchWs(page, 'Home')

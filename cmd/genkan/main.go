@@ -22,6 +22,7 @@ import (
 	"github.com/jae-jae/genkan/internal/health"
 	"github.com/jae-jae/genkan/internal/server"
 	"github.com/jae-jae/genkan/internal/store"
+	"github.com/jae-jae/genkan/internal/update"
 	"github.com/jae-jae/genkan/web"
 )
 
@@ -44,27 +45,40 @@ func main() {
 			return
 		}
 	}
+	// Hand over to an installed update first (docs/UPDATES.md §5); returns
+	// when there is nothing to launch or after rolling a failed update back.
+	update.Launch(env("GENKAN_DATA", "./data"), version)
 	if err := run(); err != nil {
 		log.Fatalf("genkan: %v", err)
 	}
 }
 
-// healthcheck probes the local /healthz; used by Docker HEALTHCHECK in a scratch image.
-func healthcheck() int {
+// probeHealthz GETs the local /healthz.
+func probeHealthz(ctx context.Context) error {
 	addr := env("GENKAN_ADDR", ":8080")
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil || port == "" {
 		port = strings.TrimPrefix(addr, ":")
 	}
-	c := &http.Client{Timeout: 3 * time.Second}
-	resp, err := c.Get("http://127.0.0.1:" + port + "/healthz")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:"+port+"/healthz", nil)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "healthcheck:", err)
-		return 1
+		return err
+	}
+	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	if err != nil {
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintln(os.Stderr, "healthcheck: status", resp.StatusCode)
+		return fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// healthcheck probes the local /healthz; used by Docker HEALTHCHECK in a scratch image.
+func healthcheck() int {
+	if err := probeHealthz(context.Background()); err != nil {
+		fmt.Fprintln(os.Stderr, "healthcheck:", err)
 		return 1
 	}
 	return 0
@@ -103,6 +117,10 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	upd := server.NewUpdater(st, dataDir, version)
+	upd.SetProbe(probeHealthz)
+	defer upd.Close()
+
 	var srv *server.Server
 	hc := health.New(st, func(m map[string]health.Result) {
 		if srv != nil {
@@ -117,10 +135,12 @@ func run() error {
 		Web:         web.FS(),
 		Version:     version,
 		GitHubToken: env("GENKAN_GITHUB_TOKEN", ""),
+		Updater:     upd,
 	})
 
 	hcDone := make(chan struct{})
 	go func() { defer close(hcDone); hc.Run(ctx) }()
+	go upd.Run(ctx) // release check loop and confirmation of a freshly installed version
 
 	httpSrv := &http.Server{
 		Addr:              addr,
@@ -141,7 +161,11 @@ func run() error {
 	go func() { errCh <- httpSrv.Serve(ln) }()
 	log.Printf("genkan %s listening on %s (data: %s)", version, ln.Addr(), dataDir)
 
+	restart := false
 	select {
+	case <-upd.RestartRequested():
+		log.Printf("restarting to apply the update...")
+		restart = true
 	case err := <-errCh:
 		if !errors.Is(err, http.ErrServerClosed) {
 			return err
@@ -164,5 +188,9 @@ func run() error {
 		return fmt.Errorf("flush data: %w", err)
 	}
 	log.Printf("bye")
+	if restart {
+		// Everything is stopped and flushed: replace the process. Returns only on failure.
+		return fmt.Errorf("restart for update: %w", upd.Restart())
+	}
 	return nil
 }

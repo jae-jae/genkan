@@ -12,6 +12,7 @@ export const DEFAULTS: Settings = {
   open_in_new_tab: true,
   health_interval: 60,
   show_clock: true,
+  update_check: true,
 }
 
 export const loaded = signal(false)
@@ -37,6 +38,7 @@ export type ModalState =
   | { kind: 'category'; id?: string; workspace_id: string }
   | { kind: 'settings'; tab?: string }
   | { kind: 'widget'; id?: string }
+  | { kind: 'update' }
   | { kind: 'plugin-perm'; plugin: PluginInfo; fresh: boolean }
   // other plugin dialogs reuse this kind: it is the one App.tsx already renders (via the lazy Plugins chunk)
   | { kind: 'plugin-perm'; dlg: 'source'; plugin: PluginInfo }

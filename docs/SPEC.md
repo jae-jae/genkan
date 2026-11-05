@@ -84,7 +84,9 @@ ID 统一为 12 位随机 base32 小写字符串。时间为 RFC3339 字符串�
   "search_engine": "https://www.google.com/search?q=%s",
   "open_in_new_tab": true,
   "health_interval": 60,             // 秒，最小 15
-  "show_clock": true
+  "show_clock": true,
+  "update_check": true,              // 定期检查新版本（默认 true，旧数据文件缺省为 true），见 docs/UPDATES.md
+  "update_dismissed": ""             // 管理员选择跳过的版本，仅通过 POST /api/update/dismiss 修改
 }
 ```
 

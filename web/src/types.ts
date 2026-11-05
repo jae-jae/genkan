@@ -9,6 +9,8 @@ export interface Settings {
   open_in_new_tab: boolean
   health_interval: number
   show_clock: boolean
+  /** check GitHub for new releases (default true) */
+  update_check?: boolean
 }
 
 export interface Workspace {
@@ -263,4 +265,32 @@ export interface PluginWallpaperMeta {
   credit?: string
   link?: string
   updated_at?: string | number
+}
+
+// ---------- updates (docs/UPDATES.md §6) ----------
+export interface UpdateRelease {
+  version: string
+  name: string
+  /** markdown */
+  notes: string
+  published_at: number
+  url: string
+}
+export type UpdatePhase = 'idle' | 'downloading' | 'verifying' | 'installing' | 'restarting' | 'failed'
+export interface UpdateStatus {
+  current: string
+  dev: boolean
+  repo: string
+  check_enabled: boolean
+  env_disabled: boolean
+  checking: boolean
+  checked_at: number
+  error: string
+  latest: string
+  available: boolean
+  dismissed: string
+  releases: UpdateRelease[]
+  apply: { supported: boolean; reason: '' | 'disabled' | 'platform' | 'noexec' | 'dev' }
+  job: { phase: UpdatePhase; version: string; progress: number; error: string }
+  rolled_back: string
 }

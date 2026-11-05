@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -44,6 +45,11 @@ type Settings struct {
 	OpenInNewTab   bool   `json:"open_in_new_tab"`
 	HealthInterval int    `json:"health_interval"`
 	ShowClock      bool   `json:"show_clock"`
+	// UpdateCheck turns the periodic release check on (default true; a file
+	// without the field loads as true). UpdateDismissed is the version the
+	// admin chose to skip; it is only changed through /api/update/dismiss.
+	UpdateCheck     bool   `json:"update_check"`
+	UpdateDismissed string `json:"update_dismissed"`
 }
 
 // SettingsPatch is a partial Settings update; nil fields are untouched.
@@ -55,6 +61,7 @@ type SettingsPatch struct {
 	OpenInNewTab   *bool   `json:"open_in_new_tab"`
 	HealthInterval *int    `json:"health_interval"`
 	ShowClock      *bool   `json:"show_clock"`
+	UpdateCheck    *bool   `json:"update_check"`
 }
 
 func DefaultSettings() Settings {
@@ -66,6 +73,7 @@ func DefaultSettings() Settings {
 		OpenInNewTab:   true,
 		HealthInterval: 60,
 		ShowClock:      true,
+		UpdateCheck:    true,
 	}
 }
 
@@ -405,6 +413,9 @@ func applySettingsPatch(s Settings, p SettingsPatch) (Settings, error) {
 	if p.ShowClock != nil {
 		s.ShowClock = *p.ShowClock
 	}
+	if p.UpdateCheck != nil {
+		s.UpdateCheck = *p.UpdateCheck
+	}
 	return s, nil
 }
 
@@ -412,16 +423,28 @@ func normalizeSettings(s Settings) Settings {
 	out, err := applySettingsPatch(DefaultSettings(), SettingsPatch{
 		Title: &s.Title, SortMode: &s.SortMode, GuestAccess: &s.GuestAccess,
 		SearchEngine: &s.SearchEngine, OpenInNewTab: &s.OpenInNewTab,
-		HealthInterval: &s.HealthInterval, ShowClock: &s.ShowClock,
+		HealthInterval: &s.HealthInterval, ShowClock: &s.ShowClock, UpdateCheck: &s.UpdateCheck,
 	})
 	if err != nil {
 		// fall back field by field: keep what is valid
 		d := DefaultSettings()
-		d.GuestAccess, d.OpenInNewTab, d.ShowClock = s.GuestAccess, s.OpenInNewTab, s.ShowClock
+		d.GuestAccess, d.OpenInNewTab, d.ShowClock, d.UpdateCheck = s.GuestAccess, s.OpenInNewTab, s.ShowClock, s.UpdateCheck
+		d.UpdateDismissed = cleanDismissed(s.UpdateDismissed)
 		if s.HealthInterval >= 15 {
 			d.HealthInterval = s.HealthInterval
 		}
 		return d
 	}
+	out.UpdateDismissed = cleanDismissed(s.UpdateDismissed)
 	return out
 }
+
+// cleanDismissed keeps only a plain vX.Y.Z release version (or "").
+func cleanDismissed(v string) string {
+	if len(v) > 32 || !dismissedRe.MatchString(v) {
+		return ""
+	}
+	return v
+}
+
+var dismissedRe = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)

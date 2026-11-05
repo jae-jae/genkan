@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"github.com/jae-jae/genkan/internal/mcp"
 	"github.com/jae-jae/genkan/internal/plugin"
 	"github.com/jae-jae/genkan/internal/store"
+	"github.com/jae-jae/genkan/internal/update"
 	"github.com/jae-jae/genkan/plugins"
 )
 
@@ -38,6 +40,10 @@ type Config struct {
 	GitHubToken string
 	// GitHubAPI / GitHubRaw override the GitHub base URLs (tests).
 	GitHubAPI, GitHubRaw string
+	// Updater serves /api/update and is shared with main, which runs its
+	// background loop and performs the restart. Nil: a default Service is
+	// built (no background loop).
+	Updater *update.Service
 }
 
 type Role int
@@ -85,14 +91,16 @@ const (
 
 // Server is the HTTP application.
 type Server struct {
-	cfg     Config
-	st      *store.Store
-	broker  *Broker
-	limiter *auth.Limiter
-	mcp     *mcp.Server
-	plugins *plugin.Manager
-	static  *static
-	mux     *http.ServeMux
+	cfg        Config
+	st         *store.Store
+	broker     *Broker
+	limiter    *auth.Limiter
+	mcp        *mcp.Server
+	plugins    *plugin.Manager
+	updater    *update.Service
+	ownUpdater bool
+	static     *static
+	mux        *http.ServeMux
 
 	bgCtx    context.Context
 	bgCancel context.CancelFunc
@@ -116,7 +124,13 @@ func New(cfg Config) *Server {
 		Store: cfg.Store, DataDir: cfg.DataDir, Version: cfg.Version,
 		Catalog: plugins.Catalog(), OnLinksCreated: s.fetchIcons, GitHubToken: cfg.GitHubToken, GitHubAPI: cfg.GitHubAPI, GitHubRaw: cfg.GitHubRaw,
 	})
+	s.updater = cfg.Updater
+	if s.updater == nil {
+		s.updater = NewUpdater(cfg.Store, cfg.DataDir, cfg.Version)
+		s.ownUpdater = true
+	}
 	s.mcp = mcp.New(cfg.Store, cfg.Version)
+	s.mcp.Updates = s.updater
 	s.mcp.Plugins = s.plugins
 	s.mcp.OnLinksCreated = s.fetchIcons
 	cfg.Store.OnChange(func(v int64) {
@@ -148,6 +162,9 @@ func (s *Server) Broker() *Broker { return s.broker }
 func (s *Server) Close() {
 	s.broker.Close()
 	s.plugins.Close()
+	if s.ownUpdater {
+		s.updater.Close()
+	}
 	s.bgCancel()
 	s.wg.Wait()
 }
@@ -377,3 +394,15 @@ func (s *Server) iconWorker() {
 
 func (s *Server) iconsDir() string     { return filepath.Join(s.cfg.DataDir, "uploads", "icons") }
 func (s *Server) wallpaperDir() string { return filepath.Join(s.cfg.DataDir, "uploads", "wallpapers") }
+
+// NewUpdater builds the update Service for st from the environment
+// (GENKAN_UPDATE_API, GENKAN_GITHUB_TOKEN, ...).
+func NewUpdater(st *store.Store, dataDir, version string) *update.Service {
+	return update.New(update.Config{
+		DataDir:      dataDir,
+		Version:      version,
+		Token:        strings.TrimSpace(os.Getenv(update.EnvToken)),
+		CheckEnabled: func() bool { return st.Settings().UpdateCheck },
+		Dismissed:    func() string { return st.Settings().UpdateDismissed },
+	})
+}

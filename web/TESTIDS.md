@@ -30,6 +30,7 @@ Both are glass dropdowns: trigger button `aria-haspopup="menu"` + `aria-expanded
 | `ws-manage` | "Manage workspaces…" (admin, last item; opens Settings → 内容 tab) |
 | `edit-toggle` | edit mode toggle, leftmost of the top-right group (`aria-pressed`; admin only) |
 | `plugins-btn` | plugins button (puzzle icon, admin only): opens Settings on the Plugins tab; between the edit toggle and the main menu button (replaces the former AI icon button) |
+| `update-btn` | update button (circle-arrow-up icon, admin only), immediately left of `plugins-btn`; only present when `GET /api/update` says `available && latest != dismissed`; attr `data-version` = latest; opens the update panel (`update-modal`) |
 | `menu-btn` | main menu button (sliders icon) |
 | `main-menu` | the open main menu |
 | `sort-control` | the "Sort" `role=group` inside the main menu (admin only) |
@@ -123,7 +124,17 @@ Uploading exactly one file also applies it; several files only add them to the g
   `cm-link-delete-<id>`. Edit / delete actions open the usual modals (`link-modal`, `category-modal`, `workspace-modal`, `confirm-modal`) over Settings.
 - Data: `export-plugin-data-chk` (checkbox in `export-plugin-data`, off by default; checked = `export-btn` links to `/api/export?plugin_data=1`) with `export-plugin-data-hint`, `export-btn` (`<a href=/api/export download>`), `import-mode`, `import-mode-merge`, `import-mode-replace`,
   `import-file` (file input), `import-btn`.
-- About: `about-version` (server build version from `/api/bootstrap` `server_version`; `dev` for unversioned builds), `about-revision` (data revision).
+- About: `about-version` (server build version from `/api/bootstrap` `server_version`; `dev` for unversioned builds), `about-revision` (data revision), `about-github` (link to the repo, `target=_blank`).
+  Update section `update-about` (docs/UPDATES.md §7; only rendered once `GET /api/update` answered): `set-update-check` (switch bound to settings `update_check`; hidden for dev builds, shown off + hint when `env_disabled`),
+  `update-check-now` (button; disabled for dev / env-disabled / while checking; the "last checked" time is its row hint), `update-error` (last check error), `update-latest` (latest version, inside the primary
+  `update-open-changelog` button which opens the panel; `update-open-changelog` is also a plain "View changes" button when nothing is newer), `update-uptodate` (current version, shown when nothing is newer),
+  `update-dev-note` (development build notice), `update-rolled-back` + `update-rolled-back-dismiss` (the notice after an automatic rollback; dismiss POSTs `/api/update/dismiss {rolled_back:true}`).
+- Update panel `update-modal` (lazy chunk; opened from `update-btn` or `update-open-changelog`; `aria-label` "Update Genkan"): `update-summary`, `update-releases` > `update-release` (attr `data-version`; newest first)
+  with `update-release-version`, `update-release-date`, `update-release-link` (GitHub, `target=_blank rel="noopener noreferrer"`), `update-notes` (safe markdown subset rendered as DOM nodes; only http(s) links become `<a>`);
+  footer `update-skip` (POST dismiss `{version}`, closes the panel) and `update-apply` (hidden when `apply.supported` is false). `update-apply` opens the confirm view `update-confirm-box` with `update-confirm` and `update-confirm-cancel`.
+  Unsupported installs: `update-unsupported` (reason text) and `update-commands` (the `docker compose pull && docker compose up -d` block, text in `update-commands-text`, button `update-commands-copy`).
+  While updating: `update-progress` (attr `data-phase` = downloading / verifying / installing / restarting / failed), `update-phase`, `update-percent`; on failure or after the 3 minute timeout `update-failed`, `update-reload`, `update-progress-close`.
+  A failed job (`job.phase = failed`) also shows `update-failed` above the release list. Errors from `POST /api/update/apply` show as `update-failed` too.
 
 ## Behaviours worth knowing
 - Every `<svg>` icon carries `data-icon=<lucide name>` (e.g. `svg[data-icon="house"]`), so tests can tell which icon is drawn.

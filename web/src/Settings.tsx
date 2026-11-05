@@ -4,9 +4,10 @@ import { AiTab } from './Ai'
 import { ContentTab } from './Content'
 import { WallpaperGallery } from './Gallery'
 import { Icon } from './icons'
-import { loadPlugins, useChunk } from './lazy'
+import { loadPlugins, loadUpdate, useChunk } from './lazy'
 import { Modal, Row, Switch } from './parts'
 import { langPref, setLang, t, type LangPref } from './i18n'
+import { upd } from './updState'
 import { closeModal, curWs, importData, patchSettings, settings, settingsTab, sortedWs, toast, serverVersion, toastError, updateWorkspace, version, type ModalState } from './store'
 
 
@@ -213,7 +214,11 @@ function Plugins() {
   return m ? <m.PluginsTab /> : <p class="hint">…</p>
 }
 
+const REPO = 'https://github.com/jae-jae/genkan'
+
 function About() {
+  const u = useChunk(loadUpdate)
+  const repo = /^https?:\/\//i.test(upd.value?.repo || '') ? upd.value!.repo : REPO
   return (
     <div class="about">
       <div class="about-t">Genkan 玄関</div>
@@ -223,7 +228,14 @@ function About() {
         <dd data-testid="about-version">{serverVersion.value || '-'}</dd>
         <dt>{t('about.revision')}</dt>
         <dd data-testid="about-revision">{version.value}</dd>
+        <dt>{t('about.github')}</dt>
+        <dd>
+          <a href={repo} target="_blank" rel="noopener noreferrer" data-testid="about-github">
+            {repo.replace(/^https?:\/\//i, '')}
+          </a>
+        </dd>
       </dl>
+      {u ? <u.UpdateAbout /> : <p class="hint">…</p>}
     </div>
   )
 }

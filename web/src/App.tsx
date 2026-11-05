@@ -4,13 +4,14 @@ import { Board } from './Board'
 import { CtxMenu, onPageContextMenu } from './ContextMenu'
 import { CategoryModal, ConfirmModal, LinkEditor, WorkspaceModal } from './Editors'
 import { Hero, focusSearch, searchFocused } from './Hero'
-import { loadPlugins, loadWidgets, useChunk } from './lazy'
+import { loadPlugins, loadUpdate, loadWidgets, useChunk } from './lazy'
 import { Toasts } from './parts'
 import { SettingsModal } from './Settings'
 import { Topbar } from './Topbar'
 import { Wallpaper } from './Wallpaper'
 import { WidgetSlot } from './WidgetSlot'
 import { t } from './i18n'
+import { watchUpdate } from './updState'
 import { DEFAULT_WALLPAPER } from './util'
 import { curWs, editMode, isAdmin, load, loadError, loaded, modal, role, setWs, setupRequired, settings, showLogin, sortedWs, type ModalState } from './store'
 
@@ -92,6 +93,11 @@ function PermModalHost({ state }: { state: Extract<ModalState, { kind: 'plugin-p
   return m ? <m.PermModal state={state} /> : null
 }
 
+function UpdateModalHost() {
+  const m = useChunk(loadUpdate)
+  return m ? <m.UpdateModal /> : null
+}
+
 function ModalHost() {
   const m = modal.value
   if (!m) return null
@@ -110,6 +116,8 @@ function ModalHost() {
       return <WidgetModalHost key={m.id || 'new'} state={m} />
     case 'plugin-perm':
       return <PermModalHost state={m} />
+    case 'update':
+      return <UpdateModalHost />
   }
 }
 
@@ -118,6 +126,8 @@ export function App() {
   useSwipe()
   useContextMenu()
   useEffect(() => void load(), [])
+  const admin = loaded.value && isAdmin.value
+  useEffect(() => watchUpdate(admin), [admin])
   const ws = curWs.value
   const title = settings.value.title
   useEffect(() => {

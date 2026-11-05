@@ -2,6 +2,7 @@ import { Icon, WsIcon } from './icons'
 import { Dropdown } from './Menu'
 import { t } from './i18n'
 import { curWs, editMode, isAdmin, logout, modal, openSettings, patchSettings, reorderWorkspaces, role, setWs, settings, showLogin, sortedWs } from './store'
+import { upd, updateBadge } from './updState'
 import type { SortMode } from './types'
 
 const MODES: SortMode[] = ['frequency', 'recent', 'custom']
@@ -213,6 +214,12 @@ export function Topbar() {
           >
             <Icon n={edit ? 'check' : 'pencil'} />
             {edit && <span class="btn-lbl">{t('top.done')}</span>}
+          </button>
+        )}
+        {updateBadge.value && (
+          <button class="icon-btn glass-lite upd-btn" aria-label={t('upd.btnV', { v: upd.value?.latest || '' })} title={t('upd.btnV', { v: upd.value?.latest || '' })} data-testid="update-btn" data-version={upd.value?.latest} onClick={() => (modal.value = { kind: 'update' })}>
+            <Icon n="circle-arrow-up" />
+            <span class="btn-lbl upd-lbl">{upd.value?.latest}</span>
           </button>
         )}
         {admin && (

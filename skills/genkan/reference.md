@@ -44,6 +44,8 @@ Not covered on purpose, never call them: login, logout, setup and password endpo
 | `open_in_new_tab` | boolean | Open links in a new tab (default true) |
 | `health_interval` | integer | Seconds between health checks, clamped to 15-86400 (default 60) |
 | `show_clock` | boolean | Show the clock (default true) |
+| `update_check` | boolean | Check GitHub for new Genkan releases every 6 hours (default true; also true for data saved before the field existed) |
+| `update_dismissed` | string | Release version the admin chose to skip (`""` = none). Read-only here: `PATCH /api/settings` ignores it, use `POST /api/update/dismiss` |
 
 **Workspace**: `{"id","name","icon","wallpaper","sort"}`. `name` 1-40 characters. `icon` is `lucide:<name>` (see the icon list below; empty on create = `lucide:layout-grid`). `wallpaper` is `preset:<id>` or `upload:<file>` (empty on create = `preset:dusk`). `sort` is the position among workspaces.
 
@@ -89,7 +91,7 @@ gk PATCH /api/settings '{"sort_mode":"custom","health_interval":30}'
 ```
 
 ```json
-{"title":"Genkan","sort_mode":"custom","guest_access":false,"search_engine":"https://www.google.com/search?q=%s","open_in_new_tab":true,"health_interval":30,"show_clock":true}
+{"title":"Genkan","sort_mode":"custom","guest_access":false,"search_engine":"https://www.google.com/search?q=%s","open_in_new_tab":true,"health_interval":30,"show_clock":true,"update_check":true,"update_dismissed":""}
 ```
 
 ### POST /api/workspaces
@@ -302,6 +304,54 @@ jq '{mode:"merge", data:.}' genkan-backup.json > import-merge.json
 gk POST /api/import @import-merge.json
 jq '{mode:"replace", data:.}' genkan-backup.json > import-replace.json
 gk POST /api/import @import-replace.json
+```
+
+## Updates
+
+Genkan checks GitHub for new releases (tags `vX.Y.Z`; pre-releases and drafts are ignored) and, on Linux, can replace itself with a signed release. All four endpoints are admin only. A development build (`dev`, `sha-...`) never checks or updates. The server needs `update_check` on for the periodic check (a manual check works without it) and is not checking when `GENKAN_UPDATE_CHECK=off`.
+
+**UpdateStatus** (the response of all four endpoints):
+
+```json
+{"current":"v1.0.0","dev":false,"repo":"https://github.com/jae-jae/genkan","check_enabled":true,"env_disabled":false,"checking":false,"checked_at":1762300000000,"error":"","latest":"v1.2.0","available":true,"dismissed":"","releases":[{"version":"v1.2.0","name":"v1.2.0","notes":"markdown","published_at":1762300000000,"url":"https://github.com/jae-jae/genkan/releases/tag/v1.2.0"}],"apply":{"supported":true,"reason":""},"job":{"phase":"idle","version":"","progress":0,"error":""},"rolled_back":""}
+```
+
+- `releases` (never null): releases newer than `current`, newest first. `latest` is `""` and `available` is `false` when there is none. `checked_at` is Unix milliseconds (0 before the first check); `error` is the last check failure (rate limit, network).
+- `check_enabled` is the `update_check` setting; `env_disabled` is `GENKAN_UPDATE_CHECK=off`.
+- `apply.supported` is false with a `reason`: `"disabled"` (`GENKAN_SELF_UPDATE=off`), `"platform"` (not linux/amd64 or linux/arm64), `"noexec"` (data directory on a noexec mount) or `"dev"`. Then the user updates the container image instead (`docker compose pull && docker compose up -d`).
+- `job.phase`: `idle`, `downloading` (with `progress` 0 to 1), `verifying`, `installing`, `restarting`, `failed` (see `job.error`).
+- `dismissed` is the version the admin skipped; `rolled_back` is a version that failed to start and was rolled back automatically (`""` if none).
+
+### GET /api/update
+
+Current `UpdateStatus` without contacting GitHub.
+
+```bash
+gk GET /api/update | jq '{current, latest, available, releases: [.releases[].version]}'
+```
+
+### POST /api/update/check
+
+Checks GitHub now (no body) and returns `UpdateStatus`. Failures to reach GitHub come back as 200 with `error` set. 400 for development builds and when `GENKAN_UPDATE_CHECK=off`.
+
+```bash
+gk POST /api/update/check | jq '{latest, error}'
+```
+
+### POST /api/update/apply
+
+**Restarts the server and takes it offline for a few seconds: only on explicit request from the user.** Body: `{"version":"vX.Y.Z"}`, which must be in `releases`. The server downloads the release, verifies its signature and checksum, backs up its data, then restarts into the new version in the background; a version that does not start is rolled back automatically. Response: 202 with `UpdateStatus` (poll `GET /api/update` until `current` equals the new version; the server is unreachable while restarting). 400 for an unknown version or when `apply.supported` is false (the error says why), 409 when an update is already running.
+
+```bash
+gk POST /api/update/apply '{"version":"v1.2.0"}' | jq .job
+```
+
+### POST /api/update/dismiss
+
+Body: `{"version":"vX.Y.Z"}` stores it as `update_dismissed` (the web UI then hides the update button for that version), or `{"rolled_back":true}` clears the `rolled_back` notice. Response: `UpdateStatus`. 400 for anything else.
+
+```bash
+gk POST /api/update/dismiss '{"version":"v1.2.0"}' | jq .dismissed
 ```
 
 ## Plugins

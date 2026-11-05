@@ -9,6 +9,7 @@ import (
 
 	"github.com/jae-jae/genkan/internal/plugin"
 	"github.com/jae-jae/genkan/internal/store"
+	"github.com/jae-jae/genkan/internal/update"
 )
 
 const defaultProtocol = "2025-06-18"
@@ -34,6 +35,8 @@ type Server struct {
 	OnLinksCreated func([]store.Link)
 	// Plugins backs the plugin tools (nil: those tools report "plugins unavailable").
 	Plugins *plugin.Manager
+	// Updates backs the read-only update_status tool (nil: it reports "updates unavailable").
+	Updates *update.Service
 
 	tools []tool
 }

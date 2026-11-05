@@ -6,6 +6,7 @@ export const loadWidgets = () => import('./Widgets')
 export const loadPluginSource = () => import('./PluginSource')
 export const loadPluginMarket = () => import('./PluginMarket')
 export const loadPluginData = () => import('./PluginData')
+export const loadUpdate = () => import('./Update')
 
 /** Resolves a dynamic import once `on` is true; null until it has loaded (or if it failed). */
 export function useChunk<T>(load: () => Promise<T>, on = true): T | null {

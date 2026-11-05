@@ -85,6 +85,10 @@ Plugins are single JavaScript (or TypeScript) files that extend Genkan with wall
 
 Install the built-in examples (calculator, world clock, countdown, weather, RSS, Pi-hole and more) from Settings → Plugins, paste your own source or a URL, or ask your AI assistant to write one with the Skill / MCP tools. The plugin contract is documented in [`docs/PLUGINS.md`](docs/PLUGINS.md) (Chinese).
 
+## Updates
+
+Every merge to `main` publishes a release (`vX.Y.Z`) with a new image and signed binaries. Genkan checks GitHub for new releases every 6 hours (Settings → About, on by default) and shows an update button in the top bar for admins. The changelog panel can update **in place**: the new binary is downloaded into the data directory, its ed25519 signature and checksum are verified, your data is backed up, and Genkan restarts into it, rolling back automatically if the new version fails to start. Pulling a newer image always wins over an in-place update. Details: [`docs/UPDATES.md`](docs/UPDATES.md).
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -92,6 +96,9 @@ Install the built-in examples (calculator, world clock, countdown, weather, RSS,
 | `GENKAN_ADDR` | `:8080` | Listen address |
 | `GENKAN_DATA` | `./data` (`/data` in Docker) | Data directory: `genkan.json` and `uploads/` |
 | `GENKAN_PASSWORD` | empty | Sets the admin password on first start (min. 6 chars); never overwrites an existing one |
+| `GENKAN_UPDATE_CHECK` | on | `off` disables update checks entirely |
+| `GENKAN_SELF_UPDATE` | on | `off` disables in-place updates (the panel shows the `docker compose pull` commands instead) |
+| `GENKAN_GITHUB_TOKEN` | empty | Optional GitHub token for the update check and the plugin market (higher rate limit) |
 
 - Everything lives in the data directory: back it up, or use Settings → Data to export JSON.
 - Behind a reverse proxy (Nginx, Caddy, Traefik), forward `X-Forwarded-Proto: https` so cookies get the `Secure` flag.

@@ -136,6 +136,25 @@ func (s *Store) UpdateSettings(p SettingsPatch) (Settings, error) {
 	return out, err
 }
 
+// SetUpdateDismissed stores the release version the admin chose to skip
+// ("" clears it). version must be a plain vX.Y.Z.
+func (s *Store) SetUpdateDismissed(version string) (Settings, error) {
+	if version != "" && cleanDismissed(version) == "" {
+		return Settings{}, invalid("version must look like v1.2.3")
+	}
+	var out Settings
+	err := s.commit(true, func() (bool, error) {
+		out = s.d.Settings
+		if out.UpdateDismissed == version {
+			return false, nil
+		}
+		s.d.Settings.UpdateDismissed = version
+		out = s.d.Settings
+		return true, nil
+	})
+	return out, err
+}
+
 // Workspaces --------------------------------------------------------------------
 
 func (s *Store) CreateWorkspace(in WorkspaceInput) (Workspace, error) {

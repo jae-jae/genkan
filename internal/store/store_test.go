@@ -32,7 +32,7 @@ func TestDefaults(t *testing.T) {
 	if len(snap.Workspaces) != 1 || snap.Workspaces[0].Name != "Home" || snap.Workspaces[0].Wallpaper != "preset:dusk" {
 		t.Fatalf("default workspace: %+v", snap.Workspaces)
 	}
-	want := Settings{Title: "Genkan", SortMode: "frequency", SearchEngine: "https://www.google.com/search?q=%s", OpenInNewTab: true, HealthInterval: 60, ShowClock: true}
+	want := Settings{Title: "Genkan", SortMode: "frequency", SearchEngine: "https://www.google.com/search?q=%s", OpenInNewTab: true, HealthInterval: 60, ShowClock: true, UpdateCheck: true}
 	if snap.Settings != want {
 		t.Fatalf("settings: %+v", snap.Settings)
 	}
@@ -378,6 +378,31 @@ func TestSettingsPatch(t *testing.T) {
 	se := "https://x/search"
 	if _, err := s.UpdateSettings(SettingsPatch{SearchEngine: &se}); err == nil {
 		t.Fatal("search engine without placeholder accepted")
+	}
+}
+
+func TestUpdateSettings(t *testing.T) {
+	s, dir := open(t)
+	if _, err := s.SetUpdateDismissed("v1.2.3"); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"1.2.3", "v1.2", "v1.2.3-rc1", "latest", "v1.2.3\n"} {
+		if _, err := s.SetUpdateDismissed(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	f := false
+	if _, err := s.UpdateSettings(SettingsPatch{UpdateCheck: &f}); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	s2, _ := Open(dir)
+	defer s2.Close()
+	if got := s2.Settings(); got.UpdateCheck || got.UpdateDismissed != "v1.2.3" {
+		t.Fatalf("not persisted: %+v", got)
+	}
+	if _, err := s2.SetUpdateDismissed(""); err != nil || s2.Settings().UpdateDismissed != "" {
+		t.Fatal("clear")
 	}
 }
 

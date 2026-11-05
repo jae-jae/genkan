@@ -67,6 +67,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/token/regenerate", s.guard(permAdmin, s.handleTokenRegenerate))
 	m.HandleFunc("GET /api/skill", s.guard(permAdmin, s.handleSkill))
 
+	s.updateRoutes()
 	s.pluginRoutes()
 
 	m.HandleFunc("GET /api/events", s.guard(permRead, s.handleEvents))

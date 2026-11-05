@@ -40,7 +40,7 @@ func TestCatalogCompilesAndValidates(t *testing.T) {
 		}
 		n++
 	}
-	want := []string{"bing-wallpaper", "nasa-apod", "picsum", "weather", "hacker-news", "rss", "world-clock", "countdown", "calculator", "github-search", "pihole", "uptime-summary", "link-importer", "media", "github-stars"}
+	want := []string{"bing-wallpaper", "nasa-apod", "picsum", "weather", "hacker-news", "rss", "world-clock", "countdown", "calculator", "github-search", "pihole", "uptime-summary", "link-importer", "media", "github-stars", "todo", "note"}
 	m := New(Config{Store: e.st, DataDir: e.dir, Catalog: cat})
 	defer m.Close()
 	have := map[string]bool{}

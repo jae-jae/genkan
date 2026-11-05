@@ -843,11 +843,11 @@ func TestSkillDownload(t *testing.T) {
 			t.Fatalf("skill: %d %v", resp.StatusCode, resp.Header)
 		}
 		zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
-		if err != nil || len(zr.File) != 3 {
+		if err != nil || len(zr.File) != 4 {
 			t.Fatalf("zip layout: %v", err)
 		}
 		out := map[string]string{}
-		for i, name := range []string{"genkan/SKILL.md", "genkan/reference.md", "genkan/.env"} {
+		for i, name := range []string{"genkan/SKILL.md", "genkan/reference.md", "genkan/plugin-dev.md", "genkan/.env"} {
 			if zr.File[i].Name != name {
 				t.Fatalf("entry %d is %q, want %q", i, zr.File[i].Name, name)
 			}
@@ -874,7 +874,7 @@ func TestSkillDownload(t *testing.T) {
 	if got["genkan/.env"] != "GENKAN_URL="+e.ts.URL+"\nGENKAN_TOKEN="+tok+"\n" {
 		t.Fatalf(".env: %q", got["genkan/.env"])
 	}
-	if m := files[2].Mode().Perm(); m != 0o600 {
+	if m := files[3].Mode().Perm(); m != 0o600 {
 		t.Fatalf(".env mode %o, want 600", m)
 	}
 	// reverse proxy headers decide the instance URL

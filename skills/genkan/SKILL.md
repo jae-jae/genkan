@@ -1,6 +1,6 @@
 ---
 name: genkan
-description: Manage and organize the user's self-hosted Genkan (玄関) start page through its REST API with curl. Use when the user wants to add, move, group, rename, sort, pin, clean up or bulk-import bookmarks and services on their Genkan homelab dashboard; create or edit workspaces and categories; change icons, wallpapers or settings; set up health checks; or back up and restore the page. Triggers include "organize my homelab start page", "add these services to Genkan" and any mention of a Genkan instance or a gk_ API token.
+description: Manage and organize the user's self-hosted Genkan (玄関) start page through its REST API with curl. Use when the user wants to add, move, group, rename, sort, pin, clean up or bulk-import bookmarks and services on their Genkan homelab dashboard; create or edit workspaces and categories; change icons, wallpapers or settings; set up health checks; or back up and restore the page. Also use it to develop, write, debug, test or publish a Genkan plugin or widget (wallpaper source, search provider, scheduled job, interactive widget such as a to-do list or note): the plugin guide ships with this Skill (plugin-dev.md). Triggers include "organize my homelab start page", "add these services to Genkan", "develop a Genkan plugin that does X", "write a Genkan widget", "开发 Genkan 插件", "帮我做一个 Genkan 小组件" and any mention of a Genkan instance or a gk_ API token.
 ---
 
 > **WARNING: the API token is full administrator access to the user's Genkan.** It is stored in `~/.config/genkan/env` or in the `.env` file next to this SKILL.md (or in the `GENKAN_TOKEN` environment variable). Never print it (do not `cat` those files or `echo $GENKAN_TOKEN`), share it, write it into files of a repository, or paste it anywhere. Never regenerate it.
@@ -135,13 +135,19 @@ The page can be extended with JavaScript plugins (widgets, wallpaper sources, se
 
 ### Developing plugins
 
-Before writing a plugin, **read the development guide** (manifest, `ctx`, host API, block types, limits, recipes, error list): `curl -sL https://raw.githubusercontent.com/jae-jae/genkan/main/docs/PLUGIN_DEV.md`. Endpoints are in the Plugins section of [reference.md](reference.md). The loop is always:
+When the user asks for a new plugin or widget ("develop a Genkan plugin that does X", "开发 Genkan 插件：…"), you can build it end to end with this Skill. **Read [plugin-dev.md](plugin-dev.md) (in this folder) first, completely**: it has the manifest, `ctx`, host API, every widget block (including interactive ones: input, checkboxes, editable lists, Markdown notes), limits, localization, recipes, debugging and the error list. Endpoints are in the Plugins section of [reference.md](reference.md). The loop:
 
-1. Install **disabled**: `jq -Rs '{source: ., enable: false}' my-plugin.js > body.json`, then `gk POST /api/plugins @body.json` (new plugins are enabled by default, so never omit `enable`).
-2. `POST /api/plugins/{id}/test` for every hook; read `ok`, `error`, `result.error` and `logs` (and `GET /api/plugins/{id}/logs`). Fix with `PUT /api/plugins/{id}/source`.
-3. Only when the tests pass: `PATCH /api/plugins/{id}` `{"enabled":true}`, add the widget with `POST /api/widgets`, check `GET /api/widgets/{id}/data?force=1`.
-4. When it works, offer to publish it: a public GitHub repo with the topic `genkan-plugin` appears in Genkan's plugin market for everyone. Never publish without asking; the guide has the safe procedure (remove secrets and LAN hosts first).
+1. **Understand and read.** Ask only what you cannot decide yourself (target service, URL or auth, refresh rate). Skim the closest built-in example: `gk POST /api/plugins/preview '{"catalog":"<id>"}' | jq -r .source` (ids from `gk GET /api/plugins/catalog`; `todo` and `note` show interactive widgets).
+2. **Write one file** (`export const manifest`, hooks, no `import`). Put all user-visible text in `export const messages = { en: {...}, zh: {...} }` and use `t("key")` / `ctx.t`, never `ctx.lang` branches. Credentials are `secret` config fields and endpoints are `url` fields: no secrets or personal hostnames in the source.
+3. **Install disabled**: `jq -Rs '{source: ., enable: false}' my-plugin.js > body.json`, then `gk POST /api/plugins @body.json` (new plugins are enabled by default, so never omit `enable`).
+4. **Test every hook**, including `action` for each action name: `POST /api/plugins/{id}/test`; read `ok`, `error`, `result.error`, `result` (what the sanitizer kept) and `logs`, plus `GET /api/plugins/{id}/logs`. Also test `"lang":"zh"` and `"lang":"en"` and the failure paths.
+5. **Iterate**: `PUT /api/plugins/{id}/source`, test again, until clean.
+6. **Enable** with `PATCH /api/plugins/{id}` `{"enabled":true}`, **add the widget** with `POST /api/widgets` (ask which workspace if unclear), and **verify** with `GET /api/widgets/{id}/data?force=1`. You cannot see the page: for visual or interactive behaviour (clicks, drag, editing) ask the user to try it.
+7. **Report** the plugin id, what it does, the hosts and permissions it uses and the config the user still has to fill in (for example a token, which the user enters in Settings, Plugins). **Never print or store the API token** or any plugin secret.
+8. When it works, offer to publish it: a public GitHub repo with the topic `genkan-plugin` appears in Genkan's plugin market for everyone. Never publish without asking; plugin-dev.md has the safe procedure (remove secrets and LAN hosts first).
+
+Delete throw-away experiments (`gk DELETE /api/plugins/{id}`) when you are done, and never uninstall or overwrite a plugin the user did not ask you to touch.
 
 ## Next
 
-See [reference.md](reference.md) for every endpoint (settings, workspaces, categories, links, reorder, icon refresh, health, uploads, wallpapers, export, import, plugins and widgets), request and response shapes, limits, error codes and the full list of Lucide icon names.
+See [reference.md](reference.md) for every endpoint (settings, workspaces, categories, links, reorder, icon refresh, health, uploads, wallpapers, export, import, plugins and widgets), request and response shapes, limits, error codes and the full list of Lucide icon names. [plugin-dev.md](plugin-dev.md) is the complete plugin development guide.

@@ -63,7 +63,7 @@ export function skillPrompt(origin: string, tok: string, ref: string): string {
   return [
     'Install the Genkan Skill and connect it to my Genkan instance.',
     '',
-    `1. Download SKILL.md and reference.md from https://raw.githubusercontent.com/jae-jae/genkan/${ref}/skills/genkan/ into your skills directory, in a folder named genkan/ (Claude Code: ~/.claude/skills/genkan/; other agents: their own skills directory). Overwrite existing files.`,
+    `1. Download SKILL.md, reference.md and plugin-dev.md from https://raw.githubusercontent.com/jae-jae/genkan/${ref}/skills/genkan/ into your skills directory, in a folder named genkan/ (Claude Code: ~/.claude/skills/genkan/; other agents: their own skills directory). Overwrite existing files.`,
     '2. Create ~/.config/genkan/env (make the directory if needed) with exactly these two lines, then run chmod 600 on the file:',
     `GENKAN_URL=${origin}`,
     `GENKAN_TOKEN=${tok}`,

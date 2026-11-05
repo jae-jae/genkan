@@ -132,6 +132,7 @@ export interface CatalogItem {
   icon: string
   version: string
   installed: boolean
+  widgets?: { id: string; name: LString; size?: string }[] | null
 }
 export interface WidgetInstance {
   id: string
@@ -217,12 +218,17 @@ export interface ListItem {
   image?: string
   right?: string
   badge?: string
+  /** interactive widgets (docs/PLUGINS.md 15.2) */
+  id?: string
+  check?: { checked: boolean; action: string; params?: unknown }
+  edit?: { action: string; params?: unknown }
+  actions?: { icon: string; label: string; action: string; params?: unknown }[]
 }
 export type Block =
   | { type: 'text'; text: string; size?: 's' | 'm' | 'l' | 'xl'; muted?: boolean; align?: 'left' | 'center' | 'right' }
   | ({ type: 'stat' } & StatBlock)
   | { type: 'stats'; items: StatBlock[] }
-  | { type: 'list'; items: ListItem[] }
+  | { type: 'list'; items: ListItem[]; sortAction?: string; empty?: string }
   | { type: 'kv'; items: { k: string; v: string }[] }
   | { type: 'progress'; label?: string; value: number; text?: string }
   | { type: 'image'; src?: string; alt?: string; href?: string; ratio?: number; images?: { src: string; alt?: string; href?: string }[]; interval?: number; fit?: 'cover' | 'contain'; height?: number }
@@ -233,6 +239,8 @@ export type Block =
   | { type: 'chart'; kind: 'line'; points: [number, number][]; format?: 'int' | 'compact' | 'percent' | 'decimal'; color?: 'accent' | 'green' | 'red' | 'blue' | 'orange' }
   | { type: 'row'; children: Block[] }
   | { type: 'button'; label: string; action: string; params?: unknown; icon?: string }
+  | { type: 'input'; action: string; params?: unknown; placeholder?: string; submit?: string; icon?: string; maxLength?: number; value?: string }
+  | { type: 'markdown'; text: string; editAction?: string; params?: unknown; placeholder?: string }
   | { type: 'divider' }
 export interface WidgetView {
   title?: string
@@ -240,6 +248,13 @@ export interface WidgetView {
   link?: string
   body?: Block[] | null
   error?: string
+  tone?: 'yellow' | 'pink' | 'blue' | 'green' | 'purple'
+}
+/** POST /api/widgets/{id}/action (docs/PLUGINS.md 15.3); `view` has the shape of GET /data (a bare WidgetView is tolerated) */
+export interface ActionResult {
+  toast?: string
+  refresh?: boolean
+  view?: WidgetData | WidgetView | null
 }
 export interface WidgetData {
   view: WidgetView

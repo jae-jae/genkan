@@ -83,6 +83,7 @@ const (
 
 const (
 	maxJSONBody   = 1 << 20
+	maxActionBody = 64 << 10 // POST /api/widgets/{id}/action (params.value may hold 20000 characters)
 	maxImportBody = 32 << 20
 	maxMCPBody    = 4 << 20
 	csrfHeader    = "X-Requested-With"

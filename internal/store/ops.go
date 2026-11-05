@@ -136,6 +136,25 @@ func (s *Store) UpdateSettings(p SettingsPatch) (Settings, error) {
 	return out, err
 }
 
+// MarkPluginsSeeded records built-in plugin ids as seeded (docs/PLUGINS.md
+// §15.4) so they are not installed again after the admin uninstalls them.
+// Invalid ids are rejected; already recorded ids are ignored.
+func (s *Store) MarkPluginsSeeded(ids ...string) error {
+	for _, id := range ids {
+		if !pluginIDRe.MatchString(id) {
+			return invalid("invalid plugin id: %s", id)
+		}
+	}
+	return s.commit(true, func() (bool, error) {
+		cur := cleanSeeded(append(append([]string{}, s.d.Settings.PluginsSeeded...), ids...))
+		if len(cur) == len(s.d.Settings.PluginsSeeded) {
+			return false, nil
+		}
+		s.d.Settings.PluginsSeeded = cur
+		return true, nil
+	})
+}
+
 // SetUpdateDismissed stores the release version the admin chose to skip
 // ("" clears it). version must be a plain vX.Y.Z.
 func (s *Store) SetUpdateDismissed(version string) (Settings, error) {

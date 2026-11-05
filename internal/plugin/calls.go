@@ -8,13 +8,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jae-jae/genkan/internal/store"
 )
 
 const (
 	errorCacheTTL = 15 * time.Second // failed widget/wallpaper calls are not retried sooner
-	maxActionJSON = 8 << 10
+	maxActionJSON = 8 << 10          // action params without params.value
+	maxActionText = 20000            // params.value, in characters
 	searchBudget  = 2 * time.Second
 )
 
@@ -221,6 +223,7 @@ func (m *Manager) DeleteWidget(id string) error {
 		return err
 	}
 	m.forgetWidget(id)
+	m.actLocks.Delete(id)
 	return nil
 }
 
@@ -250,6 +253,7 @@ func (m *Manager) Data(ctx context.Context, id, lang string, force bool) (Widget
 	lang = NormLang(lang)
 	key := "w|" + id + "|" + lang
 	stamp := hashJSON(rec.Rev, rec.Config, w.Config)
+	gen := m.widgetGen(id)
 	if !force {
 		if it := m.cached(key, stamp); it != nil {
 			if it.err != nil {
@@ -271,7 +275,8 @@ func (m *Manager) Data(ctx context.Context, id, lang string, force bool) (Widget
 		view := SanitizeView(raw)
 		now := nowMs()
 		out := WidgetData{View: view, UpdatedAt: now, NextAt: now + int64(d.Refresh)*1000}
-		m.putCache(key, &cacheItem{stamp: stamp, data: out, updated: now, next: out.NextAt})
+		// an action that finished while the hook ran has already stored a newer view
+		m.putCacheIf(key, &cacheItem{stamp: stamp, data: out, updated: now, next: out.NextAt}, id, gen)
 		return out, nil
 	})
 	if err != nil {
@@ -320,23 +325,92 @@ func (m *Manager) putCache(key string, it *cacheItem) {
 	m.cmu.Unlock()
 }
 
+// putCacheIf stores it unless the widget's cache was invalidated (forgetWidget)
+// after gen was read: the hook that produced it may predate that change.
+func (m *Manager) putCacheIf(key string, it *cacheItem, widgetID string, gen uint64) {
+	m.cmu.Lock()
+	if m.wgen[widgetID] == gen {
+		m.cache[key] = it
+	}
+	m.cmu.Unlock()
+}
+
+func (m *Manager) widgetGen(id string) uint64 {
+	m.cmu.Lock()
+	defer m.cmu.Unlock()
+	return m.wgen[id]
+}
+
 // ActionRequest is the body of POST /api/widgets/{id}/action.
 type ActionRequest struct {
 	Action string `json:"action"`
 	Params any    `json:"params"`
 }
 
-// Action runs the plugin's action hook for a widget instance. The cached view is dropped.
+// checkActionParams enforces the params limits (docs/PLUGINS.md §15.3):
+// params.value, when a string, may have up to 20000 characters; the rest of
+// the params must serialize to at most 8 KiB.
+func checkActionParams(params any) error {
+	if m, ok := params.(map[string]any); ok {
+		if v, ok := m["value"].(string); ok {
+			if utf8.RuneCountInString(v) > maxActionText {
+				return invalidf("params.value is too long (max %d characters)", maxActionText)
+			}
+			rest := make(map[string]any, len(m))
+			for k, x := range m {
+				if k != "value" {
+					rest[k] = x
+				}
+			}
+			params = rest
+		}
+	}
+	if jsonSize(params) > maxActionJSON {
+		return invalidf("params are too large")
+	}
+	return nil
+}
+
+// actionLock returns the semaphore that serializes the actions of one widget instance.
+func (m *Manager) actionLock(id string) chan struct{} {
+	v, _ := m.actLocks.LoadOrStore(id, make(chan struct{}, 1))
+	return v.(chan struct{})
+}
+
+// stampView fills the timestamps of a view returned by an action hook, with the
+// same meaning as in GET /api/widgets/{id}/data.
+func stampView(r *ActionResult, refresh int) {
+	if r.View != nil {
+		now := nowMs()
+		r.View.UpdatedAt, r.View.NextAt = now, now+int64(refresh)*1000
+	}
+}
+
+// Action runs the plugin's action hook for a widget instance. Actions of one
+// instance run one at a time (in arrival order, other instances are not
+// affected). When the hook returns a `view`, it is sanitized, becomes the
+// instance's cached view (for the caller's language) and is returned; otherwise
+// the cached views are dropped.
 func (m *Manager) Action(ctx context.Context, id string, req ActionRequest, lang string) (ActionResult, error) {
-	w, ok := m.st.GetWidget(id)
-	if !ok {
+	if _, ok := m.st.GetWidget(id); !ok {
 		return ActionResult{}, notFoundf("widget not found: %s", id)
 	}
 	if !actionRe.MatchString(req.Action) {
 		return ActionResult{}, invalidf("invalid action name")
 	}
-	if jsonSize(req.Params) > maxActionJSON {
-		return ActionResult{}, invalidf("params are too large")
+	if err := checkActionParams(req.Params); err != nil {
+		return ActionResult{}, err
+	}
+	lock := m.actionLock(id)
+	select {
+	case lock <- struct{}{}:
+		defer func() { <-lock }()
+	case <-ctx.Done():
+		return ActionResult{}, ctx.Err()
+	}
+	w, ok := m.st.GetWidget(id) // the widget may have changed or vanished while we waited
+	if !ok {
+		return ActionResult{}, notFoundf("widget not found: %s", id)
 	}
 	e, rec, err := m.ready(w.Plugin)
 	if err != nil {
@@ -349,8 +423,9 @@ func (m *Manager) Action(ctx context.Context, id string, req ActionRequest, lang
 	if _, has := e.hook[hookAction]; !has {
 		return ActionResult{}, invalidf("plugin %s does not export action()", w.Plugin)
 	}
+	lang = NormLang(lang)
 	raw, err := m.call(ctx, e, rec, hookReq{
-		hook: hookAction, lang: NormLang(lang), timeout: timeoutDefault,
+		hook: hookAction, lang: lang, timeout: timeoutDefault,
 		fields: map[string]any{"widget": w.Widget, "action": req.Action, "params": req.Params},
 		instID: w.ID, instSchema: nonNil(d.Config), instCfg: w.Config,
 	})
@@ -358,7 +433,15 @@ func (m *Manager) Action(ctx context.Context, id string, req ActionRequest, lang
 	if err != nil {
 		return ActionResult{}, err
 	}
-	return SanitizeAction(raw), nil
+	res := SanitizeAction(raw)
+	if res.View != nil {
+		stampView(&res, d.Refresh)
+		m.putCache("w|"+id+"|"+lang, &cacheItem{
+			stamp: hashJSON(rec.Rev, rec.Config, w.Config), data: *res.View,
+			updated: res.View.UpdatedAt, next: res.View.NextAt,
+		})
+	}
+	return res, nil
 }
 
 // Search ---------------------------------------------------------------------------------------
@@ -498,6 +581,7 @@ func (m *Manager) Test(ctx context.Context, id string, req TestRequest) (TestRes
 		return TestResult{Logs: e.logs.all(), Error: "plugin is broken: " + e.err.Error()}, nil
 	}
 	hr := hookReq{hook: req.Hook, lang: NormLang(req.Lang), timeout: timeoutDefault, fields: map[string]any{}}
+	refresh := 0 // refresh interval of the widget under test (stamps the view of an action)
 	if req.Lang == "" {
 		hr.lang = "en"
 	}
@@ -545,6 +629,7 @@ func (m *Manager) Test(ctx context.Context, id string, req TestRequest) (TestRes
 		if req.Config == nil {
 			cfg = base
 		}
+		refresh = d.Refresh
 		hr.instID, hr.instSchema, hr.instCfg = instID, nonNil(d.Config), cfg
 		hr.scratch = req.Instance == ""
 		hr.fields["widget"] = wid
@@ -554,6 +639,9 @@ func (m *Manager) Test(ctx context.Context, id string, req TestRequest) (TestRes
 			}
 			if !actionRe.MatchString(req.Action) {
 				return TestResult{}, invalidf("action is required")
+			}
+			if err := checkActionParams(req.Params); err != nil {
+				return TestResult{}, err
 			}
 			hr.fields["action"], hr.fields["params"] = req.Action, req.Params
 		}
@@ -596,7 +684,9 @@ func (m *Manager) Test(ctx context.Context, id string, req TestRequest) (TestRes
 		case hookSearch:
 			res.Result = SanitizeResults(raw)
 		case hookAction:
-			res.Result = SanitizeAction(raw)
+			ar := SanitizeAction(raw)
+			stampView(&ar, refresh)
+			res.Result = ar
 		case hookWallpaper:
 			wr, ok := SanitizeWallpaper(raw, rand.IntN)
 			if !ok {

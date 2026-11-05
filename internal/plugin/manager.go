@@ -64,6 +64,9 @@ type Manager struct {
 	fl    flight
 	cmu   sync.Mutex
 	cache map[string]*cacheItem // widget data and wallpapers
+	wgen  map[string]uint64     // per widget: bumped whenever its cached views are dropped
+
+	actLocks sync.Map // widget id -> chan struct{} (capacity 1): serializes a widget's actions
 
 	catOnce sync.Once
 	catalog []CatalogItem
@@ -83,7 +86,7 @@ func New(cfg Config) *Manager {
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = &http.Client{Timeout: fetchTimeout}
 	}
-	m := &Manager{cfg: cfg, st: cfg.Store, entries: map[string]*entry{}, cache: map[string]*cacheItem{}}
+	m := &Manager{cfg: cfg, st: cfg.Store, entries: map[string]*entry{}, cache: map[string]*cacheItem{}, wgen: map[string]uint64{}}
 	m.ctx, m.end = context.WithCancel(context.Background())
 	m.sched = newScheduler(m)
 	m.st.SetSecretResolver(m.secretResolver)
@@ -507,6 +510,16 @@ type CatalogItem struct {
 	Icon        string          `json:"icon"`
 	Version     string          `json:"version"`
 	Installed   bool            `json:"installed"`
+	// Widgets are the plugin's widget kinds (the widget picker lists them
+	// before the plugin is installed). Never null.
+	Widgets []CatalogWidget `json:"widgets"`
+}
+
+// CatalogWidget is one widget of a catalog plugin, as in Info.widgets.
+type CatalogWidget struct {
+	ID   string          `json:"id"`
+	Name LocalizedString `json:"name"`
+	Size string          `json:"size"`
 }
 
 func (m *Manager) loadCatalog() {
@@ -533,7 +546,11 @@ func (m *Manager) loadCatalog() {
 				continue
 			}
 			m.catSrc[man.ID] = string(b)
-			m.catalog = append(m.catalog, CatalogItem{ID: man.ID, Name: man.Name, Description: man.Description, Icon: man.Icon, Version: man.Version})
+			ws := make([]CatalogWidget, 0, len(man.Widgets))
+			for _, w := range man.Widgets {
+				ws = append(ws, CatalogWidget{ID: w.ID, Name: w.Name, Size: w.Size})
+			}
+			m.catalog = append(m.catalog, CatalogItem{ID: man.ID, Name: man.Name, Description: man.Description, Icon: man.Icon, Version: man.Version, Widgets: ws})
 		}
 		sort.Slice(m.catalog, func(i, j int) bool { return m.catalog[i].ID < m.catalog[j].ID })
 	})
@@ -663,6 +680,7 @@ func (m *Manager) forgetCache(plugin string) {
 
 func (m *Manager) forgetWidget(id string) {
 	m.cmu.Lock()
+	m.wgen[id]++
 	for k := range m.cache {
 		if strings.HasPrefix(k, "w|"+id+"|") {
 			delete(m.cache, k)

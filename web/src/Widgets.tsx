@@ -5,26 +5,16 @@ import { openCtx } from './ContextMenu'
 import { ConfigFields, useConfigForm } from './ConfigForm'
 import { Icon } from './icons'
 import { LineChart } from './LineChart'
-import { LUCIDE } from './lucide'
 import { Modal } from './parts'
 import { lang, loc, t } from './i18n'
 import { track } from './wtrack'
-import { closeModal, curWs, editMode, isAdmin, load, modal, openSettings, plugins, sortedWs, toast, toastError, widgets, type CtxItem, type ModalState } from './store'
-import type { Block, ListItem, PluginInfo, PluginWidgetDef, StatBlock, WidgetData, WidgetInstance, WidgetView } from './types'
+import { closeModal, curWs, editMode, isAdmin, load, modal, plugins, sortedWs, toast, toastError, widgets, type CtxItem, type ModalState } from './store'
+import type { ActionResult, Block, PluginInfo, PluginWidgetDef, StatBlock, WidgetData, WidgetInstance, WidgetView } from './types'
+import { arr, httpUrl, imgSrc, InputBlock, ListBlock, MarkdownBlock, str, wIcon, type Ctx } from './WidgetBlocks'
+import { WidgetPicker } from './WidgetPicker'
 import { HtmlBlock, IframeBlock, MediaBlock, Slideshow } from './WidgetMedia'
 
-// ---------- safe value helpers (the backend sanitizes too; this is defence in depth) ----------
-const str = (v: unknown): string => (typeof v === 'string' ? v : typeof v === 'number' && Number.isFinite(v) ? String(v) : '')
-const httpUrl = (u: unknown): string | null => (typeof u === 'string' && /^https?:\/\//i.test(u.trim()) ? u.trim() : null)
-const imgSrc = (u: unknown): string | null => (typeof u === 'string' && /^(https?:\/\/|data:image\/)/i.test(u.trim()) ? u.trim() : null)
-const arr = <T,>(v: unknown, max: number): T[] => (Array.isArray(v) ? (v.slice(0, max) as T[]) : [])
-const wIcon = (n?: unknown) => (typeof n === 'string' && LUCIDE[n] ? n : '')
 const nums = (v: unknown, max = 60): number[] => arr<unknown>(v, max).map(Number).filter(Number.isFinite)
-
-interface Ctx {
-  run: (action: string, params: unknown) => Promise<void>
-  admin: boolean
-}
 
 // ---------- blocks ----------
 function StatView({ b }: { b: StatBlock }) {
@@ -41,32 +31,6 @@ function StatView({ b }: { b: StatBlock }) {
         {b.unit && <small>{str(b.unit)}</small>}
         {tr && <Icon n={tr} size={15} />}
       </div>
-    </div>
-  )
-}
-
-function ListRow({ it }: { it: ListItem }) {
-  const href = httpUrl(it.url)
-  const img = imgSrc(it.image)
-  const ic = wIcon(it.icon)
-  const inner = (
-    <>
-      {img ? <img class="wg-li-img" src={img} alt="" loading="lazy" referrerpolicy="no-referrer" draggable={false} /> : ic ? <span class="wg-li-ico"><Icon n={ic} size={15} /></span> : null}
-      <span class="wg-li-main">
-        <span class="wg-li-t">{str(it.title)}</span>
-        {it.subtitle && <span class="wg-li-s">{str(it.subtitle)}</span>}
-      </span>
-      {it.badge && <span class="wg-badge">{str(it.badge)}</span>}
-      {it.right && <span class="wg-li-r">{str(it.right)}</span>}
-    </>
-  )
-  return href ? (
-    <a class="wg-li" href={href} target="_blank" rel="noopener noreferrer" data-testid="widget-list-item">
-      {inner}
-    </a>
-  ) : (
-    <div class="wg-li" data-testid="widget-list-item">
-      {inner}
     </div>
   )
 }
@@ -145,13 +109,11 @@ function BlockView({ b, ctx, depth }: { b: Block; ctx: Ctx; depth: number }) {
         </div>
       )
     case 'list':
-      return (
-        <div class="wg-list" data-testid="widget-list">
-          {arr<ListItem>(b.items, 20).map((it, i) => (
-            <ListRow key={i} it={it} />
-          ))}
-        </div>
-      )
+      return <ListBlock b={b} ctx={ctx} />
+    case 'input':
+      return <InputBlock b={b} ctx={ctx} />
+    case 'markdown':
+      return <MarkdownBlock b={b} ctx={ctx} />
     case 'kv':
       return (
         <dl class="wg-kv" data-testid="widget-kv">
@@ -247,6 +209,14 @@ function ActionButton({ b, ctx }: { b: Extract<Block, { type: 'button' }>; ctx: 
   )
 }
 
+/** `view` of an action result: a WidgetData ({view, updated_at}) or a bare WidgetView. */
+function actionView(r: ActionResult | null | undefined): WidgetView | null {
+  const v = r?.view as (WidgetData & WidgetView) | null | undefined
+  if (!v || typeof v !== 'object') return null
+  const inner = v.view && typeof v.view === 'object' ? v.view : v
+  return inner
+}
+
 // ---------- data polling ----------
 interface DataState {
   view?: WidgetView
@@ -257,6 +227,7 @@ interface DataState {
 function useWidgetData(inst: WidgetInstance, refreshSec: number, active: boolean) {
   const [st, setSt] = useState<DataState>({ loading: true })
   const reload = useRef<(force: boolean) => void>(() => {})
+  const stamp = useRef(0) // bumped when an action hands back a fresh view: an older fetch still in flight must not overwrite it
   const lg = lang.value // a language switch refetches (the server renders the text in the request language)
   const cfgKey = inst.plugin + '/' + inst.widget + lg + JSON.stringify(inst.config || {})
   useEffect(() => {
@@ -270,9 +241,10 @@ function useWidgetData(inst: WidgetInstance, refreshSec: number, active: boolean
       clearTimeout(timer)
       if (inflight) return
       inflight = true
+      const mine = stamp.current
       try {
         const d = await get<WidgetData>(`/api/widgets/${inst.id}/data${force && isAdmin.value ? '?force=1' : ''}`, { 'Accept-Language': lang.value })
-        if (dead) return
+        if (dead || mine !== stamp.current) return
         last = Date.now()
         setSt({ view: d.view || {}, loading: false })
       } catch (e: any) {
@@ -299,7 +271,14 @@ function useWidgetData(inst: WidgetInstance, refreshSec: number, active: boolean
       document.removeEventListener('visibilitychange', onVis)
     }
   }, [cfgKey, active, refreshSec])
-  return { st, reload: (force: boolean) => reload.current(force) }
+  return {
+    st,
+    reload: (force: boolean) => reload.current(force),
+    setView: (view: WidgetView) => {
+      stamp.current++
+      setSt({ view, loading: false })
+    },
+  }
 }
 
 // ---------- layout: masonry grid (docs/PLUGINS.md 11.1) ----------
@@ -616,7 +595,7 @@ function Skeleton({ size }: { size: string }) {
 function Card({ inst, p, def, edit, order }: { inst: WidgetInstance; p?: PluginInfo; def?: PluginWidgetDef; edit: boolean; order: string[] }) {
   const active = !!p?.enabled && !!def
   const admin = isAdmin.value
-  const { st, reload } = useWidgetData(inst, def?.refresh || 300, active)
+  const { st, reload, setView } = useWidgetData(inst, def?.refresh || 300, active)
   const cell = useRef<HTMLDivElement>(null)
   const lp = useRef({ timer: 0, x: 0, y: 0 })
   useRows(cell)
@@ -630,25 +609,34 @@ function Card({ inst, p, def, edit, order }: { inst: WidgetInstance; p?: PluginI
   const fixed = !!inst.h && inst.h > 0
   const ctx: Ctx = {
     admin,
-    run: async (action, params) => {
+    editing: edit,
+    run: async (action, params, o) => {
       try {
-        const r = await post<{ toast?: string; refresh?: boolean }>(`/api/widgets/${inst.id}/action`, { action, params })
-        toast(str(r?.toast) || t('widget.done'), 'success')
-        if (r?.refresh) reload(true)
+        const r = await post<ActionResult>(`/api/widgets/${inst.id}/action`, { action, params })
+        if (r?.toast) toast(str(r.toast), 'success')
+        else if (!o?.quiet) toast(t('widget.done'), 'success')
+        // the action hands back the new view (a WidgetData-like object; a bare view is tolerated): no refetch
+        const nv = actionView(r)
+        if (nv) setView(nv)
+        else if (r?.refresh) reload(true)
+        return true
       } catch (e) {
         toastError(e)
+        return false
       }
     },
   }
   const openMenu = (x: number, y: number) => openCtx(x, y, widgetMenu(inst, { size, admin, active, link: href, reload: () => reload(true), name }), 'ctx-menu-widget', title)
   const onMenu = (e: MouseEvent) => {
     if (String(window.getSelection() || '')) return // keep the native menu for selected text
+    if (document.documentElement.classList.contains('is-dragging')) return e.preventDefault()
     e.preventDefault()
     if (edit && (e as PointerEvent).pointerType === 'touch') return // long-press is drag in edit mode
     openMenu(e.clientX, e.clientY)
   }
   const cancelLp = () => clearTimeout(lp.current.timer)
   const press = (e: PointerEvent) => {
+    if ((e.target as HTMLElement).closest('input,textarea')) return // typing / selecting text is not a drag or a long press
     if (edit) {
       if ((e.target as HTMLElement).closest('.wg-actions,.wg-resize')) return
       return beginReorder(e, cell.current!.parentElement as HTMLElement, inst.id, order)
@@ -661,6 +649,9 @@ function Card({ inst, p, def, edit, order }: { inst: WidgetInstance; p?: PluginI
     q.timer = window.setTimeout(() => openMenu(q.x, q.y), LONG_PRESS)
   }
   const body = arr<Block>(v?.body, 50)
+  // a view without a title whose first block is markdown (a sticky note) has no title bar; edit mode keeps it for the grip
+  const bare = active && !!v && !v.title && !edit && body[0]?.type === 'markdown'
+  const tone = v?.tone && ['yellow', 'pink', 'blue', 'green', 'purple'].includes(v.tone) ? v.tone : undefined
   return (
     <div class="wgi" ref={cell} data-wid={inst.id} style={cellVars(effW(inst.w, size))}>
       <section
@@ -672,6 +663,8 @@ function Card({ inst, p, def, edit, order }: { inst: WidgetInstance; p?: PluginI
         data-plugin={inst.plugin}
         data-widget={inst.widget}
         data-size={size}
+        data-tone={tone}
+        data-bare={bare ? '1' : undefined}
         data-w={effW(inst.w, size)}
         data-h={inst.h || 0}
         aria-busy={active && st.loading}
@@ -682,40 +675,42 @@ function Card({ inst, p, def, edit, order }: { inst: WidgetInstance; p?: PluginI
         onPointerCancel={cancelLp}
         onPointerLeave={cancelLp}
       >
-        <header class="wg-head">
-          {edit && (
-            <button
-              class="wg-grip"
-              aria-label={t('widget.drag')}
-              title={t('widget.drag')}
-              data-testid={'widget-grip-' + inst.id}
-              onKeyDown={(e) => {
-                const d = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : 0
-                if (d) {
-                  e.preventDefault()
-                  moveBy(inst.id, d, order)
-                }
-              }}
-            >
-              <Icon n="grip-vertical" size={15} />
-            </button>
-          )}
-          {ic && <Icon n={ic} size={15} />}
-          {href ? (
-            <a class="wg-title" href={href} target="_blank" rel="noopener noreferrer" data-testid="widget-title">
-              {title}
-            </a>
-          ) : (
-            <h2 class="wg-title" data-testid="widget-title">
-              {title}
-            </h2>
-          )}
-          {active && admin && !edit && (
-            <button class="wg-refresh" aria-label={t('plugin.refresh')} title={t('plugin.refresh')} data-testid="widget-refresh" onClick={() => reload(true)}>
-              <Icon n="refresh-cw" size={13} />
-            </button>
-          )}
-        </header>
+        {!bare && (
+          <header class="wg-head">
+            {edit && (
+              <button
+                class="wg-grip"
+                aria-label={t('widget.drag')}
+                title={t('widget.drag')}
+                data-testid={'widget-grip-' + inst.id}
+                onKeyDown={(e) => {
+                  const d = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : 0
+                  if (d) {
+                    e.preventDefault()
+                    moveBy(inst.id, d, order)
+                  }
+                }}
+              >
+                <Icon n="grip-vertical" size={15} />
+              </button>
+            )}
+            {ic && <Icon n={ic} size={15} />}
+            {href ? (
+              <a class="wg-title" href={href} target="_blank" rel="noopener noreferrer" data-testid="widget-title">
+                {title}
+              </a>
+            ) : (
+              <h2 class="wg-title" data-testid="widget-title">
+                {title}
+              </h2>
+            )}
+            {active && admin && !edit && (
+              <button class="wg-refresh" aria-label={t('plugin.refresh')} title={t('plugin.refresh')} data-testid="widget-refresh" onClick={() => reload(true)}>
+                <Icon n="refresh-cw" size={13} />
+              </button>
+            )}
+          </header>
+        )}
         {active && st.loading && !v && <Skeleton size={size} />}
         {err && (
           <div class="wg-err" role="alert" data-testid="widget-error">
@@ -798,7 +793,7 @@ export function WidgetArea() {
   return (
     <section class="widgets" ref={area} data-testid="widget-area" data-editing={edit ? '1' : undefined} aria-label={t('widget.area')}>
       {edit && (
-        <div class="wgi wgi-add" style={cellVars(2)}>
+        <div class="wgi wgi-add">
           <button class="wg wg-add glass-lite" data-testid="widget-add" onClick={() => (modal.value = { kind: 'widget' })}>
             <Icon n="plus" size={16} />
             {t('widget.add')}
@@ -821,7 +816,6 @@ export function WidgetArea() {
 // ---------- add / edit ----------
 export function WidgetModal({ state }: { state: Extract<ModalState, { kind: 'widget' }> }) {
   const inst = state.id ? widgets.value.find((w) => w.id === state.id) : undefined
-  const ps = plugins.value.filter((p) => p.enabled && p.widgets?.length)
   const [pick, setPick] = useState<{ p: PluginInfo; d: PluginWidgetDef } | null>(() => {
     if (!inst) return null
     const p = plugins.value.find((x) => x.id === inst.plugin)
@@ -830,43 +824,9 @@ export function WidgetModal({ state }: { state: Extract<ModalState, { kind: 'wid
   })
   if (state.id && !pick) return null
   return (
-    <Modal title={t(inst ? 'widget.editTitle' : 'widget.addTitle')} onClose={closeModal} testid="widget-modal" focusFirst={false}>
+    <Modal title={t(inst ? 'widget.editTitle' : 'widget.addTitle')} onClose={closeModal} testid="widget-modal" focusFirst={false} cls={'modal-wgp' + (pick ? '' : ' pick')}>
       {!pick ? (
-        ps.length ? (
-          <div class="wg-picks" data-testid="widget-picker">
-            <p class="hint first">{t('widget.pick')}</p>
-            {ps.flatMap((p) =>
-              (p.widgets || []).map((d) => (
-                <button key={p.id + '/' + d.id} type="button" class="wg-pick" data-testid={`widget-pick-${p.id}-${d.id}`} onClick={() => setPick({ p, d })}>
-                  <span class="ico ico-lucide" style={{ '--s': '34px', '--h': 200 } as any}>
-                    <Icon n={wIcon(p.icon) || 'puzzle'} size={19} />
-                  </span>
-                  <span class="pl-main">
-                    <b>{loc(d.name)}</b>
-                    <small>
-                      {loc(p.name)} · {t('widget.size.' + (d.size || 'm'))}
-                    </small>
-                  </span>
-                </button>
-              )),
-            )}
-          </div>
-        ) : (
-          <div class="pl-empty" data-testid="widget-none">
-            <Icon n="puzzle" size={30} />
-            <p>{t('widget.noPlugins')}</p>
-            <button
-              class="btn"
-              data-testid="widget-open-plugins"
-              onClick={() => {
-                closeModal()
-                openSettings('plugins')
-              }}
-            >
-              {t('plugin.browse')}
-            </button>
-          </div>
-        )
+        <WidgetPicker onPick={(p, d) => setPick({ p, d })} />
       ) : (
         <WidgetForm key={pick.p.id + pick.d.id} p={pick.p} d={pick.d} inst={inst} onBack={inst ? undefined : () => setPick(null)} />
       )}

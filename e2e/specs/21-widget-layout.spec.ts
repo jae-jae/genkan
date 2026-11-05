@@ -120,6 +120,8 @@ test.describe('widget layout (masonry, drag, resize, context menu)', () => {
     const made: W[] = []
     for (const l of ['One', 'Two', 'Three', 'Four']) made.push(await add(api, 'countdown', 'timer', { config: { label: l, date: '2099-01-01' } }))
     const ids = made.map((w) => w.id)
+    // the full-row add card pushes the second row down: keep the last card out of the drag's edge auto-scroll zone (80px at the bottom)
+    await page.setViewportSize({ width: 1280, height: 1000 })
     await openApp(page)
     await toggleEdit(page)
     await settled(page, 4)

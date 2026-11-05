@@ -64,7 +64,9 @@ type htmlCleaner struct {
 	visible bool     // output has visible text or an image
 }
 
-func newCleaner(base *url.URL, budget int) *htmlCleaner { return &htmlCleaner{base: base, budget: budget} }
+func newCleaner(base *url.URL, budget int) *htmlCleaner {
+	return &htmlCleaner{base: base, budget: budget}
+}
 
 // parseBase accepts "" (no base) or an absolute http(s) URL.
 func parseBase(s string) (*url.URL, error) {

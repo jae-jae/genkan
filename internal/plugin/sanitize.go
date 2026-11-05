@@ -26,6 +26,14 @@ const (
 	maxRowDepth    = 3
 	maxSearchItems = 8
 	maxParamsJSON  = 2048
+
+	// Interactive widgets (docs/PLUGINS.md §15.2).
+	maxInteractiveItems = 200   // list items when the list has check/edit/actions/sortAction
+	maxItemActions      = 3     // icon buttons per list item
+	maxItemID           = 64    // list item id
+	maxNote             = 20000 // markdown block text, input maxLength upper bound
+	defaultInputLen     = 500
+	maxEmpty            = 200
 )
 
 // WidgetView is the sanitized declarative UI of a widget.
@@ -33,6 +41,7 @@ type WidgetView struct {
 	Title string           `json:"title,omitempty"`
 	Icon  string           `json:"icon,omitempty"`
 	Link  string           `json:"link,omitempty"`
+	Tone  string           `json:"tone,omitempty"` // yellow|pink|blue|green|purple (soft card tint)
 	Body  []map[string]any `json:"body"`
 	Error string           `json:"error,omitempty"`
 }
@@ -50,12 +59,16 @@ type SearchResult struct {
 type ActionResult struct {
 	Toast   string `json:"toast,omitempty"`
 	Refresh bool   `json:"refresh,omitempty"`
+	// View is the new widget view the action returned (sanitized). It has the
+	// shape of GET /api/widgets/{id}/data: { view, updated_at, next_at }.
+	View *WidgetData `json:"view,omitempty"`
 }
 
 var (
 	dataImageRe = regexp.MustCompile(`^data:image/(png|jpe?g|gif|webp|avif|svg\+xml);base64,[A-Za-z0-9+/=]+$`)
 	iconNameRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
 	actionRe    = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,40}$`)
+	itemIDRe    = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
 )
 
 // cleanStr trims, strips control characters (newlines and tabs stay) and truncates.
@@ -161,6 +174,7 @@ func SanitizeView(raw any) WidgetView {
 	view.Title = cleanLine(o["title"], maxStr)
 	view.Icon = cleanIconName(o["icon"])
 	view.Link = cleanHTTPURL(o["link"])
+	view.Tone = oneOf(o["tone"], "yellow", "pink", "blue", "green", "purple")
 	view.Error = cleanLine(o["error"], maxStr)
 	budget := maxBlocks
 	if list, ok := o["body"].([]any); ok {
@@ -231,36 +245,7 @@ func sanitizeBlock(b map[string]any, budget *int, depth int) map[string]any {
 		}
 		out["items"] = list
 	case "list":
-		items, _ := b["items"].([]any)
-		list := []map[string]any{}
-		for _, it := range items {
-			if len(list) >= maxListItems {
-				break
-			}
-			m, ok := it.(map[string]any)
-			if !ok {
-				continue
-			}
-			title := cleanLine(m["title"], maxStr)
-			if title == "" {
-				continue
-			}
-			e := map[string]any{"title": title}
-			setStr(e, "subtitle", m["subtitle"], maxStr)
-			setStr(e, "right", m["right"], maxStr)
-			setStr(e, "badge", m["badge"], maxStr)
-			if u := cleanHTTPURL(m["url"]); u != "" {
-				e["url"] = u
-			}
-			if ic := cleanIconName(m["icon"]); ic != "" {
-				e["icon"] = ic
-			}
-			if im := cleanImageURL(m["image"]); im != "" {
-				e["image"] = im
-			}
-			list = append(list, e)
-		}
-		out["items"] = list
+		out = sanitizeList(b)
 	case "kv":
 		items, _ := b["items"].([]any)
 		list := []map[string]any{}
@@ -368,6 +353,14 @@ func sanitizeBlock(b map[string]any, budget *int, depth int) map[string]any {
 				out["params"] = p
 			}
 		}
+	case "input":
+		if out = sanitizeInput(b); out == nil {
+			return nil
+		}
+	case "markdown":
+		if out = sanitizeMarkdown(b); out == nil {
+			return nil
+		}
 	case "divider":
 	default:
 		return nil
@@ -459,12 +452,17 @@ func SanitizeResults(raw any) []SearchResult {
 	return out
 }
 
-// SanitizeAction normalizes the value an action hook returned.
+// SanitizeAction normalizes the value an action hook returned. A returned
+// `view` is sanitized and wrapped as WidgetData with zero timestamps; the
+// caller stamps them (Manager.stampView).
 func SanitizeAction(raw any) ActionResult {
 	var r ActionResult
 	if m, ok := raw.(map[string]any); ok {
 		r.Toast = cleanLine(m["toast"], 200)
 		r.Refresh, _ = m["refresh"].(bool)
+		if v, ok := m["view"].(map[string]any); ok {
+			r.View = &WidgetData{View: SanitizeView(v)}
+		}
 	}
 	return r
 }

@@ -46,6 +46,7 @@ Not covered on purpose, never call them: login, logout, setup and password endpo
 | `show_clock` | boolean | Show the clock (default true) |
 | `update_check` | boolean | Check GitHub for new Genkan releases every 6 hours (default true; also true for data saved before the field existed) |
 | `update_dismissed` | string | Release version the admin chose to skip (`""` = none). Read-only here: `PATCH /api/settings` ignores it, use `POST /api/update/dismiss` |
+| `plugins_seeded` | string[] | Ids of the built-in plugins (`todo`, `note`) that Genkan has already installed once automatically, so an uninstalled one is not installed again. Read-only: `PATCH /api/settings` ignores it. Do not edit or reset it |
 
 **Workspace**: `{"id","name","icon","wallpaper","sort"}`. `name` 1-40 characters. `icon` is `lucide:<name>` (see the icon list below; empty on create = `lucide:layout-grid`). `wallpaper` is `preset:<id>` or `upload:<file>` (empty on create = `preset:dusk`). `sort` is the position among workspaces.
 
@@ -356,7 +357,7 @@ gk POST /api/update/dismiss '{"version":"v1.2.0"}' | jq .dismissed
 
 ## Plugins
 
-Plugins are single JavaScript (or TypeScript) files that run on the server and add wallpaper sources, widgets, search providers, scheduled jobs and widget button actions. The browser never runs plugin code: widgets return declarative JSON that the UI renders. The full contract (manifest, `ctx`, host API, block types, limits) is in `docs/PLUGINS.md` of the Genkan repository; read it before writing a plugin.
+Plugins are single JavaScript (or TypeScript) files that run on the server and add wallpaper sources, widgets, search providers, scheduled jobs and widget button actions. The browser never runs plugin code: widgets return declarative JSON that the UI renders. The full guide (manifest, `ctx`, host API, block types, limits, recipes) is [plugin-dev.md](plugin-dev.md) in this Skill; read it before writing a plugin.
 
 A plugin is an ES module (no imports) with this shape:
 
@@ -380,9 +381,9 @@ export async function widget(ctx) {            // ctx.instance.config, ctx.confi
 }
 ```
 
-Capabilities and the functions they need: `wallpapers` -> `wallpaper(ctx)`, `widgets` -> `widget(ctx)` (+ optional `action(ctx)` for `button` blocks), `search` -> `search(ctx)`, `schedules` -> `schedule(ctx)`. Host API inside plugins: `genkan.log()`, `genkan.storage.get/set/delete/keys` (256 KiB per plugin), `genkan.links.*` / `genkan.workspaces.list` / `genkan.categories.list` (needs `permissions.links`), standard `fetch`, timers, `URL`. Limits: 32 MiB memory, search 2 s, widget/wallpaper/action 10 s, schedule 60 s. Config field types: `string`, `text`, `number`, `boolean`, `select`, `secret`, `url`. Secret values are never returned by the API. Besides text, stat, list, kv, progress, image, chart, row, button and divider, widgets can return `iframe` (the browser embeds a page; sandboxed, never Genkan's own origin), `html` (sanitized fragment, no scripts or styles), `media` (video or audio; `autoplay` only with `muted`) and an `image` slideshow (`images: [...]`). `genkan.html.select(html, selector, {base, limit})` extracts `[{html, text}]` from fetched HTML with a CSS selector (input <= 2 MiB, throws on a bad selector). The built-in `media` plugin (page, snippet, image, video, audio widgets) shows each; details in `docs/PLUGINS.md` section 14 and `docs/PLUGIN_DEV.md`.
+Capabilities and the functions they need: `wallpapers` -> `wallpaper(ctx)`, `widgets` -> `widget(ctx)` (+ optional `action(ctx)` for `button` blocks and the interactive blocks), `search` -> `search(ctx)`, `schedules` -> `schedule(ctx)`. Host API inside plugins: `genkan.log()`, `genkan.storage.get/set/delete/keys` (256 KiB per plugin), `genkan.links.*` / `genkan.workspaces.list` / `genkan.categories.list` (needs `permissions.links`), standard `fetch`, timers, `URL`. Limits: 32 MiB memory, search 2 s, widget/wallpaper/action 10 s, schedule 60 s. Config field types: `string`, `text`, `number`, `boolean`, `select`, `secret`, `url`. Secret values are never returned by the API. Besides text, stat, list, kv, progress, image, chart, row, button and divider, widgets can return the interactive blocks `input` (one-line text box) and `markdown` (a safe-rendered, optionally editable note with `editAction`), list items with `id`, `check` (checkbox), `edit` (in-place edit) and `actions` (icon buttons), a list `sortAction` (drag to reorder) and `empty` text, a view `tone` (card tint), and can `iframe` (the browser embeds a page; sandboxed, never Genkan's own origin), `html` (sanitized fragment, no scripts or styles), `media` (video or audio; `autoplay` only with `muted`) and an `image` slideshow (`images: [...]`). `genkan.html.select(html, selector, {base, limit})` extracts `[{html, text}]` from fetched HTML with a CSS selector (input <= 2 MiB, throws on a bad selector). The built-in `media` plugin (page, snippet, image, video, audio widgets) shows each; interactive widgets (`todo`, `note` built-ins) are explained in [plugin-dev.md](plugin-dev.md), section "Interactive widgets", which is the complete plugin development guide.
 
-Localization: every user-visible manifest string (`name`, `description`, config `label` / `help`, `select` option labels, widget / wallpaper / schedule / search `name`) may be a plain string, an object `{ "en": "Weather", "zh": "天气" }` or `t("key")` (expanded from `messages` when the plugin is installed). The API returns the string or the object as written, so `name` and `description` in the plugin list and catalog can be objects: take `.en` when you need a single string. In hooks, use `ctx.t(key, params)` (`{name}` placeholders; fallback exact language -> base language -> `en` -> key) and `ctx.locale` (`zh-CN`, `en-US`) for `Intl`; never branch on `ctx.lang`. `POST /api/plugins/{id}/test` accepts `"lang":"zh"`. See `docs/PLUGIN_DEV.md` (Localization).
+Localization: every user-visible manifest string (`name`, `description`, config `label` / `help`, `select` option labels, widget / wallpaper / schedule / search `name`) may be a plain string, an object `{ "en": "Weather", "zh": "天气" }` or `t("key")` (expanded from `messages` when the plugin is installed). The API returns the string or the object as written, so `name` and `description` in the plugin list and catalog can be objects: take `.en` when you need a single string. In hooks, use `ctx.t(key, params)` (`{name}` placeholders; fallback exact language -> base language -> `en` -> key) and `ctx.locale` (`zh-CN`, `en-US`) for `Intl`; never branch on `ctx.lang`. `POST /api/plugins/{id}/test` accepts `"lang":"zh"`. See [plugin-dev.md](plugin-dev.md) (Localization).
 
 Write a plugin, install it, then **always run `POST /api/plugins/{id}/test`** and read `error` and `logs` before adding widgets.
 
@@ -396,7 +397,7 @@ gk GET /api/plugins | jq '[.[] | {id, enabled, last_error}]'
 
 ### GET /api/plugins/catalog
 
-Built-in example plugins that can be installed with `{"catalog":"<id>"}`: `[{id,name,description,icon,version,installed}]` (`calculator`, `weather`, `world-clock`, `countdown`, `hacker-news`, `rss`, `pihole`, `bing-wallpaper`, ...).
+Built-in example plugins that can be installed with `{"catalog":"<id>"}`: `[{id,name,description,icon,version,installed,widgets}]` (`calculator`, `weather`, `world-clock`, `countdown`, `hacker-news`, `rss`, `pihole`, `bing-wallpaper`, `todo`, `note`, ...). `widgets` is `[{id,name,size}]` (names localized like `name`; empty or missing for plugins without widgets). The built-in `todo` and `note` are installed automatically once on first start (`plugins_seeded`); to read the source of any catalog plugin without installing it, use `POST /api/plugins/preview` with `{"catalog":"<id>"}` and read `.source`.
 
 ```bash
 gk GET /api/plugins/catalog | jq -r '.[] | "\(.id)\t\(.installed)\t\(.description | if type == "object" then .en else . end)"'
@@ -543,7 +544,7 @@ gk GET "/api/widgets/$W/data?force=1" | jq '.view.body[0]'
 
 ### POST /api/widgets/{id}/action
 
-Runs the plugin's `action(ctx)` for a `button` block. Body: `{"action":"<name>","params":{...}}`. Response: `{"toast":"...","refresh":true}`.
+Runs the plugin's `action(ctx)` for a `button` block or an interactive block (`input`, list `check` / `edit` / `actions` / `sortAction`, editable `markdown`). Body: `{"action":"<name>","params":{...}}`; `params.value` may be a string of up to 20000 characters, the rest of `params` must stay <= 8 KiB (body <= 64 KiB). Response: `{"toast":"...","refresh":true}` and/or, when the action returns a new card, `"view":{...}` (the sanitized view with `updated_at`, same shape as in `GET /api/widgets/{id}/data`; it also replaces the server's cached view). Calls for the same widget instance run one after another.
 
 ```bash
 gk POST /api/widgets/$W/action '{"action":"noop"}'   # 400 unless the plugin exports action()

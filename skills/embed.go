@@ -6,7 +6,7 @@ package skills
 
 import "embed"
 
-//go:embed genkan/SKILL.md genkan/reference.md
+//go:embed genkan/SKILL.md genkan/reference.md genkan/plugin-dev.md
 var files embed.FS
 
 // File is one file of the Skill package, named relative to the zip root.
@@ -18,8 +18,8 @@ type File struct {
 // Files returns the embedded Skill files, byte-identical to the repository,
 // SKILL.md first.
 func Files() []File {
-	out := make([]File, 0, 2)
-	for _, n := range []string{"genkan/SKILL.md", "genkan/reference.md"} {
+	out := make([]File, 0, 3)
+	for _, n := range []string{"genkan/SKILL.md", "genkan/reference.md", "genkan/plugin-dev.md"} {
 		b, err := files.ReadFile(n)
 		if err != nil { // embedded at build time: cannot happen
 			panic(err)

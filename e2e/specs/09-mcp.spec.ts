@@ -63,7 +63,7 @@ test.describe('single API token + Skill + MCP', () => {
     await dl.saveAs(zipPath)
     const { readFileSync } = await import('node:fs')
     const zip = readFileSync(zipPath)
-    expect(zipEntries(zip)).toEqual(['genkan/SKILL.md', 'genkan/reference.md', 'genkan/.env'])
+    expect(zipEntries(zip)).toEqual(['genkan/SKILL.md', 'genkan/reference.md', 'genkan/plugin-dev.md', 'genkan/.env'])
     expect(readZipEntry(zip, 'genkan/.env')).toBe(`GENKAN_URL=${origin()}\nGENKAN_TOKEN=${first}\n`)
     for (const f of ['genkan/SKILL.md', 'genkan/reference.md']) {
       const md = readZipEntry(zip, f)
@@ -264,7 +264,7 @@ test.describe('single API token + Skill + MCP', () => {
       expect(r.headers()['content-type']).toBe('application/zip')
       expect(r.headers()['content-disposition']).toContain('genkan-skill.zip')
       const zip = await r.body()
-      expect(zipEntries(zip)).toEqual(['genkan/SKILL.md', 'genkan/reference.md', 'genkan/.env'])
+      expect(zipEntries(zip)).toEqual(['genkan/SKILL.md', 'genkan/reference.md', 'genkan/plugin-dev.md', 'genkan/.env'])
       return readZipEntry(zip, 'genkan/.env')
     }
     expect(await get()).toBe(`GENKAN_URL=${origin()}\nGENKAN_TOKEN=${tok}\n`)

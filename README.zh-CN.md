@@ -83,7 +83,9 @@ volumes:
 
 插件是单个 JavaScript（或 TypeScript）文件，可以为 Genkan 增加壁纸源、首页小组件、搜索提供者（比如搜索框里的计算器）和定时任务。插件在服务端沙箱中运行（有内存与时间限制，无文件系统，只能访问插件声明且经你确认的主机），只返回声明式 JSON，浏览器不会执行任何插件代码。
 
-在 设置 → 插件 中可一键安装内置示例（计算器、世界时钟、倒计时、天气、RSS、Pi-hole 等），也可以粘贴源码或 URL，或者让 AI 助手通过 Skill / MCP 为你编写。插件接口约定见 [`docs/PLUGINS.md`](docs/PLUGINS.md)。
+在 设置 → 插件 中可一键安装内置示例（待办、便签、计算器、世界时钟、倒计时、天气、RSS、Pi-hole 等），也可以粘贴源码或 URL。待办和便签会在首次启动时自动安装，小组件还可以交互（输入框、勾选、就地编辑、拖动排序、Markdown 便签）。
+
+**用 AI 开发插件：** [Agent Skill](skills/genkan) 现在也覆盖插件开发。装好 Skill（设置 → AI）后，直接对你的 AI 助手说“用 Genkan Skill 帮我开发一个 Genkan 插件：……”并描述需求即可。Skill 自带完整的插件开发指南（[`skills/genkan/plugin-dev.md`](skills/genkan/plugin-dev.md)）和“编写、测试、安装”的完整流程，不再需要粘贴长提示词；设置 → 插件 → 用 AI 开发 中有一行现成的提示词可以直接复制。插件接口约定见 [`docs/PLUGINS.md`](docs/PLUGINS.md)。
 
 ## 更新
 

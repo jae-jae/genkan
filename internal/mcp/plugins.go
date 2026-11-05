@@ -29,7 +29,7 @@ func (s *Server) pluginTools() []tool {
 	return []tool{
 		{
 			name: "list_plugins", title: "List plugins", readOnly: true, idempotent: true,
-			desc:   "List installed plugins (manifest, enabled flag, current config with secrets blanked and secrets_set, last_error) and the built-in example catalog that can be installed with install_plugin {catalog}. User-visible manifest strings (name, description, labels) are either a plain string or an object {language: text}, e.g. {\"en\":\"Weather\",\"zh\":\"天气\"}." + pluginDocs,
+			desc:   "List installed plugins (manifest, enabled flag, current config with secrets blanked and secrets_set, last_error) and the built-in example catalog that can be installed with install_plugin {catalog}. User-visible manifest strings (name, description, labels) are either a plain string or an object {language: text}, e.g. {\"en\":\"Weather\",\"zh\":\"天气\"}. Each catalog item also lists its widgets [{id, name, size}]. The built-in todo and note plugins are installed automatically once on first start." + pluginDocs,
 			schema: obj(M{}),
 			fn: func(json.RawMessage) (any, error) {
 				m, err := mgr()
@@ -198,7 +198,7 @@ func (s *Server) pluginTools() []tool {
 		},
 		{
 			name: "test_plugin", title: "Test plugin", readOnly: false,
-			desc: "Dry-run one plugin hook and return {ok, result, error, logs, ms}. result is the sanitized value the UI would use (nothing is cached or downloaded). Use it to debug a plugin after install_plugin. widget/action use the config given here (or the saved instance with `instance`)." + pluginDocs,
+			desc: "Dry-run one plugin hook and return {ok, result, error, logs, ms}. result is the sanitized value the UI would use (nothing is cached or downloaded). Use it to debug a plugin after install_plugin. widget/action use the config given here (or the saved instance with `instance`). An action may return a `view`; it is sanitized and returned as result.view = {view, updated_at, next_at} (nothing is cached)." + pluginDocs,
 			schema: obj(M{
 				"id":       str("Plugin id."),
 				"hook":     enumStr("Hook to run.", []string{"wallpaper", "widget", "search", "schedule", "action"}),

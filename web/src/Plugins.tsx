@@ -262,41 +262,21 @@ function CatalogSourceModal({ id }: { id: string }) {
   )
 }
 
-// ---------- Develop with AI (docs/PLUGINS.md §11.3) ----------
-const GUIDE_RAW = 'https://raw.githubusercontent.com/jae-jae/genkan/main/docs/PLUGIN_DEV.md'
-const GUIDE_WEB = 'https://github.com/jae-jae/genkan/blob/main/docs/PLUGIN_DEV.md'
-
-/** The prompt the user sends to their AI assistant; the last line is a placeholder for the requirement. */
-export function devPrompt(l: 'zh' | 'en'): string {
-  return l === 'zh'
-    ? [
-        '我想开发一个 Genkan 插件，请按以下步骤做：',
-        '',
-        `1. 先阅读插件开发指南，并严格遵循：${GUIDE_RAW}`,
-        '   界面文字请做多语言：把中英文放进 `export const messages`，清单里用 t("key")，钩子里用 ctx.t("key", 参数)，不要写 ctx.lang === "zh" 之类的分支。',
-        '2. 使用 Genkan Skill（通过它的 REST API 操作我的 Genkan 实例）循环开发：以禁用状态安装插件（POST /api/plugins，enable:false），反复调用 POST /api/plugins/{id}/test 直到通过，并查看 GET /api/plugins/{id}/logs；出错就修改后重新安装。',
-        '3. 测试通过后再启用插件（PATCH /api/plugins/{id}，{"enabled":true}）；如果是小组件插件，再把小组件添加到我的页面（POST /api/widgets）。',
-        '4. 完成后告诉我插件 id。不要输出 API token。',
-        '',
-        '我的需求：',
-        DEV_PLACEHOLDER.zh,
-      ].join('\n')
-    : [
-        'I want to develop a Genkan plugin. Please do the following:',
-        '',
-        `1. Read the plugin development guide first and follow it exactly: ${GUIDE_RAW}`,
-        '   Localize the plugin: keep English and Chinese text in `export const messages`, use t("key") in the manifest and ctx.t("key", params) in hooks, and never branch on ctx.lang.',
-        '2. Use the Genkan Skill (its REST API against my Genkan instance) to build it in a loop: install the plugin DISABLED (POST /api/plugins with enable:false), run POST /api/plugins/{id}/test until it passes, check GET /api/plugins/{id}/logs, and fix and reinstall whenever something fails.',
-        '3. Only once the test passes, enable it (PATCH /api/plugins/{id} with {"enabled":true}). If it is a widget plugin, also add the widget to my page (POST /api/widgets).',
-        '4. When you are done, tell me the plugin id. Never print the API token.',
-        '',
-        'My requirement:',
-        DEV_PLACEHOLDER.en,
-      ].join('\n')
+// ---------- Develop with AI (docs/PLUGINS.md §11.3, §15.7) ----------
+// The Genkan Skill carries the whole plugin guide and workflow (skills/genkan/plugin-dev.md),
+// so the prompt the user sends is one short sentence plus their requirement.
+const DEV_HEAD = {
+  zh: '用 Genkan Skill 帮我开发一个 Genkan 插件：',
+  en: 'Use the Genkan Skill to develop a Genkan plugin for me: ',
 }
 const DEV_PLACEHOLDER = {
-  zh: '【在这里写下你想要的插件，例如：一个显示比特币价格的小组件】',
-  en: '[Describe the plugin you want here, e.g. a widget that shows the Bitcoin price]',
+  zh: '【在这里写下你的需求…】',
+  en: '[Describe what you want here…]',
+}
+
+/** The prompt the user sends to their AI assistant; it ends with a placeholder for the requirement. */
+export function devPrompt(l: 'zh' | 'en'): string {
+  return DEV_HEAD[l] + DEV_PLACEHOLDER[l]
 }
 
 function DevAiModal() {
@@ -316,7 +296,7 @@ function DevAiModal() {
     if (modal.value?.kind !== 'settings') openSettings('ai')
   }
   const ph = DEV_PLACEHOLDER[l]
-  const body = prompt.slice(0, prompt.length - ph.length)
+  const body = DEV_HEAD[l]
   return (
     <Modal title={t('dev.title')} onClose={closeModal} testid="plugin-dev-modal" focusFirst={false} footer={<button class="btn" data-testid="plugin-dev-close" onClick={closeModal}>{t('common.close')}</button>}>
       <p class="hint first">{t('dev.intro')}</p>
@@ -336,12 +316,7 @@ function DevAiModal() {
           <span class="dev-n">2</span>
           <div class="dev-c">
             <b>{t('dev.s2')}</b>
-            <p class="hint">
-              {t('dev.s2d')}{' '}
-              <a href={GUIDE_WEB} target="_blank" rel="noopener noreferrer">
-                {t('dev.guide')}
-              </a>
-            </p>
+            <p class="hint">{t('dev.s2d')}</p>
             <div class="code wrap">
               <pre data-testid="dev-prompt" tabIndex={0}>
                 {body}
@@ -355,13 +330,6 @@ function DevAiModal() {
               <Icon n={ok ? 'check' : 'copy'} size={14} />
               {t('dev.copyPrompt')}
             </button>
-          </div>
-        </li>
-        <li data-testid="dev-step-3">
-          <span class="dev-n">3</span>
-          <div class="dev-c">
-            <b>{t('dev.s3')}</b>
-            <p class="hint">{t('dev.s3d')}</p>
           </div>
         </li>
       </ol>

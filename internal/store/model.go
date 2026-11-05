@@ -50,6 +50,11 @@ type Settings struct {
 	// admin chose to skip; it is only changed through /api/update/dismiss.
 	UpdateCheck     bool   `json:"update_check"`
 	UpdateDismissed string `json:"update_dismissed"`
+	// PluginsSeeded lists the built-in plugins that were offered for automatic
+	// installation once (docs/PLUGINS.md §15.4). It is never part of
+	// SettingsPatch: it is only changed through Store.MarkPluginsSeeded, so an
+	// uninstalled plugin is not installed again. Exported with the settings.
+	PluginsSeeded []string `json:"plugins_seeded"`
 }
 
 // SettingsPatch is a partial Settings update; nil fields are untouched.
@@ -74,6 +79,7 @@ func DefaultSettings() Settings {
 		HealthInterval: 60,
 		ShowClock:      true,
 		UpdateCheck:    true,
+		PluginsSeeded:  []string{},
 	}
 }
 
@@ -425,17 +431,40 @@ func normalizeSettings(s Settings) Settings {
 		SearchEngine: &s.SearchEngine, OpenInNewTab: &s.OpenInNewTab,
 		HealthInterval: &s.HealthInterval, ShowClock: &s.ShowClock, UpdateCheck: &s.UpdateCheck,
 	})
+	seeded := cleanSeeded(s.PluginsSeeded)
 	if err != nil {
 		// fall back field by field: keep what is valid
 		d := DefaultSettings()
 		d.GuestAccess, d.OpenInNewTab, d.ShowClock, d.UpdateCheck = s.GuestAccess, s.OpenInNewTab, s.ShowClock, s.UpdateCheck
 		d.UpdateDismissed = cleanDismissed(s.UpdateDismissed)
+		d.PluginsSeeded = seeded
 		if s.HealthInterval >= 15 {
 			d.HealthInterval = s.HealthInterval
 		}
 		return d
 	}
 	out.UpdateDismissed = cleanDismissed(s.UpdateDismissed)
+	out.PluginsSeeded = seeded
+	return out
+}
+
+const maxSeeded = 64
+
+// cleanSeeded keeps valid, distinct plugin ids (in order, at most maxSeeded)
+// and never returns nil, so the JSON field is always an array.
+func cleanSeeded(ids []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if len(out) >= maxSeeded {
+			break
+		}
+		if !pluginIDRe.MatchString(id) || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
 	return out
 }
 

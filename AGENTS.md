@@ -17,8 +17,8 @@ A self-hosted homelab start page, shipped as **one static Go binary with an embe
 | `plugins/catalog/` | built-in plugins (embedded) |
 | `web/` | Preact UI (`web/src`), dev mock API (`web/mock`), test ids (`web/TESTIDS.md`) |
 | `e2e/` | Playwright suite, run against a throw-away Docker container |
-| `skills/genkan/` | Agent Skill, fetched by users straight from GitHub |
-| `docs/` | `SPEC.md` (product spec, Chinese), `PLUGINS.md` (plugin contract), `PLUGIN_DEV.md` (plugin guide for AI), `UPDATES.md` (release + self-update contract) |
+| `skills/genkan/` | Agent Skill, fetched by users straight from GitHub: `SKILL.md` (entry), `reference.md` (REST API) and `plugin-dev.md` (plugin development guide for AI) |
+| `docs/` | `SPEC.md` (product spec, Chinese), `PLUGINS.md` (plugin contract), `UPDATES.md` (release + self-update contract) |
 
 ## Build and test
 
@@ -40,7 +40,7 @@ cd web && npm run mock & npm run dev   # UI with hot reload against the mock API
 - **i18n.** Every UI string goes in `web/src/i18n.ts` in **both** `en` and `zh`. Built-in plugins use their `messages` table and `ctx.t` (see `docs/PLUGINS.md` §12).
 - **Test ids.** New interactive UI gets a `data-testid`, documented in `web/TESTIDS.md`.
 - **API changes** update, in the same PR:
-  - `skills/genkan/reference.md` (REST only; no MCP content or secrets in the Skill);
+  - `skills/genkan/reference.md` (REST only; no MCP content or secrets in the Skill), and `skills/genkan/plugin-dev.md` when the plugin contract changes (manifest, `ctx`, host API, widget blocks, limits);
   - the MCP tool descriptions in `internal/mcp` if a tool is affected;
   - `web/mock` so the mock stays usable;
   - the relevant doc in `docs/`.

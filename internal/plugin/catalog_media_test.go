@@ -82,7 +82,7 @@ func TestCatalogMediaPageAndImage(t *testing.T) {
 
 	// image slideshow
 	v = mediaView(t, e, "image", map[string]any{
-		"urls": "https://a.example/1.jpg\n\n  https://a.example/2.jpg \njavascript:alert(1)\nftp://x/y.png\nhttps://a.example/3.jpg\r\n",
+		"urls":     "https://a.example/1.jpg\n\n  https://a.example/2.jpg \njavascript:alert(1)\nftp://x/y.png\nhttps://a.example/3.jpg\r\n",
 		"interval": 8, "fit": "contain", "height": 240, "link": "https://a.example/gallery",
 	})
 	im := v.Body[0]

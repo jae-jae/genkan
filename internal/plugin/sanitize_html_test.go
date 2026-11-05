@@ -83,8 +83,8 @@ func TestSanitizeHTMLAllowedMarkup(t *testing.T) {
 		{`<a href="/rel/path?x=1">rel</a>`, "https://site.example/dir/page", `<a href="https://site.example/rel/path?x=1">rel</a>`},
 		{`<a href="sub/x">rel</a>`, "https://site.example/dir/page", `<a href="https://site.example/dir/sub/x">rel</a>`},
 		{`<a href="//cdn.example/x">proto-relative</a>`, "https://site.example/", `<a href="https://cdn.example/x">proto-relative</a>`},
-		{`<a href="/rel">rel</a>`, "", `rel`},                                   // no base: relative link dropped, text kept
-		{`<a href="javascript:alert(1)">bad</a> good`, "", `bad good`},             // unusable link unwrapped
+		{`<a href="/rel">rel</a>`, "", `rel`},                          // no base: relative link dropped, text kept
+		{`<a href="javascript:alert(1)">bad</a> good`, "", `bad good`}, // unusable link unwrapped
 		{`<img src="/i.png" alt="A" width="40" height="30" srcset="x 2x">`, "https://s.example/", `<img src="https://s.example/i.png" alt="A" width="40" height="30"/>`},
 		{`<img src="/i.png" width="100%" height="auto">`, "https://s.example/", `<img src="https://s.example/i.png"/>`},
 		{`before<img src="data:image/png;base64,AAAA">after`, "", `beforeafter`},

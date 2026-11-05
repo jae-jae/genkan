@@ -83,7 +83,9 @@ Images are published for `linux/amd64` and `linux/arm64` (Raspberry Pi, Apple Si
 
 Plugins are single JavaScript (or TypeScript) files that extend Genkan with wallpaper sources, widgets on the board, search providers (a calculator in the search box, say) and scheduled jobs. They run on the server in a sandbox (memory and time limits, no filesystem, network access only to the hosts the plugin declares and you approve) and only return declarative JSON, so the browser never executes plugin code.
 
-Install the built-in examples (calculator, world clock, countdown, weather, RSS, Pi-hole and more) from Settings → Plugins, paste your own source or a URL, or ask your AI assistant to write one with the Skill / MCP tools. The plugin contract is documented in [`docs/PLUGINS.md`](docs/PLUGINS.md) (Chinese).
+Install the built-in examples (to-do list, sticky note, calculator, world clock, countdown, weather, RSS, Pi-hole and more) from Settings → Plugins, or paste your own source or a URL. The to-do list and the note are installed automatically on first start, and widgets can be interactive (inputs, checkboxes, in-place editing, drag sorting, Markdown notes).
+
+**Develop plugins with AI:** the [Agent Skill](skills/genkan) now covers plugin development. Once it is installed (Settings → AI), just tell your assistant "Use the Genkan Skill to develop a Genkan plugin for me: …" and describe what you want. The Skill carries the complete plugin guide ([`skills/genkan/plugin-dev.md`](skills/genkan/plugin-dev.md)) and the write, test and install workflow, so no long prompt is needed; Settings → Plugins → Develop with AI has the one-line prompt ready to copy. The plugin contract is documented in [`docs/PLUGINS.md`](docs/PLUGINS.md) (Chinese).
 
 ## Updates
 

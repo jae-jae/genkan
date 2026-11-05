@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"sync"
 	"time"
@@ -146,7 +147,7 @@ func (s *Store) normalize() bool {
 		d.Auth.APIToken = auth.NewToken()
 		changed = true
 	}
-	if ns := normalizeSettings(d.Settings); ns != d.Settings {
+	if ns := normalizeSettings(d.Settings); !reflect.DeepEqual(ns, d.Settings) {
 		d.Settings = ns
 		changed = true
 	}

@@ -51,7 +51,7 @@ export async function wallpaper(ctx) { /* → WallpaperResult */ }
 export async function widget(ctx)    { /* → WidgetView */ }
 export async function search(ctx)    { /* → SearchResult[] */ }
 export async function schedule(ctx)  { /* → 任意，忽略 */ }
-export async function action(ctx)    { /* → { toast?: string, refresh?: boolean } */ }
+export async function action(ctx)    { /* → { toast?: string, refresh?: boolean, view?: WidgetView }（view 见 §15.3） */ }
 ```
 
 声明了某能力却没有导出对应函数 → 安装时校验失败。
@@ -198,7 +198,7 @@ type Block =
 | `GET /api/bootstrap` | public | 新增 `plugins: PluginInfo[]`（访客也可见，但不含 config）、`widgets: WidgetInstance[]` |
 | `GET /api/plugins` | admin | `PluginInfo[]`，含 `config`（secret 置空）、`secrets_set`、`source_url`、最近错误 |
 | `POST /api/plugins` | admin | 安装或更新。body：`{ source: string, lang?: "js"\|"ts", enable?: bool }` 或 `{ url: string, enable?: bool }`（服务端下载，≤ 512 KiB）或 `{ catalog: "<id>" }`（从内置示例安装）。同 ID 已存在 → 更新源码（保留配置/实例）。返回 `PluginInfo` |
-| `GET /api/plugins/catalog` | admin | 内置示例插件列表：`{ id, name, description, icon, version, installed: bool }[]`（`name`/`description` 为 LocalizedString：字符串或 `{ lang: text }`） |
+| `GET /api/plugins/catalog` | admin | 内置示例插件列表：`{ id, name, description, icon, version, installed: bool, widgets: { id, name, size }[] }[]`（`name`/`description` 与 `widgets[].name` 为 LocalizedString：字符串或 `{ lang: text }`；`widgets` 永不为 null，见 §15.5） |
 | `GET /api/plugins/{id}/source` | admin | `{ source, lang }` |
 | `PATCH /api/plugins/{id}` | admin | `{ enabled?: bool, config?: object }` |
 | `DELETE /api/plugins/{id}` | admin | 卸载 |
@@ -210,7 +210,7 @@ type Block =
 | `DELETE /api/widgets/{id}` | admin | |
 | `POST /api/widgets/reorder` | admin | `{ ids: string[] }` |
 | `GET /api/widgets/{id}/data` | read | `{ view: WidgetView, updated_at, next_at }`。服务端按 refresh 缓存；`?force=1` 仅 admin 生效，绕过缓存 |
-| `POST /api/widgets/{id}/action` | admin | `{ action, params }` → `{ toast?, refresh? }` |
+| `POST /api/widgets/{id}/action` | admin | `{ action, params }` → `{ toast?, refresh?, view? }`；`view` 为 `{ view: WidgetView, updated_at, next_at }`（与 `/data` 同形），见 §15.3、§15.8。请求体 ≤ 64 KiB |
 | `GET /api/plugins/wallpaper/{plugin}/{source}` | read | `{ url: "/uploads/plugin-wallpapers/<file>", title?, credit?, link?, updated_at }`，按 refresh 缓存 |
 | `GET /api/plugins/search?q=` | read | 并发调用所有已启用的搜索插件（无前缀的仅当 q ≥ 2 字符），总时长 ≤ 2 s，返回 `{ groups: { plugin, name, icon, results: SearchResult[] }[] }`；超时/出错的插件被忽略 |
 | `GET /uploads/plugin-wallpapers/{name}` | read | 复用现有 `/uploads/{kind}/{name}` |
@@ -265,6 +265,9 @@ type Block =
 | `uptime-summary` | 小组件 | `links: "read"`；汇总开启健康检查的链接数量（演示宿主 API） |
 | `link-importer` | 定时任务 | `links: "write"`；配置一个 JSON URL（allowFetch），定时把其中 `{title,url,category}` 导入为链接（演示定时任务），已存在的 URL 跳过 |
 | `github-stars` | 小组件+定时任务 | GitHub 星标增长折线图（`chart` 的 `line`、实例级配置、`genkan.widgets.list()`、插件存储），见 §13.6 |
+| `media` | 小组件 | 网页 / 网页片段 / 图片轮播 / 视频 / 音频，见 §14.5 |
+| `todo` | 小组件+动作 | 待办清单（`input`、可勾选/编辑/排序的 `list`、实例存储），首次启动自动安装，见 §15.6 |
+| `note` | 小组件+动作 | Markdown 便签（`markdown` 块就地编辑、`tone` 底色），首次启动自动安装，见 §15.6 |
 
 每个示例都要短小、注释清晰，作为插件开发者的范例。
 
@@ -303,7 +306,7 @@ type Block =
 - test 请求可选 **`instance`**（已保存的小组件实例 id，作为配置基底，保留其 secret）和 `lang`。`result` 是清洗后的值；壁纸 test 不下载图片。
 - 壁纸文件名为 `<插件前缀8位>-<源前缀6位>-<内容哈希16位>.<ext>`（前缀由插件 id/源 id 的 sha256 得到，用于按源保留最近 5 张并在卸载时清理），仍由 `/uploads/plugin-wallpapers/{name}` 提供。
 - 搜索：结果为空的分组不返回；无前缀插件需 `q` ≥ 2 个字符；带前缀的需 `q` 以 `<prefix> ` 开头且去前缀后非空。
-- 小组件按钮 `action` 名需匹配 `^[A-Za-z0-9_.:-]{1,40}$`；`params` 序列化后 ≤ 2 KiB（action 请求 ≤ 8 KiB）。
+- 小组件按钮 `action` 名需匹配 `^[A-Za-z0-9_.:-]{1,40}$`；`params` 序列化后 ≤ 2 KiB（action 请求的 `params` ≤ 8 KiB，`params.value` 另算，见 §15.3）。
 - 导出 `schema` 升为 **2**（旧文件无需迁移，可直接读取；旧版本程序会拒绝读取 schema 2 的数据文件）。导出中仅在存在插件/小组件时才出现 `plugins`、`widgets` 键；`plugins[]` 为 `PluginRecord + source + lang`，secret 值被去除（无法解析 manifest 的插件导出时不含 config）。导入前每个插件源码都会被编译校验，manifest id 必须与记录一致；`merge` 跳过已存在的插件 id；`POST /api/import` 响应新增 `plugins`、`widgets` 计数。
 - 数据文件里的 `plugins[]` 记录多一个 `lang`（`js`|`ts`）字段。
 - 运行时池：每次调用独占一个运行时，成功结束的运行时放回池（每插件最多 2 个空闲，5 分钟无调用释放）；超时、出错或钩子完成后仍有残留定时器的运行时直接丢弃。插件不应依赖 JS 全局变量保存状态（请用 `genkan.storage`）。
@@ -336,8 +339,8 @@ type Block =
 
 ### 11.3 AI 开发插件
 
-- 新文档 **`docs/PLUGIN_DEV.md`**（英文为主，面向 AI 编码助手）：插件开发完整指南——文件格式、manifest、ctx、宿主 API、返回值、限制、通过 REST 的"编写 → 安装(`enable:false`) → test → 看日志 → 修改 → 启用 → 添加小组件"闭环、调试技巧、常见错误、完整示例、发布到 GitHub 的约定（11.4）。GitHub 地址：`https://github.com/jae-jae/genkan/blob/main/docs/PLUGIN_DEV.md`，原始文件：`https://raw.githubusercontent.com/jae-jae/genkan/main/docs/PLUGIN_DEV.md`。Skill（`skills/genkan/SKILL.md`、`reference.md`）中加入指向它的说明。
-- 插件页"添加插件"旁边新增"用 AI 开发"按钮 → 弹窗三步：① 先到 设置→AI 按提示安装 Genkan Skill（带跳转按钮）；② 复制提示词（中/英随界面语言，包含上面的文档地址、要求先读文档、用 Skill 的 REST API 安装为禁用状态并 test 通过后再启用、完成后告诉我插件 id）；③ 在提示词末尾的占位处写上你的需求，发给 AI。
+- 插件开发指南 **`skills/genkan/plugin-dev.md`**（英文为主，面向 AI 编码助手；属于 Skill 的一部分，见 §15.7）：插件开发完整指南——文件格式、manifest、ctx、宿主 API、返回值、限制、通过 REST 的"编写 → 安装(`enable:false`) → test → 看日志 → 修改 → 启用 → 添加小组件"闭环、调试技巧、常见错误、完整示例、发布到 GitHub 的约定（11.4）。GitHub 地址：`https://github.com/jae-jae/genkan/blob/main/skills/genkan/plugin-dev.md`，原始文件：`https://raw.githubusercontent.com/jae-jae/genkan/main/skills/genkan/plugin-dev.md`。Skill 的 `SKILL.md` 与 `reference.md` 指向它（§15.7）。
+- 插件页"添加插件"旁边新增"用 AI 开发"按钮 → 弹窗两步：① 先到 设置→AI 安装或更新 Genkan Skill（带跳转按钮）；② 复制一句短提示词（中/英随界面语言）并在占位处写上需求，发给 AI。指南和完整流程都在 Skill 里（§15.7）。
 
 ### 11.4 第三方插件（GitHub）
 
@@ -578,3 +581,208 @@ const items = genkan.html.select(pageHtml, ".titleline > a", { base: "https://ne
 | `image` 图片 | m | `urls`（每行一个，≤ 20）、`interval`、`fit`、`height`、`link` | 轮播 `image`；刷新 3600 秒 |
 | `video` 视频 | m | `url`、`poster`、`autoplay`（静音）、`loop`、`controls` | YouTube（`watch?v=`、`youtu.be/`、`shorts/`、`live/`、`embed/`）→ `https://www.youtube-nocookie.com/embed/ID` 的 `iframe`（`ratio: 16/9`）；哔哩哔哩 `bilibili.com/video/BV…` → `https://player.bilibili.com/player.html?bvid=…&autoplay=0` 的 `iframe`；其它 → `media` 视频块。主机必须正好是 youtube / youtu.be / bilibili 域名（`youtube.com.evil.example` 之类不会被识别） |
 | `audio` 音频 | s | `url`、`title`、`loop` | `media` 音频块（文件和电台流都可以） |
+
+## 15. 协议 v3：可交互小组件、预装插件、小组件选择器
+
+目标：插件能做可交互的小组件（输入、勾选、就地编辑、排序、Markdown 编辑）。内置 `todo`（待办）与 `note`（便签）两个插件，首次启动时自动安装。小组件选择器改为网格，加搜索。所有改动向后兼容，旧插件不受影响。
+
+### 15.1 交互模型
+
+所有交互都走现有的 `action(ctx)` 钩子（`POST /api/widgets/{id}/action`，仅管理员）。
+
+1. 前端把用户的输入放进 `params.value`（或 `params.checked`、`params.ids`），与块里声明的 `params` 合并，块里的同名键会被覆盖，然后调用 action。
+2. 插件写 `ctx.instance.storage`，返回 `{ view }`、`{ refresh: true }` 或 `{ toast }`。
+
+访客（非管理员）看到的是只读视图：`input` 不渲染；勾选框只显示、不能点；条目按钮、就地编辑、拖动排序、Markdown 编辑入口都不出现。
+
+### 15.2 新块与扩展字段（`SanitizeView`）
+
+**`input`**：单行输入框，按 Enter 或点提交按钮触发。
+
+```js
+{ type: "input", action: "add", params: { list: "a" }, placeholder: "Add a task", submit: "Add", icon: "plus", maxLength: 500, value: "" }
+```
+
+- `action` 必填，规则同 `button`。`params` ≤ 2 KiB，规则同 `button`。
+- `placeholder`、`submit` ≤ 200；`icon` 同 Lucide 规则；`value` 是初始值，≤ `maxLength`。
+- `maxLength` 取 1..20000，默认 500，超出范围时夹到边界。
+- 前端行为：
+  - 空白输入（trim 后为空）不提交；
+  - 提交成功后清空输入框并保持焦点；
+  - 提交期间禁用输入框，防止重复提交。
+
+**`list` 条目的新字段**：
+
+- `id`：字符串，≤ 64，匹配 `^[A-Za-z0-9_.:-]+$`，否则丢弃该字段。用作排序和 React key。
+- `check: { checked: bool, action, params? }`：标题前显示勾选框，点击时调用 action，`params.checked` 是新状态。`checked: true` 的条目，标题显示删除线并变暗。
+- `edit: { action, params? }`：双击标题（或在编辑模式下点标题）就地编辑，Enter 保存、Esc 取消。值放在 `params.value`，≤ 500，空值不提交。
+- `actions: [{ icon, label, action, params? }]`：条目右侧的小图标按钮，悬停或聚焦时显示，触屏上始终显示。最多 3 个；`icon` 与 `label`（用作 aria-label 和 title）都必填，否则丢弃该按钮。
+- 所有 action 名都要匹配 `actionRe`，`params` ≤ 2 KiB；不合规的对象整体丢弃，条目本身保留。
+
+**`list` 的新字段**：
+
+- `sortAction`：action 名。只有当**所有**条目都有 `id` 时才保留。前端允许拖动排序，触屏用长按；键盘支持 Alt+↑/↓。放下后调用 action，`params.ids` 是新顺序的全部 id。
+- `empty`：≤ 200，列表为空时显示的文字。有 `empty` 的空列表会保留，不再被丢弃。
+- 条目上限：普通列表仍是 20；**含交互字段（任一条目有 `check`、`edit`、`actions`，或列表有 `sortAction`）的列表上限 200**。
+
+**`markdown`**：
+
+```js
+{ type: "markdown", text: "# Hi\n- [ ] task", editAction: "save", params: {}, placeholder: "Write something…" }
+```
+
+- `text` ≤ 20000 字符。保留换行和制表符，去掉其它控制字符，不折叠空白。
+- 设了 `editAction`（规则同 `actionRe`）就是可编辑便签：
+  - 管理员双击正文或点卡片上的"编辑"按钮，切换为 textarea（自动高度）。
+  - Ctrl/⌘+Enter 或失焦时保存；Esc 取消。
+  - 值放在 `params.value`，可以为空字符串，表示清空。
+- 任务列表 `- [ ]` / `- [x]` 在显示状态下可以直接点：前端翻转该行，再用整段新文本调用 `editAction`。
+- `placeholder` ≤ 200：文本为空时显示（管理员看到"双击编辑"之类的提示）。
+- 前端用安全渲染器（`web/src/md.tsx`，扩展后）生成 VNode，**不使用 innerHTML**。
+  - 支持：标题 h1-h6、段落、粗体、斜体、删除线、行内代码、围栏代码块、引用、有序和无序列表（含嵌套一层）、任务列表、链接、自动链接、分隔线、GFM 表格。
+  - 链接只允许 http(s) 和 mailto，加 `target=_blank rel="noopener noreferrer"`；图片语法渲染成链接，不加载图片。
+
+**WidgetView 的新字段**：
+
+- `tone`：取 `"yellow" | "pink" | "blue" | "green" | "purple"` 之一，其它值丢弃。卡片会染上对应的柔和底色，由前端定义，深浅主题下文字都可读。
+
+### 15.3 action 请求与结果
+
+- 请求：`{ action, params }`。`params.value` 若是字符串，单独限制为 ≤ 20000 字符；其余部分（去掉 `value` 后）仍 ≤ 8 KiB。
+  - 请求体整体上限放宽到 64 KiB，所以服务端的 `readJSON` 对这个端点用单独的上限。
+  - 超限返回 400。
+- 结果新增 `view`：action 可以返回 `{ view: <WidgetView>, toast? }`。
+  - 服务端按 `SanitizeView` 清洗后，**写回该实例的视图缓存**，并在响应里原样返回 `view`。前端直接用它替换卡片内容，不用再请求一次 `/data`。
+  - 返回的视图带上和 `/data` 一样的元信息（例如 `updated_at`），具体格式与 `WidgetData` 对齐，实现时定义为 `ActionResult.View *WidgetData`。
+  - 没有 `view` 时行为不变：清掉视图缓存；`refresh: true` 时前端重新拉取。
+- **同一个实例的 action 串行执行**：按 widget id 加锁，用 `sync.Map` 里存 `*sync.Mutex`，或类似方案。快速连点不会丢失修改。不同实例之间仍可并发。
+- `/test` 的 action 试运行同样支持返回 `view`。
+
+### 15.4 预装插件（自动安装一次）
+
+- `store.Settings` 新增 `PluginsSeeded []string`（json `plugins_seeded`），不通过 `PATCH /api/settings` 暴露给用户编辑。
+- 启动时（`plugin.Manager` 初始化之后），对 `autoInstall = ["todo", "note"]` 里每个不在 `plugins_seeded` 中的 id：
+  - 若未安装，就从 catalog 安装并启用（Install 走现有逻辑）；
+  - 无论是否已安装，都把 id 记入 `plugins_seeded`。
+  - 所以用户卸载之后不会被装回来；安装失败只记日志，不记入，下次启动再试。
+- 只安装插件，不自动添加小组件。
+- 备份导出、导入时 `plugins_seeded` 跟随 settings 一起处理（加性字段）。
+
+### 15.5 catalog 返回小组件列表；小组件选择器
+
+- `CatalogItem` 新增 `widgets: [{ id, name, size }]`（按请求语言本地化，与 `Info.widgets` 同格式），没有小组件时为空数组或省略。`GET /api/plugins/catalog` 原样返回。
+- 前端选择器（`WidgetModal` 的选择步骤）：
+  - **顶部搜索框**（`data-testid="widget-search"`），自动聚焦。
+    - 按小组件名、插件名、插件描述、id 过滤，中英文名都参与匹配，不区分大小写。
+    - 无结果时显示空状态（`widget-search-empty`）。
+  - **网格卡片**：宽度足够时 3 列，≤ 520px 时 2 列。卡片内容：图标、小组件名、插件名、默认尺寸。卡片的 testid 不变（`widget-pick-<plugin>-<widget>`）。
+  - **分组**："已安装"（已启用插件的小组件，按插件名、小组件名排序）、"已禁用的插件"、最后是**未安装的 catalog 插件**"可安装"，卡片上有"未安装"徽标。卡片本身显示插件名，所以不再按插件逐个分组（实现中调整：单个小组件的插件会产生大量只有一张卡的组）。
+    - 点未安装的卡片：调用 `POST /api/plugins {catalog: id, enable: true}`，成功后刷新插件列表，进入该小组件的配置表单。安装中显示加载状态，失败时 toast。
+    - 已安装但被禁用的插件也显示，徽标为"已禁用"。点击后先 `PATCH` 启用，再进入配置表单。
+  - 弹窗内容区高度固定（最大约 70vh），只有列表区域滚动，搜索框固定在顶部。
+- 编辑模式下的"添加小组件"块独占一整行：`grid-column: 1 / -1`，高度约 52px，位于小组件区最前。
+
+### 15.6 内置插件 `todo` 与 `note`（`plugins/catalog/`）
+
+两个插件都要做中英文本地化（`messages`），不需要任何 `permissions.fetch`。
+
+**`todo`**，小组件 `list`，size m，图标 `list-todo`，无配置项：
+- 实例存储键 `items`：`[{ id, text, done, at }]`，最多 200 条，`text` ≤ 500。
+- 视图：
+  - `title` 为"待办"，或"待办 · N"（N 为未完成数）；
+  - 先是一个 `input`（action `add`）；
+  - 然后是一个 `list`：未完成的在前，已完成的在后，保持各自的相对顺序。每条有 `id`、`check`（action `toggle`）、`edit`（action `rename`）、`actions: [{ icon: "trash-2", action: "remove" }]`，列表带 `sortAction: "reorder"` 和 `empty` 文案；
+  - 有已完成项时，末尾一个 `button`（action `clear`，图标 `eraser`，标签"清除已完成 (N)"）。
+- 每个 action 都返回 `{ view: await widget(ctx) }` 形式的新视图。
+
+**`note`**，小组件 `note`，size m，图标 `sticky-note`：
+- 配置项 `tone`：select，取值 default / yellow / pink / blue / green / purple，默认 `yellow`。
+- 实例存储键 `text`：≤ 20000 字符。
+- 视图：
+  - 无 `title`，即不显示标题栏；
+  - `tone` 不是 default 时设置 `tone`；
+  - `body` 是一个 `markdown` 块，`editAction: "save"`，并设置 `placeholder`。
+- action `save` 写入 `text`，返回新视图。
+
+### 15.7 文档与 Skill
+
+- 插件开发指南移到 **`skills/genkan/plugin-dev.md`**，embed 进 Skill 包和 `/api/skill` 的 zip；删除 `docs/PLUGIN_DEV.md`，所有引用随之更新。
+- 指南新增"可交互小组件"一节，用 todo 作完整示例。
+- `SKILL.md`：
+  - description 加上插件开发的触发词，例如"develop/write/debug a Genkan plugin or widget"、"开发 Genkan 插件"；
+  - 新增"Developing plugins"一节，写清完整闭环，并指向 `plugin-dev.md`。
+- 设置 → AI 的 Skill 安装提示词，下载文件列表加上 `plugin-dev.md`。
+- 插件页"用 AI 开发"弹窗：
+  - 步骤 1 是安装或更新 Skill；
+  - 步骤 2 复制一句短提示词："用 Genkan Skill 帮我开发一个 Genkan 插件：【需求】"，中英文随界面语言。
+  - 不再内嵌指南链接和长流程。
+
+### 15.8 后端实现补充
+
+以下是后端落地时对 §15.1–15.7 的澄清；与前文冲突处以本节为准。
+
+**action 响应的 JSON 形状**（`POST /api/widgets/{id}/action`；`view` 的类型就是 §5 里 `GET /data` 的 `WidgetData`，前端可以把 `res.view` 直接当作 `/data` 的响应使用）：
+
+```jsonc
+{
+  "toast": "…",          // 可选
+  "refresh": true,       // 可选
+  "view": {              // 可选：插件返回了 view 时才有，永远是清洗后的
+    "view": { "title": "…", "icon": "…", "tone": "yellow", "body": [ /* 清洗后的块 */ ] },
+    "updated_at": 1730000000000,   // ms，= 服务端生成该视图的时刻
+    "next_at":    1730000060000    // ms，= updated_at + 小组件清单里的 refresh × 1000
+  }
+}
+```
+
+- 插件 `action` 返回值里的 `view` 若不是对象则被忽略（当作没有 `view`，缓存被清掉）。
+- 有 `view`：服务端把它写回该实例的视图缓存，**只写请求语言**（`?lang=` / `Accept-Language`）的那一份；其它语言的缓存被清掉，下次请求时重新调用 `widget()`。没有 `view`（或 action 抛错）：该实例所有语言的缓存都被清掉。
+- 如果有一次 `widget()` 在 action 完成**之前**就开始了、之后才结束，它的结果不会写入缓存（用每实例的代数计数判断），因此不会用旧视图覆盖 action 刚写入的新视图。
+- `/test`（`hook: "action"`）的 `result` 是同样形状 `{ toast?, refresh?, view? }`，`view` 带 `updated_at`/`next_at`；它不写任何缓存（未保存的实例用一次性的内存存储）。
+
+**限制与错误码**
+
+| 项 | 限制 | 超限 |
+|---|---|---|
+| action 请求体 | 64 KiB（只对 `POST /api/widgets/{id}/action`，其它端点仍是 1 MiB） | 413 `request body too large` |
+| `params.value`（字符串） | ≤ 20000 个字符（按字符不是字节） | 400 `params.value is too long (max 20000 characters)` |
+| `params` 去掉 `value` 之后 | JSON ≤ 8 KiB（`value` 不是字符串时整体算在内） | 400 `params are too large` |
+| `params` 不是对象 | 整体仍 ≤ 8 KiB | 400 |
+| action 名 | `^[A-Za-z0-9_.:-]{1,40}$` | 400 `invalid action name` |
+
+`/test` 的 action 试运行使用同样的 `params` 限制（请求体仍是 1 MiB）。
+
+**串行化**：每个 widget id 一个容量为 1 的 channel（存在 `sync.Map` 里），按到达顺序排队；等待锁的请求在 HTTP 请求被取消时放弃（不会执行）。持锁期间包括 `ctx.instance.storage` 的读-改-写和写回缓存。不同实例互不影响。删除小组件时锁被丢弃。
+
+**清洗细则**（补充 §15.2）
+
+- 声明 action 的新结构里，`params` 必须是 JSON 对象且序列化 ≤ 2 KiB（浏览器会把 `value`/`checked`/`ids` 合并进这个对象）：
+  - `input`、`markdown`：`params` 不合格（不是对象或太大）时只丢弃 `params`，块保留（与 `button` 一致）。`markdown` 没有合法的 `editAction` 时 `params` 也被丢弃。
+  - `check`、`edit`、`actions[]`：不合格的 `params` 使**整个对象**被丢弃（条目保留）。
+- `input`：输出一定带 `maxLength`（整数，夹到 1..20000，缺省或非数字为 500）；`placeholder`、`submit` 按单行清洗（合并空白，≤ 200）；`value` 按单行清洗并截到 `maxLength`，为空则省略。
+- `list` 条目：
+  - `id` 不合法（空、含非法字符、> 64、不是字符串）或与前面某条重复时，该条目的 `id` 被丢弃（条目保留）；
+  - `check.checked` 输出里总是布尔值（缺省或非布尔为 `false`）；
+  - `actions` 里不合格的按钮被跳过，不占 3 个的名额；全部不合格则没有 `actions` 字段。
+- `list.sortAction`：对**清洗后留下的**条目判断：全部有（合法且唯一的）`id` 才保留；空列表也保留。
+- 条目上限：先按 200 清洗；清洗后如果这个列表没有任何交互字段（没有 `check`/`edit`/`actions`，也没有保留下来的 `sortAction`），再截到 20。也就是说，不合格的交互字段不会解锁 200 条。
+- `list.empty`（≤ 200，按单行清洗）有则输出。空列表（没有 `empty` 也一样）一直都会保留，这一点没有变化。
+- `markdown`：`text` 必须是字符串（空字符串合法，表示空便签），否则丢弃整个块；`\r\n` 先变成 `\n`，再去掉除 `\n`、`\t` 外的控制字符（含 `\r`、`\u0085`），不 trim、不折叠空白，截到 20000 个字符。
+- `WidgetView.tone` 区分大小写，只认小写的五个值；`"default"` 或其它值被丢弃（输出里没有 `tone`）。
+
+**预装**（补充 §15.4）
+
+- 入口：`plugin.Manager.SeedDefaults(ctx)`，`cmd/genkan/main.go` 在 `server.New` 之后、开始监听之前同步调用一次；`server.New` 本身不预装（测试和嵌入使用不受影响）。
+- `Settings.PluginsSeeded` 的 JSON 永远是数组（`"plugins_seeded": []`），旧数据文件缺省时加载为空数组并在下次保存时写出；不改 `SchemaVersion`。只能通过 `Store.MarkPluginsSeeded` 追加，`PATCH /api/settings` 与 MCP `update_settings` 会忽略该字段。
+- 导入：`replace` 时 `plugins_seeded` 取**导入文件与当前值的并集**（旧备份没有该字段也不会让已卸载的预装插件回来）；`merge` 不动设置。
+- 全新安装的启动日志里会有 `plugins: installed built-in plugin todo` 之类的行。
+
+**catalog**（补充 §15.5）
+
+- `widgets[].name` 是与 `Info.widgets` 相同的 LocalizedString（字符串或 `{ lang: text }` 对象），由前端按界面语言解析；不是后端按请求语言解析后的字符串。`widgets` 永远是数组，没有小组件的插件是 `[]`。MCP `list_plugins` 的 `catalog` 同样带上它。
+
+**`todo` / `note` 细节**（补充 §15.6）
+
+- 两个插件的小组件都是 `refresh: 60`（只影响多设备间的同步；本机的修改靠 action 返回的 `view` 立即生效）。`todo` 的小组件 id 是 `list`，`note` 的是 `note`。
+- `todo`：标题只在有未完成项时带 `· N`；文字单行化（合并空白、去控制字符）并截到 500 字符；`toggle` 的 `params.checked` 缺省时翻转；`reorder` 的 `params.ids` 里未知 id 被忽略、没提到的条目保持原有顺序排在最后；空文本、未知 id、第 201 条都**抛出本地化错误**（API 返回 502，`error` 为该文案，前端以 toast 显示）。
+- `note`：`tone` 选项为 `default`（不染色）或五种颜色，默认 `yellow`；`save` 的 `params.value` 必须是字符串，否则抛错；空字符串会删除存储键。

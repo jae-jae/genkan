@@ -273,7 +273,7 @@ async function api(req, res, url) {
   }
   if (p === '/api/token' && m === 'GET') { if (!A()) return; return send(res, 200, { token: apiToken }) }
   if (p === '/api/token/regenerate' && m === 'POST') { if (!A()) return; apiToken = newToken(); return send(res, 200, { token: apiToken }) }
-  if (p === '/api/skill' && m === 'GET') { if (!A()) return; res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename="genkan-skill.zip"' }); return res.end('mock: the real server returns a zip with genkan/SKILL.md, reference.md and .env\n') }
+  if (p === '/api/skill' && m === 'GET') { if (!A()) return; res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename="genkan-skill.zip"' }); return res.end('mock: the real server returns a zip with genkan/SKILL.md, reference.md, plugin-dev.md and .env\n') }
   return send(res, 404, { error: 'not found' })
 }
 

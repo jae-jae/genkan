@@ -232,7 +232,11 @@ func (s *Store) ImportData(mode string, in Export) (res ImportResult, err error)
 				gone = append(gone, WidgetRef{ID: w.ID, Plugin: w.Plugin})
 			}
 			s.d.Widgets = nil
+			// plugins_seeded only grows: a plugin the admin removed must not come back
+			// because an older backup (without the field) was restored
+			prevSeeded := s.d.Settings.PluginsSeeded
 			s.d.Settings = normalizeSettings(in.Settings)
+			s.d.Settings.PluginsSeeded = cleanSeeded(append(append([]string{}, prevSeeded...), s.d.Settings.PluginsSeeded...))
 		}
 		// widgets of plugins that do not exist are dropped; so are wallpapers using them
 		kept := wgs[:0]

@@ -1,20 +1,21 @@
-# Genkan plugin development guide (for AI coding assistants)
+# Genkan plugin development guide
 
 Genkan is a self-hosted homelab start page. A **plugin** is one server-side JavaScript ES module that adds widgets, wallpaper sources, search providers, scheduled jobs and widget buttons. Plugins run in [moejs](https://github.com/MoeForge/moejs), a pure-Go JS engine, **on the server**. The browser never runs plugin code: it only renders the declarative JSON the plugin returns.
 
-This guide is self-contained. It assumes you have the **Genkan Agent Skill** (REST API with `curl` and the `gk` helper, see `skills/genkan/SKILL.md`). Follow it top to bottom: write, install **disabled**, test, read logs, iterate, enable, add a widget, verify.
+This guide is part of the **Genkan Agent Skill**, next to [SKILL.md](SKILL.md) (credentials and the `gk METHOD PATH [BODY]` curl helper used in every command below) and [reference.md](reference.md) (the REST API). Define `gk` first (SKILL.md, Setup) if it is not available in your shell. The guide is self-contained otherwise. Follow it top to bottom: write, install **disabled**, test, read logs, iterate, enable, add a widget, verify.
 
 ## Rules in one screen
 
 1. One file, one `export const manifest = {...}`, plus `export async function` hooks. **No `import`**, no `require`, no DOM, no filesystem.
-2. Every capability in the manifest needs its exported function (`wallpapers` -> `wallpaper`, `widgets` -> `widget`, `search` -> `search`, `schedules` -> `schedule`). `action` is optional and powers `button` blocks.
+2. Every capability in the manifest needs its exported function (`wallpapers` -> `wallpaper`, `widgets` -> `widget`, `search` -> `search`, `schedules` -> `schedule`). `action` is optional and powers `button` blocks and all interactive blocks (`input`, list `check`/`edit`/`actions`/`sortAction`, editable `markdown`).
 3. **Network is deny-by-default.** List hosts in `permissions.fetch`, or use a `url` config field with `allowFetch: true` for user-specific hosts (LAN services).
 4. **Never hardcode secrets or personal hostnames.** Credentials are `secret` config fields; endpoints are `url` fields.
 5. **Install with `"enable": false`, run `/test` for every hook, read `ok`, `error`, `logs` and `result.error`, and only then enable.**
 6. Globals do not persist between calls. Keep state in `genkan.storage`.
 7. Return shapes are sanitized (unknown block types and fields are dropped silently). Compare `result` of `/test` with what you intended.
 8. Hook time budgets: search 2 s, widget/wallpaper/action 10 s, schedule 60 s. Memory 32 MiB.
-9. **Localize with `export const messages = { en: {...}, zh: {...} }`**: `t("key")` in the manifest, `ctx.t("key", params)` in hooks, `ctx.locale` for `Intl`. Never branch on `ctx.lang` (section 2.11).
+9. **Interactive widgets** (inputs, checkboxes, in-place editing, drag sorting, Markdown notes) are `action` hooks that return `{ view }` (section 3.10).
+10. **Localize with `export const messages = { en: {...}, zh: {...} }`**: `t("key")` in the manifest, `ctx.t("key", params)` in hooks, `ctx.locale` for `Intl`. Never branch on `ctx.lang` (section 2.11).
 
 ## 1. Quick start
 
@@ -154,15 +155,17 @@ Clean up experiments with `gk DELETE /api/plugins/ID` (also removes its widgets,
 
 ### 1.3 Learn from the built-in examples
 
-Read the closest one before writing yours. No install needed:
+Read the closest one before writing yours. No install needed: list the built-in plugins (`widgets` shows each plugin's widgets), then fetch the full source of one through the preview endpoint, which returns the code of a catalog plugin without installing it. Once a plugin is installed, `GET /api/plugins/{id}/source` returns its code too.
 
 ```bash
 gk GET /api/plugins/catalog | jq -r '.[] | "\(.id)\t\(.description | if type == "object" then .en else . end)"'
-gk POST /api/plugins/preview '{"catalog":"pihole"}' | jq -r .source
+gk POST /api/plugins/preview '{"catalog":"todo"}' | jq -r .source          # any id from the list above
 ```
 
 | Example | Shows |
 |---|---|
+| `todo` | **Interactive widget**: `input`, list with `check` / `edit` / `actions` / `sortAction` / `empty`, every `action` returns `{ view }`, per-instance storage (section 3.10) |
+| `note` | **Editable Markdown note**: `markdown` block with `editAction`, `tone` colour, select config field, no title bar (section 3.10) |
 | `pihole` | LAN service with `url`+`allowFetch` and a `secret`, `button` + `action`, two API generations, always-closing a session |
 | `rss` | XML parsing without DOMParser, `allowFetch` for arbitrary feed URLs, relative link resolving |
 | `weather` | Per-instance config (`select`, `required`), two chained APIs, `chart` block, `messages` + `t()` localization |
@@ -262,7 +265,7 @@ Declare a capability without exporting its function and install fails: ``the man
 | `source` | wallpaper | wallpaper source id |
 | `query` | search | the query; with a prefix the prefix and the space are removed |
 | `schedule` | schedule | schedule id |
-| `action`, `params` | action | button's `action` name and `params` (<= 2 KiB serialized) |
+| `action`, `params` | action | the block's `action` name and `params` (<= 2 KiB serialized as declared). The page adds `value` (text, <= 20000 chars), `checked` (boolean) or `ids` (array) for interactive blocks |
 
 ### 2.5 Host API (`genkan`, `console`)
 
@@ -311,12 +314,13 @@ Important behaviours:
 | Module load (top level) | 2 s |
 | Memory per runtime | 32 MiB (`exceeded the 32 MiB memory limit`); up to 4 runtimes per plugin at once |
 | Source | 512 KiB; config object 16 KiB serialized; storage 256 KiB |
+| Interactive widgets | `action` request: `params.value` <= 20000 chars, the rest of `params` <= 8 KiB, whole body <= 64 KiB. Interactive list <= 200 items (plain list 20). `markdown.text` <= 20000 chars. Actions of one widget instance run one at a time |
 | Widget cache | result kept `refresh` s per instance and language (an `{error}` view is cached too). Failed calls (thrown) are not retried for 15 s. `?force=1` (admin) bypasses both. Concurrent identical calls are merged |
 | Wallpaper image | downloaded by the server through your allow-list (30 s, redirects checked), <= 15 MiB, only jpg/png/webp/avif; newest 5 files kept per source |
 
 ### 2.8 Return shapes and sanitization
 
-Output is normalized on the server. **Everything unknown is dropped without an error.** All text is rendered as plain text (no Markdown; HTML only inside the sanitized `html` block). Whitespace in single-line strings is collapsed; control characters are removed; strings are cut at 500 chars unless noted.
+Output is normalized on the server. **Everything unknown is dropped without an error.** All text is rendered as plain text (Markdown only inside the `markdown` block; HTML only inside the sanitized `html` block). Whitespace in single-line strings is collapsed; control characters are removed; strings are cut at 500 chars unless noted.
 
 #### WidgetView (`widget`)
 
@@ -324,14 +328,14 @@ Output is normalized on the server. **Everything unknown is dropped without an e
 return { title: "Pi-hole", icon: "shield", link: "http://pi.hole/admin", body: [ /* blocks */ ], error: "optional message" };
 ```
 
-`title`, `icon` (Lucide name), `link` (http(s), makes the title a link), `body` (<= **50 blocks**, nested ones count), `error` (shown as the card's error state). A non-object result becomes `error: "widget() must return an object"`.
+`title`, `icon` (Lucide name), `link` (http(s), makes the title a link), `tone` (`yellow`, `pink`, `blue`, `green` or `purple`: tints the card; other values are dropped), `body` (<= **50 blocks**, nested ones count), `error` (shown as the card's error state). A non-object result becomes `error: "widget() must return an object"`.
 
 | `type` | Fields (required in bold) | Limits |
 |---|---|---|
 | `text` | **`text`**, `size` s/m/l/xl, `muted` bool, `align` left/center/right | newlines kept |
 | `stat` | **`label`**, **`value`** (string or finite number), `unit`, `icon`, `trend` up/down/flat | `unit` <= 40 |
 | `stats` | **`items`**: stat objects | <= 6, rendered as a grid |
-| `list` | **`items`**: `{title` (required)`, subtitle, right, badge, url, icon, image}` | <= 20 items; `url` http(s) (clickable); `image` http(s) or `data:image/...;base64` <= 256 KiB; items without `title` are dropped |
+| `list` | **`items`**: `{title` (required)`, subtitle, right, badge, url, icon, image}` plus the interactive fields `id`, `check`, `edit`, `actions` (section 3.10); list fields `sortAction`, `empty` | <= 20 items, or <= **200** when any item has `check`/`edit`/`actions` or the list has `sortAction`; `url` http(s) (clickable); `image` http(s) or `data:image/...;base64` <= 256 KiB; items without `title` are dropped; `sortAction` is kept only if every item has an `id` |
 | `kv` | **`items`**: `{k, v}` (`v` may be a number or bool) | <= 20 |
 | `progress` | **`value`** 0..1 (clamped), `label`, `text` | |
 | `image` | **`src`** (http(s) or `data:image/<png, jpeg, gif, webp, avif or svg+xml>;base64,...` <= 256 KiB), `alt`, `href`, `ratio` (> 0, max 10), `fit` cover/contain, `height` (px, 60-1000) | single image |
@@ -342,6 +346,8 @@ return { title: "Pi-hole", icon: "shield", link: "http://pi.hole/admin", body: [
 | `chart` | **`kind`** `spark` or `bar`, **`values`** numbers, `labels` | <= 60 points, non-finite numbers dropped |
 | `chart` (line) | **`kind`** `"line"`, **`points`** `[[tsMs, value], ...]`, `format` `int`/`compact`/`percent`/`decimal` (tooltip value; default `int`; `percent` values are already percentages, 42.5 = 42.5%), `color` `accent`/`green`/`red`/`blue`/`orange` | <= **500** points, sorted by time, invalid pairs dropped, no valid point = block dropped. Smooth area line with a localized date axis (hours / days / months by span), compact y ticks and a hover/touch tooltip. Draw one point per sample; thin long series yourself |
 | `row` | **`children`**: blocks laid out horizontally | nesting depth <= 3, needs >= 1 valid child |
+| `input` | **`action`**, `params` (<= 2 KiB), `placeholder`, `submit` (<= 200), `icon`, `maxLength` (1-20000, default 500), `value` | admin only (guests do not see it). One-line text box; the text arrives in `params.value` (section 3.10) |
+| `markdown` | **`text`** (<= 20000, newlines kept), `editAction`, `params`, `placeholder` | rendered safely by the page (no HTML). With `editAction` the admin can edit it in place; the new text arrives in `params.value`. Section 3.10 |
 | `button` | **`label`**, **`action`** (`^[A-Za-z0-9_.:-]{1,40}$`), `params` (any JSON, <= 2 KiB else dropped), `icon` | admin only; plugin must export `action` |
 | `divider` | | |
 
@@ -380,7 +386,12 @@ Prefix rules: an empty `prefix` plugin is only called for queries of **>= 2 char
 
 #### Action result (`action`)
 
-`{ toast: "Done", refresh: true }`. `toast` <= 200 chars, `refresh: true` reloads the widget. Throwing shows the message as an error. The cached widget view is dropped after every action.
+`{ toast: "Done", refresh: true }` or `{ view: <WidgetView>, toast? }`. `toast` <= 200 chars. Throwing shows the message as an error.
+
+- **`view`**: the new card, sanitized exactly like a `widget()` result, stored as the instance's cached view and returned in the response (`view`, same shape as `GET /api/widgets/{id}/data`). The page swaps it in without another request. This is how interactive widgets answer (section 3.10): `return { view: await widget(ctx) }`.
+- Without `view`: the cached view is dropped, and `refresh: true` makes the page reload the widget.
+- Actions of the same widget instance are serialized; `params.value` may be a string of up to 20000 characters (the rest of `params` <= 8 KiB).
+- `/test` with `hook: "action"` also returns the sanitized `view` in `result`.
 
 #### Embedding blocks (`iframe`, `html`, `media`, image slideshow)
 
@@ -402,7 +413,7 @@ Prefix rules: an empty `prefix` plugin is only called for queries of **>= 2 char
 
 Icon names go in `manifest.icon`, `view.icon`, `stat.icon`, list `icon`, button `icon`, search `icon`. The server accepts any `^[a-z0-9][a-z0-9-]{0,39}$`, but the page draws only the names it ships (unknown ones show nothing or a default). Known at the time of writing:
 
-`house layout-grid folder briefcase code terminal server database hard-drive cloud network router wifi globe shield lock key-round film clapperboard tv music headphones image camera gamepad-2 book-open graduation-cap newspaper shopping-cart wallet chart-line activity gauge cpu wrench settings bot sparkles heart star bookmark users message-circle mail calendar download flask-conical leaf coffee plane lightbulb rocket search pencil plus x trash-2 pin pin-off check copy upload refresh-cw compass eye eye-off link external-link arrow-up arrow-down arrow-left arrow-right triangle-alert circle-alert puzzle cloud-sun calculator trending-up trending-down minus scroll-text clock rss sun moon cloud-rain cloud-snow cloud-lightning cloud-fog`
+`house layout-grid folder briefcase code terminal server database hard-drive cloud network router wifi globe shield lock key-round film clapperboard tv music headphones image camera gamepad-2 book-open graduation-cap newspaper shopping-cart wallet chart-line activity gauge cpu wrench settings bot sparkles heart star bookmark users message-circle mail calendar download flask-conical leaf coffee plane lightbulb rocket search pencil plus x trash-2 pin pin-off check copy upload refresh-cw compass eye eye-off link external-link arrow-up arrow-down arrow-left arrow-right triangle-alert circle-alert puzzle cloud-sun calculator trending-up trending-down minus scroll-text clock rss sun moon cloud-rain cloud-snow cloud-lightning cloud-fog list-todo eraser sticky-note`
 
 ### 2.10 Error handling conventions
 
@@ -707,7 +718,7 @@ export async function wallpaper(ctx) {
 
 ### 3.5 A button action
 
-A `button` block calls `action(ctx)` with its `action` and `params`. Per-instance state goes under a key that contains `ctx.instance.id`.
+A `button` block calls `action(ctx)` with its `action` and `params`. Per-instance state goes under a key that contains `ctx.instance.id` (or use `ctx.instance.storage`, section 3.10, which is private to the instance). Interactive blocks work the same way and can return `{ view }`.
 
 ```js
 export const messages = {
@@ -982,7 +993,239 @@ export async function widget(ctx) {
 }
 ```
 
-Storage is limited to 256 KiB for the whole plugin: store compactly (delta-encode, drop old detail) and measure. Per-instance data belongs in `ctx.instance.storage` (deleted with the widget); a `schedule` that must visit every instance reads `genkan.widgets.list()`. The admin can inspect and clear what you stored under Settings > Plugins > Data (`GET/DELETE /api/plugins/{id}/storage`, MCP `plugin_storage` / `clear_plugin_storage`); plugin data is only part of an export with `?plugin_data=1`.
+Storage is limited to 256 KiB for the whole plugin: store compactly (delta-encode, drop old detail) and measure. Per-instance data belongs in `ctx.instance.storage` (deleted with the widget); a `schedule` that must visit every instance reads `genkan.widgets.list()`. The admin can inspect and clear what you stored under Settings > Plugins > Data (`GET/DELETE /api/plugins/{id}/storage`); plugin data is only part of an export with `?plugin_data=1`.
+
+### 3.10 Interactive widgets (input, checkboxes, editing, sorting, Markdown notes)
+
+A widget can be more than a read-only card. The admin can type into an `input`, tick list items, edit a title in place, drag items into a new order, click item buttons and edit a Markdown note. **Every interaction is an `action`**: the page calls your `action(ctx)` hook (`POST /api/widgets/{id}/action`, admin only), you change `ctx.instance.storage`, and you return the new card as `{ view }`. The built-in `todo` and `note` plugins (installed automatically on a fresh instance, unless the user removed them) are made this way; read them (section 1.3) and use the to-do plugin below as the template.
+
+#### How an interaction travels
+
+1. The page merges the user's input into the block's own `params` and calls the action. Keys set by the page win over the same keys in your `params`: `params.value` (text from `input`, `edit`, `markdown` editing), `params.checked` (new boolean state of a checkbox), `params.ids` (all item ids in the new order after a drag).
+2. Your `action(ctx)` reads `ctx.action` and `ctx.params`, updates storage and returns `{ view: <WidgetView> }` (plus an optional `toast`). Easiest: factor the view into a function and `return { view: await widget(ctx) }`.
+3. The server sanitizes `view` like any widget result, **stores it as the instance's cached view** and returns it in the response. The page replaces the card with it, with no second request. Without `view`, the old behaviour stays: the cache is dropped and `refresh: true` reloads the card.
+4. Actions of **one widget instance run one after another** (a lock per instance), so quick repeated clicks never lose a change. Different instances still run in parallel. Still re-read storage inside every action; never keep state in globals.
+5. Visitors (guests, when guest access is on) get a **read-only** card: no `input`, checkboxes are shown but disabled, and item buttons, in-place editing, drag sorting and note editing are not offered. You do not need to do anything for this. Admin-only data must still not go into the view.
+
+Throw `new Error(message)` from an action to show the message to the admin; the card is left unchanged.
+
+#### Blocks and fields
+
+| Block / field | Shape | Rules |
+|---|---|---|
+| `input` | `{type:"input", action, params?, placeholder?, submit?, icon?, maxLength?, value?}` | One-line text box. Enter or the submit button calls `action` with `params.value`. `action` required (same rule as `button`), `params` <= 2 KiB. `placeholder`/`submit` <= 200. `maxLength` 1-20000, default 500 (clamped). `value` = initial text. The page ignores blank input, clears and refocuses the box after a successful call, and disables it while the call runs |
+| `list` item `id` | `id: "a1"` | <= 64 chars of `A-Za-z0-9_.:-`, otherwise dropped. Required on every item for `sortAction`; also used as the render key |
+| `list` item `check` | `check: {checked, action, params?}` | Checkbox before the title. Click calls the action with `params.checked` = the new state. A checked item is drawn struck through and dimmed |
+| `list` item `edit` | `edit: {action, params?}` | Double-click the title to edit in place; Enter saves, Esc cancels. New text in `params.value` (<= 500, empty is not sent) |
+| `list` item `actions` | `actions: [{icon, label, action, params?}]` | Up to 3 small icon buttons at the right of the item (hover or focus; always visible on touch). `icon` and `label` (aria-label and tooltip) are both required, else the button is dropped |
+| `list` `sortAction` | `sortAction: "reorder"` | Drag to reorder (long press on touch, Alt+Up/Down on the keyboard). Kept only if **every** item has an `id`. The action gets `params.ids` = the ids of all items in the new order |
+| `list` `empty` | `empty: "Nothing here"` | <= 200. Shown when there are no items; a list with `empty` is kept even with 0 items |
+| `markdown` | `{type:"markdown", text, editAction?, params?, placeholder?}` | `text` <= 20000 chars, newlines and tabs kept. With `editAction` the admin can edit it: double-click or the edit button turns it into a textarea; Ctrl/Cmd+Enter or leaving the field saves, Esc cancels. The new text (may be `""`) arrives in `params.value`. `- [ ]` / `- [x]` task items can be clicked in the rendered note: the page flips that line and calls `editAction` with the whole new text. `placeholder` <= 200 is shown for empty text |
+| view `tone` | `tone: "yellow"` | One of `yellow`, `pink`, `blue`, `green`, `purple` (anything else is dropped). Gives the card a soft tint; text stays readable in light and dark themes |
+
+Details worth knowing:
+
+- Items that use `check`, `edit`, `actions` or a list that has `sortAction` may have up to **200** items; a plain list stays at 20. Invalid `check`/`edit`/`actions` entries are dropped on their own; the item stays.
+- All action names must match `^[A-Za-z0-9_.:-]{1,40}$` and `params` must stay <= 2 KiB, or that object is dropped.
+- Markdown is rendered by the page with a safe renderer (no HTML): headings, paragraphs, bold, italic, strikethrough, inline and fenced code, quotes, ordered, unordered and task lists, links (http(s) and mailto only), rules and tables. Images are shown as links.
+- **Limits of `params.value`:** a string up to 20000 characters is allowed there; the rest of `params` must be <= 8 KiB. The request body limit is 64 KiB. Over the limit = `400`.
+- A `view` returned by an action is a normal view: <= 50 blocks, same sanitizer. If you have many items, remember the 200-item cap when you accept new ones.
+- Keep ids stable (do not renumber on every render), otherwise a drag or edit in flight can hit the wrong item. Generate them once when the item is created.
+
+#### Worked example: a to-do list
+
+One widget, no config, items in the instance's own storage (`ctx.instance.storage`, private to the widget instance, so two to-do widgets have separate lists). Open items come first, done items follow, each group keeping its order. This is the built-in `todo` plugin (installed on first start; `gk POST /api/plugins/preview '{"catalog":"todo"}' | jq -r .source` prints it). It owns the id `todo`, so the copy below is called `my-todo`. Save as `my-todo.js`:
+
+```js
+export const messages = {
+  en: {
+    name: "To-do",
+    desc: "A simple to-do list on your start page.",
+    placeholder: "Add a task",
+    add: "Add",
+    remove: "Delete",
+    empty: "Nothing to do. Enjoy!",
+    clear: "Clear finished ({n})",
+    errEmpty: "Please enter some text.",
+    errNotFound: "That item no longer exists.",
+    errFull: "The list is full (max {n} items).",
+    errBad: "Invalid request.",
+    errUnknown: "Unknown action: {action}",
+  },
+  zh: {
+    name: "待办",
+    desc: "放在起始页上的简单待办清单。",
+    placeholder: "添加待办",
+    add: "添加",
+    remove: "删除",
+    empty: "没有待办，轻松一下吧",
+    clear: "清除已完成 ({n})",
+    errEmpty: "请输入内容。",
+    errNotFound: "该条目已不存在。",
+    errFull: "清单已满（最多 {n} 条）。",
+    errBad: "请求无效。",
+    errUnknown: "未知操作：{action}",
+  },
+};
+
+export const manifest = {
+  id: "my-todo",
+  name: t("name"),
+  version: "1.0.0",
+  description: t("desc"),
+  icon: "list-todo",
+  widgets: [{ id: "list", name: t("name"), size: "m", refresh: 60 }],
+};
+
+const MAX_ITEMS = 200;
+const MAX_TEXT = 500;
+
+// Single-line text, never trust what the page sends: control characters removed, whitespace collapsed, at most MAX_TEXT characters.
+function cleanText(v) {
+  if (typeof v !== "string") return "";
+  const s = v.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+  return Array.from(s).slice(0, MAX_TEXT).join("");
+}
+
+function load(ctx) {
+  const raw = ctx.instance.storage.get("items");
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((i) => i && typeof i.id === "string" && typeof i.text === "string")
+    .map((i) => ({ id: i.id, text: i.text, done: i.done === true, at: Number(i.at) || 0 }));
+}
+
+const save = (ctx, items) => ctx.instance.storage.set("items", items);
+
+function newId(items, now) {
+  const used = new Set(items.map((i) => i.id));
+  for (;;) {
+    const id = "i" + now.toString(36) + Math.floor(Math.random() * 1679616).toString(36);
+    if (!used.has(id)) return id;
+  }
+}
+
+export async function widget(ctx) {
+  const { t } = ctx;
+  const items = load(ctx);
+  const open = items.filter((i) => !i.done);
+  const done = items.filter((i) => i.done);
+  const rows = [...open, ...done].map((i) => ({
+    id: i.id,
+    title: i.text,
+    check: { checked: i.done, action: "toggle", params: { id: i.id } },
+    edit: { action: "rename", params: { id: i.id } },
+    actions: [{ icon: "trash-2", label: t("remove"), action: "remove", params: { id: i.id } }],
+  }));
+  const body = [
+    { type: "input", action: "add", placeholder: t("placeholder"), submit: t("add"), icon: "plus", maxLength: MAX_TEXT },
+    { type: "list", items: rows, sortAction: "reorder", empty: t("empty") },
+  ];
+  if (done.length > 0) {
+    body.push({ type: "button", label: t("clear", { n: done.length }), action: "clear", icon: "eraser" });
+  }
+  const name = t("name");
+  return { title: open.length > 0 ? `${name} · ${open.length}` : name, icon: "list-todo", body };
+}
+
+export async function action(ctx) {
+  const { t } = ctx;
+  const p = ctx.params && typeof ctx.params === "object" ? ctx.params : {};
+  const items = load(ctx);
+  const find = () => {
+    const i = items.find((x) => x.id === p.id);
+    if (!i) throw new Error(t("errNotFound"));
+    return i;
+  };
+
+  switch (ctx.action) {
+    case "add": {
+      const text = cleanText(p.value);
+      if (!text) throw new Error(t("errEmpty"));
+      if (items.length >= MAX_ITEMS) throw new Error(t("errFull", { n: MAX_ITEMS }));
+      items.push({ id: newId(items, ctx.now), text, done: false, at: ctx.now });
+      break;
+    }
+    case "toggle": {
+      const it = find();
+      it.done = typeof p.checked === "boolean" ? p.checked : !it.done;
+      break;
+    }
+    case "rename": {
+      const it = find();
+      const text = cleanText(p.value);
+      if (!text) throw new Error(t("errEmpty"));
+      it.text = text;
+      break;
+    }
+    case "remove": {
+      const it = find();
+      items.splice(items.indexOf(it), 1);
+      break;
+    }
+    case "reorder": {
+      if (!Array.isArray(p.ids)) throw new Error(t("errBad"));
+      // Items named in `ids` take that order; items it does not mention keep their order at the end.
+      const byId = new Map(items.map((i) => [i.id, i]));
+      const ordered = [];
+      for (const id of p.ids) {
+        const it = byId.get(id);
+        if (it) {
+          ordered.push(it);
+          byId.delete(id);
+        }
+      }
+      items.splice(0, items.length, ...ordered, ...byId.values());
+      break;
+    }
+    case "clear": {
+      const keep = items.filter((i) => !i.done);
+      items.splice(0, items.length, ...keep);
+      break;
+    }
+    default:
+      throw new Error(t("errUnknown", { action: String(ctx.action) }));
+  }
+  save(ctx, items);
+  return { view: await widget(ctx) };
+}
+```
+
+Points to copy from it: one `widget()` function builds the view and every action ends with `save` + `{ view: await widget(ctx) }`; user text is cleaned and length-capped on the server (never trust the page); bad input (empty text, unknown id, 201st item) throws a localized error that the page shows as a toast; ids are created once and stay stable; `reorder` tolerates stale or missing ids; storage is read defensively (`load` drops malformed entries); the item cap is checked before adding.
+
+A second, tiny pattern, the editable note (the built-in `note` plugin, source via `preview` as above): store the text and return a `markdown` block with `editAction`. Its manifest has a `select` config field `tone`.
+
+```js
+export async function widget(ctx) {
+  const tone = String((ctx.instance.config && ctx.instance.config.tone) || "");
+  const view = { body: [{ type: "markdown", text: ctx.instance.storage.get("text") || "", editAction: "save", placeholder: ctx.t("placeholder") }] };
+  if (["yellow", "pink", "blue", "green", "purple"].includes(tone)) view.tone = tone; // "default" = no tint
+  return view;
+}
+export async function action(ctx) {
+  if (ctx.action !== "save") throw new Error("unknown action: " + ctx.action);
+  ctx.instance.storage.set("text", String((ctx.params && ctx.params.value) || "").slice(0, 20000));
+  return { view: await widget(ctx) };
+}
+```
+
+No `title` means the card has no header bar, which suits a sticky note.
+
+#### Testing an interactive widget
+
+`/test` on an unsaved widget uses a throw-away storage, so state does not carry from one call to the next. To test a sequence (add, toggle, reorder, remove), create a widget instance first and pass its id as `instance` (an instance keeps its own real storage, so this changes real data: use a scratch instance and delete it afterwards). The `result` of an `action` test now contains the sanitized `view`:
+
+```bash
+# the plugin is installed with enable:false; create a scratch instance (enable the plugin first if the server refuses), then drive it
+W=$(gk POST /api/widgets '{"plugin":"my-todo","widget":"list"}' | jq -r .id)
+gk POST /api/plugins/my-todo/test "$(jq -n --arg w "$W" '{hook:"action",instance:$w,action:"add",params:{value:"Buy milk"}}')" | jq '{ok, error, logs, items: [.result.view.body[1].items[] | {id,title}]}'
+ID=$(gk POST /api/plugins/my-todo/test "$(jq -n --arg w "$W" '{hook:"action",instance:$w,action:"add",params:{value:"Call mum"}}')" | jq -r '.result.view.body[1].items[1].id')
+gk POST /api/plugins/my-todo/test "$(jq -n --arg w "$W" --arg id "$ID" '{hook:"action",instance:$w,action:"toggle",params:{id:$id,checked:true}}')" | jq '.result.view | {title, items: [.body[1].items[] | {title, checked: .check.checked}]}'
+gk POST /api/plugins/my-todo/test "$(jq -n --arg w "$W" '{hook:"widget",instance:$w}')" | jq -c '.result.body[0], .result.body[1].sortAction'   # input and sortAction survived the sanitizer
+gk DELETE /api/widgets/$W
+```
+
+Check in the `result`: the `input` block is present, every list item kept its `id`, `check`, `edit` and `actions` (a missing field was dropped by the sanitizer: typo in a name, bad id or action name), `sortAction` is still there, and the title counts only open items. Also test with `"lang":"zh"`, an empty value, an unknown action and a stale `id` (both must give `ok: false` with your localized error, not silently do nothing). You cannot see the drag, double-click or checkbox behaviour; ask the user to try it on the page.
 
 ## 4. Debugging
 
@@ -1097,6 +1340,7 @@ Run through this before telling the user the plugin is finished:
 - [ ] No secret, token, personal hostname or LAN IP in the source or in defaults; credentials are `secret` fields; no secret is logged or returned in the view.
 - [ ] `refresh` / `every` values respect the minimums and are not wastefully low.
 - [ ] Installed with `enable:false` and **each hook tested**: `ok: true`, no `result.error`, `logs` clean, `ms` well below the budget, `result` equals the intended output (nothing silently dropped).
+- [ ] Interactive widgets: every action ends in `{ view }`, user text is trimmed and capped on the server, ids are stable, the `/test` `result.view` kept `input`, `check`, `edit`, `actions` and `sortAction` (nothing dropped), and the user was asked to try the clicks on the page.
 - [ ] Failure paths tested: unreachable host, bad token, empty config -> a clear `error` in the widget, `[]` for search, a thrown `Error` for wallpapers.
 - [ ] Localized with `messages` (`en` and `zh` have the same keys), `t("key")` in the manifest and `ctx.t` in hooks; no `ctx.lang ===` branches; dates and numbers through `Intl` with `ctx.locale`. Tested with `"lang":"zh"` and `"lang":"en"`.
 - [ ] No state in globals; storage keys include instance or variable parts; storage usage far below 256 KiB.

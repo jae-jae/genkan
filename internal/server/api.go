@@ -574,7 +574,7 @@ func validHost(h string) bool {
 	return true
 }
 
-// handleSkill serves the Skill package: the generic SKILL.md and reference.md
+// handleSkill serves the Skill package: the generic SKILL.md, reference.md and plugin-dev.md
 // exactly as embedded, plus a generated genkan/.env (mode 0600) holding this
 // instance's URL and the current token.
 func (s *Server) handleSkill(w http.ResponseWriter, r *http.Request, _ Role) {

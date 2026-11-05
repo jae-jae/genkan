@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -32,8 +33,8 @@ func TestDefaults(t *testing.T) {
 	if len(snap.Workspaces) != 1 || snap.Workspaces[0].Name != "Home" || snap.Workspaces[0].Wallpaper != "preset:dusk" {
 		t.Fatalf("default workspace: %+v", snap.Workspaces)
 	}
-	want := Settings{Title: "Genkan", SortMode: "frequency", SearchEngine: "https://www.google.com/search?q=%s", OpenInNewTab: true, HealthInterval: 60, ShowClock: true, UpdateCheck: true}
-	if snap.Settings != want {
+	want := Settings{Title: "Genkan", SortMode: "frequency", SearchEngine: "https://www.google.com/search?q=%s", OpenInNewTab: true, HealthInterval: 60, ShowClock: true, UpdateCheck: true, PluginsSeeded: []string{}}
+	if !reflect.DeepEqual(snap.Settings, want) {
 		t.Fatalf("settings: %+v", snap.Settings)
 	}
 	if !s.SetupRequired() {

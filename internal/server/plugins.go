@@ -317,7 +317,7 @@ func (s *Server) handleWidgetData(w http.ResponseWriter, r *http.Request, role R
 
 func (s *Server) handleWidgetAction(w http.ResponseWriter, r *http.Request, _ Role) {
 	var req plugin.ActionRequest
-	if !readJSON(w, r, &req, maxJSONBody) {
+	if !readJSON(w, r, &req, maxActionBody) {
 		return
 	}
 	res, err := s.plugins.Action(r.Context(), r.PathValue("id"), req, pluginLang(r))

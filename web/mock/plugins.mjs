@@ -40,6 +40,16 @@ const DEFS = {
     permissions: { fetch: [], links: '' }, config_schema: [],
     widgets: [{ id: 'stats', name: 'Pi-hole stats', size: 's', refresh: 60, config: [F('url', 'url', 'Pi-hole address', { required: true, allowFetch: true, default: 'http://pihole.lan' }), F('token', 'secret', 'API token', { required: true }), F('verbose', 'boolean', 'Show details', { default: true })] }],
   },
+  todo: {
+    name: { en: 'To-do', zh: '待办' }, version: '1.0.0', icon: 'list-todo', description: { en: 'A checklist you can tick off, rename, reorder and clear. No network access.', zh: '可勾选、重命名、排序和清除的待办清单，无需联网。' }, author: 'genkan',
+    permissions: { fetch: [], links: '' }, config_schema: [],
+    widgets: [{ id: 'list', name: { en: 'To-do list', zh: '待办清单' }, size: 'm', refresh: 3600, config: [] }],
+  },
+  note: {
+    name: { en: 'Sticky note', zh: '便签' }, version: '1.0.0', icon: 'sticky-note', description: { en: 'A Markdown note you edit in place; task lists are clickable. No network access.', zh: '就地编辑的 Markdown 便签，任务列表可直接点击，无需联网。' }, author: 'genkan',
+    permissions: { fetch: [], links: '' }, config_schema: [],
+    widgets: [{ id: 'note', name: { en: 'Sticky note', zh: '便签' }, size: 'm', refresh: 3600, config: [F('tone', 'select', { en: 'Color', zh: '颜色' }, { default: 'yellow', options: ['default', 'yellow', 'pink', 'blue', 'green', 'purple'].map((v) => ({ value: v, label: v })) })] }],
+  },
   countdown: {
     name: { en: 'Countdown', zh: '倒计时' }, version: '1.0.0', icon: 'calendar', description: { en: 'Days until a date. No network access.', zh: '距离某一天还有几天，无需联网。' }, author: 'genkan',
     permissions: { fetch: [], links: '' }, config_schema: [],
@@ -60,7 +70,7 @@ const DEFS = {
     permissions: { fetch: ['*'], links: 'read' }, config_schema: [], search: { name: 'Demo', prefix: 'demo' },
   },
 }
-const CATALOG = ['weather', 'calculator', 'picsum', 'bing-wallpaper', 'hacker-news', 'world-clock', 'pihole', 'countdown', 'rss', 'link-importer', 'any-fetch']
+const CATALOG = ['todo', 'note', 'weather', 'calculator', 'picsum', 'bing-wallpaper', 'hacker-news', 'world-clock', 'pihole', 'countdown', 'rss', 'link-importer', 'any-fetch']
 
 // widget layout fields (PLUGINS.md 11.1): w = 0..6 columns (0 = default by manifest size), h = 0 (auto) or 80..1200 px
 const clampW = (v) => Math.min(6, Math.max(0, Math.round(Number(v) || 0)))
@@ -130,6 +140,8 @@ export function createPluginsMock({ send, workspaces, bump }) {
     return installed[installed.length - 1]
   }
   const addWidget = (plugin, widget, workspace_id, config = {}, w = 0, h = 0) => insts.push({ id: id(), plugin, widget, workspace_id, config, sort: insts.length, w, h })
+  add('todo', true)
+  add('note', true)
   add('weather', true, { unit: 'c' })
   add('calculator', true)
   add('picsum', true)
@@ -144,6 +156,8 @@ export function createPluginsMock({ send, workspaces, bump }) {
   pi.last_error = 'fetch http://pihole.lan failed: connection refused'
   const seedWidgets = () => {
     const ws = workspaces()
+    addWidget('todo', 'list', ws[0].id, {})
+    addWidget('note', 'note', ws[0].id, { tone: 'yellow' })
     addWidget('weather', 'current', '', { city: 'Tokyo', days: 7 })
     addWidget('world-clock', 'clock', ws[0].id, { zones: 'Asia/Tokyo\nEurope/Berlin\nAmerica/New_York' })
     addWidget('pihole', 'stats', ws[0].id, { url: 'http://pihole.lan', token: 'seeded', verbose: true })
@@ -181,9 +195,62 @@ export function createPluginsMock({ send, workspaces, bump }) {
     try { const v = Function('"use strict";return (' + e + ')')(); return Number.isFinite(v) ? Math.round(v * 1e10) / 1e10 : null } catch { return null }
   }
 
+  // ---- interactive widgets (docs/PLUGINS.md 15): per-instance state of the simulated todo / note plugins ----
+  const state = new Map()
+  const st = (w) => {
+    if (!state.has(w.id)) state.set(w.id, w.plugin === 'todo' ? { items: ['Buy milk', 'Water the plants', 'Renew the domain'].map((text, i) => ({ id: 'i' + i, text, done: i === 2, at: Date.now() })), seq: 3 } : { text: '# Shopping\n\n- [ ] eggs\n- [x] bread\n- [ ] coffee\n\n**Tip:** double-click to edit, `Ctrl+Enter` saves.\n\n| Item | Qty |\n|:--|--:|\n| eggs | 12 |\n| coffee | 1 |\n' })
+    return state.get(w.id)
+  }
+  const todoView = (w, zh) => {
+    const s = st(w)
+    const open = s.items.filter((i) => !i.done)
+    const done = s.items.filter((i) => i.done)
+    return {
+      title: (zh ? '待办' : 'To-do') + (open.length ? ` · ${open.length}` : ''), icon: 'list-todo',
+      body: [
+        { type: 'input', action: 'add', placeholder: zh ? '添加待办' : 'Add a task', submit: zh ? '添加' : 'Add', icon: 'plus', maxLength: 500 },
+        { type: 'list', sortAction: 'reorder', empty: zh ? '没有待办' : 'Nothing to do', items: [...open, ...done].map((i) => ({ id: i.id, title: i.text, check: { checked: i.done, action: 'toggle', params: { id: i.id } }, edit: { action: 'rename', params: { id: i.id } }, actions: [{ icon: 'trash-2', label: zh ? '删除' : 'Delete', action: 'remove', params: { id: i.id } }] })) },
+        ...(done.length ? [{ type: 'button', action: 'clear', icon: 'eraser', label: (zh ? '清除已完成' : 'Clear done') + ` (${done.length})` }] : []),
+      ],
+    }
+  }
+  const noteView = (w, zh) => {
+    const tone = w.config.tone ?? 'yellow'
+    return { ...(tone !== 'default' ? { tone } : {}), body: [{ type: 'markdown', text: st(w).text, editAction: 'save', placeholder: zh ? '双击编辑…' : 'Double-click to edit…' }] }
+  }
+  /** runs an action of the simulated todo / note plugin; returns [status, body] */
+  const act = (w, body, lang) => {
+    const zh = (lang || '').startsWith('zh')
+    const s = st(w)
+    const pr = body.params || {}
+    const val = typeof pr.value === 'string' ? pr.value : ''
+    const text = val.trim().slice(0, 500)
+    const find = () => s.items.find((i) => i.id === pr.id)
+    if (w.plugin === 'note') {
+      if (body.action !== 'save') return [400, { error: 'unknown action: ' + body.action }]
+      if (typeof pr.value !== 'string') return [400, { error: 'value is required' }]
+      s.text = val.slice(0, 20000)
+    } else {
+      if (body.action === 'add') { if (!text) return [400, { error: 'text is required' }]; if (s.items.length >= 200) return [400, { error: 'too many items' }]; s.items.push({ id: 'i' + ++s.seq, text, done: false, at: Date.now() }) }
+      else if (body.action === 'toggle') { const i = find(); if (!i) return [400, { error: 'unknown item' }]; i.done = pr.checked === undefined ? !i.done : !!pr.checked }
+      else if (body.action === 'rename') { const i = find(); if (!i) return [400, { error: 'unknown item' }]; if (!text) return [400, { error: 'text is required' }]; i.text = text }
+      else if (body.action === 'remove') { if (!find()) return [400, { error: 'unknown item' }]; s.items = s.items.filter((i) => i.id !== pr.id) }
+      else if (body.action === 'clear') s.items = s.items.filter((i) => !i.done)
+      else if (body.action === 'reorder') {
+        if (!Array.isArray(pr.ids)) return [400, { error: 'ids is required' }]
+        const by = new Map(s.items.map((i) => [i.id, i]))
+        const first = pr.ids.map((k) => by.get(k)).filter(Boolean)
+        s.items = [...new Set([...first, ...s.items])]
+      } else return [400, { error: 'unknown action: ' + body.action }]
+    }
+    return [200, { view: { view: view(w, lang), updated_at: now(), next_at: new Date(Date.now() + 3600000).toISOString() } }]
+  }
+
   const spark = (n, base, amp) => Array.from({ length: n }, (_, i) => Math.round((base + Math.sin(i * 0.9 + 1) * amp + (Math.random() - 0.5) * 2) * 10) / 10)
   const view = (w, lang) => {
     const zh = (lang || '').startsWith('zh')
+    if (w.plugin === 'todo') return todoView(w, zh)
+    if (w.plugin === 'note') return noteView(w, zh)
     if (w.plugin === 'weather') {
       const f = (installed.find((p) => p.id === 'weather').config.unit || 'c') === 'f'
       const T = (c) => (f ? Math.round(c * 1.8 + 32) : c)
@@ -335,7 +402,9 @@ export function createPluginsMock({ send, workspaces, bump }) {
     }
     if (p === '/api/plugins/catalog' && m === 'GET') {
       if (!A()) return true
-      return send(res, 200, CATALOG.map((c) => ({ id: c, name: DEFS[c].name, description: DEFS[c].description, icon: DEFS[c].icon, version: DEFS[c].version, installed: installed.some((x) => x.id === c) }))), true
+      const lg = (req.headers['accept-language'] || '').toLowerCase().startsWith('zh') ? 'zh' : 'en'
+      const L = (v) => (typeof v === 'string' ? v : v?.[lg] ?? v?.en ?? '')
+      return send(res, 200, CATALOG.map((c) => ({ id: c, name: L(DEFS[c].name), description: L(DEFS[c].description), icon: DEFS[c].icon, version: DEFS[c].version, installed: installed.some((x) => x.id === c), widgets: (DEFS[c].widgets || []).map((w) => ({ id: w.id, name: L(w.name), size: w.size })) }))), true
     }
     if ((mm = p.match(/^\/api\/plugins\/wallpaper\/([\w-]+)\/([\w-]+)$/)) && m === 'GET') {
       if (!R()) return true
@@ -450,6 +519,7 @@ export function createPluginsMock({ send, workspaces, bump }) {
       if (!A()) return true
       if (!w) return send(res, 404, { error: 'widget not found' }), true
       if (mm[2] === 'action' && m === 'POST') {
+        if (w.plugin === 'todo' || w.plugin === 'note') { await new Promise((r) => setTimeout(r, 60)); const [code, out] = act(w, body, req.headers['accept-language']); return send(res, code, out), true }
         if (body.action === 'fail') return send(res, 502, { error: 'action failed: upstream returned 502' }), true
         return send(res, 200, { toast: body.action === 'pause' ? 'Blocking paused for 5 minutes' : 'Refreshed', refresh: body.action !== 'pause' }), true
       }

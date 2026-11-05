@@ -19,7 +19,7 @@ func read(t *testing.T, path string) string {
 }
 
 func TestSkillFiles(t *testing.T) {
-	skill, ref := read(t, "genkan/SKILL.md"), read(t, "genkan/reference.md")
+	skill, ref, dev := read(t, "genkan/SKILL.md"), read(t, "genkan/reference.md"), read(t, "genkan/plugin-dev.md")
 
 	_, body, ok := strings.Cut(strings.TrimPrefix(skill, "---\n"), "\n---\n")
 	if !ok || !strings.HasPrefix(skill, "---\nname: genkan\ndescription: ") {
@@ -28,22 +28,33 @@ func TestSkillFiles(t *testing.T) {
 	if w := strings.SplitN(strings.TrimSpace(body), "\n\n", 2)[0]; !strings.HasPrefix(w, "> **WARNING") || !strings.Contains(w, "~/.config/genkan/env") {
 		t.Fatalf("token warning must directly follow the frontmatter: %.160q", body)
 	}
-	if !strings.Contains(skill, "(reference.md)") {
-		t.Error("SKILL.md must link to reference.md")
+	if !strings.Contains(skill, "(reference.md)") || !strings.Contains(skill, "(plugin-dev.md)") {
+		t.Error("SKILL.md must link to reference.md and plugin-dev.md")
+	}
+	if !strings.Contains(strings.SplitN(skill, "\n---\n", 2)[0], "Genkan plugin") {
+		t.Error("the SKILL.md description must carry the plugin development triggers")
+	}
+	if strings.Contains(dev, "docs/PLUGIN") {
+		t.Error("plugin-dev.md must not point at repository docs: the Skill is used on its own")
 	}
 	secret := regexp.MustCompile(`gk_[a-z2-7]{32}`)
-	for name, md := range map[string]string{"SKILL.md": skill, "reference.md": ref} {
+	for name, md := range map[string]string{"SKILL.md": skill, "reference.md": ref, "plugin-dev.md": dev} {
 		// the Skill is the REST-only alternative to MCP, generic and free of secrets
 		if strings.Contains(strings.ToLower(md), "mcp") {
 			t.Errorf("%s mentions MCP", name)
 		}
-		if strings.Contains(md, "{{") {
+		// plugin-dev.md documents the plugin message syntax, where "{{" is a literal brace
+		if name != "plugin-dev.md" && strings.Contains(md, "{{") {
 			t.Errorf("%s still contains template placeholders", name)
 		}
 		if secret.MatchString(md) {
 			t.Errorf("%s contains something that looks like an API token", name)
 		}
 		for _, want := range []string{"$GENKAN_URL", "gk "} {
+			// the guide only uses the gk helper that SKILL.md defines
+			if want == "$GENKAN_URL" && name == "plugin-dev.md" {
+				continue
+			}
 			if !strings.Contains(md, want) {
 				t.Errorf("%s lacks %q", name, want)
 			}
@@ -88,7 +99,7 @@ func TestEmbeddedFilesMatchRepo(t *testing.T) {
 			t.Errorf("%s: embedded copy differs from the file on disk", f.Name)
 		}
 	}
-	if fs := Files(); len(fs) != 2 || fs[0].Name != "genkan/SKILL.md" || fs[1].Name != "genkan/reference.md" {
+	if fs := Files(); len(fs) != 3 || fs[0].Name != "genkan/SKILL.md" || fs[1].Name != "genkan/reference.md" || fs[2].Name != "genkan/plugin-dev.md" {
 		t.Fatalf("unexpected embedded files: %v", fs)
 	}
 }

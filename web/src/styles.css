@@ -570,7 +570,7 @@ code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; pa
    in JS and whose column span follows the widget's w (--c6 / --c4 / --c2, see Widgets.tsx) */
 .widgets { --wg-gap: 16px; --wg-cols: 6; margin-top: clamp(22px, 4vh, 34px); margin-bottom: calc(-1 * var(--wg-gap)); display: grid; grid-template-columns: repeat(var(--wg-cols), minmax(0, 1fr)); grid-auto-rows: 4px; grid-auto-flow: row dense; column-gap: var(--wg-gap); row-gap: 0; animation: rise 0.5s var(--ease) backwards; }
 .wgi { --cc: var(--c6, 3); position: relative; grid-column: span var(--cc); grid-row: span var(--r, 20); align-self: start; min-width: 0; padding-bottom: var(--wg-gap); }
-.wgi-add { --r: 23; }
+.wgi.wgi-add { --r: 17; grid-column: 1 / -1; } /* a full row, 52px tall + the gap */
 .wg { position: relative; min-width: 0; padding: 14px 16px 16px; border-radius: 22px; color: #fff; display: flex; flex-direction: column; gap: 10px; }
 .wg[data-fixed='1'] > .wg-body { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.34) transparent; }
 .wg[data-fixed='1'] > .wg-body::-webkit-scrollbar { width: 6px; }
@@ -655,7 +655,7 @@ a.wg-li:hover { background: rgba(255, 255, 255, 0.12); }
 .wg-hr { width: 100%; height: 1px; margin: 2px 0; border: 0; background: rgba(255, 255, 255, 0.14); }
 /* edit mode: the whole card is a drag surface (links / buttons inside are inert), the corner handle resizes */
 .widgets[data-editing] .wg:not(.wg-add) { border-style: dashed; border-color: rgba(255, 255, 255, 0.42); cursor: grab; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-.widgets[data-editing] .wg-body a, .widgets[data-editing] .wg-body button, .widgets[data-editing] .wg-title { pointer-events: none; }
+.widgets[data-editing] .wg-body a, .widgets[data-editing] .wg-body button, .widgets[data-editing] .wg-body input:not(.wg-li-edit), .widgets[data-editing] .wg-body textarea, .widgets[data-editing] .wg-title { pointer-events: none; }
 .wg-actions { z-index: 2; }
 .wg-grip { flex: none; width: 22px; height: 22px; margin: 0 -2px 0 -6px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--faint); cursor: grab; }
 .wg-grip:hover, .wg-grip:focus-visible { background: rgba(255, 255, 255, 0.16); color: #fff; }
@@ -668,15 +668,10 @@ a.wg-li:hover { background: rgba(255, 255, 255, 0.12); }
 .wgi[data-ph] .wg { visibility: hidden; }
 .wgi[data-ph]::after { content: ''; position: absolute; left: 0; right: 0; top: 0; bottom: var(--wg-gap); border-radius: 22px; border: 2px dashed rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.1); pointer-events: none; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.widgets-ph { margin-top: clamp(22px, 4vh, 34px); min-height: 76px; }
-.wg-add { width: 100%; height: 76px; align-items: center; justify-content: center; flex-direction: row; gap: 8px; border-style: dashed; color: var(--dim); font-weight: 550; font-size: 14px; }
+.widgets-ph { margin-top: clamp(22px, 4vh, 34px); min-height: 52px; }
+.wg-add { width: 100%; height: 52px; align-items: center; justify-content: center; flex-direction: row; gap: 8px; border-style: dashed; color: var(--dim); font-weight: 550; font-size: 14px; }
 .wg-form-h { display: flex; align-items: baseline; gap: 8px; }
 .wg-form-foot { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
-.wg-picks { display: flex; flex-direction: column; gap: 8px; }
-.wg-pick { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 14px; background: rgba(255, 255, 255, 0.07); text-align: left; color: #fff; transition: background 0.15s; }
-.wg-pick:hover { background: rgba(255, 255, 255, 0.16); }
-.wg-pick b { font-weight: 600; }
-.wg-pick small { display: block; color: var(--faint); }
 @media (max-width: 1100px) {
   .widgets { --wg-cols: 4; }
   .wgi { --cc: var(--c4, 2); }
@@ -1045,3 +1040,102 @@ a.wg-li:hover { background: rgba(255, 255, 255, 0.12); }
 .bar i { display: block; height: 100%; border-radius: 8px; background: var(--accent); transition: width 0.4s var(--ease); }
 .bar.busy i { width: 40% !important; animation: barBusy 1.3s ease-in-out infinite alternate; transition: none; }
 @keyframes barBusy { from { margin-left: 0; } to { margin-left: 60%; } }
+
+/* ---------- interactive widgets (docs/PLUGINS.md 15) ---------- */
+/* list rows: check, inline edit, item buttons, drag to sort */
+.wg-li-x { position: relative; }
+.wg-li-x[data-checked='1'] .wg-li-t { text-decoration: line-through; opacity: 0.55; }
+.wg-li-x:hover, .wg-li-x:focus-within { background: rgba(255, 255, 255, 0.08); }
+.wg-li-x[data-sort='1'] { cursor: grab; touch-action: pan-y; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.wg-li-x:focus-visible { outline-offset: -2px; }
+.wg-li-t[data-editable='1'] { cursor: text; touch-action: manipulation; }
+.wg-li-t a { color: inherit; text-decoration: none; }
+.wg-li-t a:hover { text-decoration: underline; }
+.wg-li-edit { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border-radius: 8px; font-size: 14px; }
+.wg-check { flex: none; appearance: none; -webkit-appearance: none; width: 18px; height: 18px; margin: 0; border-radius: 6px; border: 1.8px solid rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.08) center / 12px no-repeat; cursor: pointer; transition: background-color 0.15s, border-color 0.15s; }
+.wg-check:checked { border-color: transparent; background-color: #5b7dff; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); }
+.wg-check:disabled { cursor: default; opacity: 0.7; }
+.wg-li-acts { flex: none; display: inline-flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
+.wg-li-x:hover .wg-li-acts, .wg-li-x:focus-within .wg-li-acts, .wg-li-acts:focus-within { opacity: 1; }
+@media (hover: none) { .wg-li-acts { opacity: 1; } }
+.wg-li-act { width: 26px; height: 26px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--dim); }
+.wg-li-act:hover, .wg-li-act:focus-visible { background: rgba(255, 255, 255, 0.18); color: #fff; }
+.wg-li-act.danger:hover, .wg-li-act.danger:focus-visible { background: rgba(255, 90, 110, 0.28); color: #ffd0d6; }
+.wg-list[data-sorting] .wg-li-x { transition: none; }
+.wg-li-x[data-ph] { opacity: 0.35; background: rgba(255, 255, 255, 0.1); outline: 1.5px dashed rgba(255, 255, 255, 0.6); outline-offset: -1.5px; }
+.wg-li-ghost { padding: 6px; border-radius: 10px; display: flex; align-items: center; gap: 10px; background: rgba(60, 68, 110, 0.92) !important; }
+.wg-list-empty { padding: 10px 6px; font-size: 13.5px; color: var(--faint); text-align: center; }
+/* input */
+.wg-input { display: flex; gap: 8px; align-items: center; }
+.wg-input-f { flex: 1; min-width: 0; height: 36px; padding: 0 12px; border-radius: 12px; font-size: 14px; }
+.wg-input-b { flex: none; height: 36px; min-width: 36px; padding: 0 10px; justify-content: center; gap: 5px; }
+.wg-input-b:disabled { opacity: 0.45; cursor: default; }
+/* markdown */
+.wg-md-wrap { position: relative; min-width: 0; }
+.wg-md { min-width: 0; min-height: 22px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.wg-md-wrap[data-editable='1'] .wg-md { cursor: text; }
+.wg-md > :first-child { margin-top: 0; }
+.wg-md > :last-child { margin-bottom: 0; }
+.wg-md p, .wg-md ul, .wg-md ol, .wg-md blockquote, .wg-md pre, .wg-md h1, .wg-md h2, .wg-md h3, .wg-md h4, .wg-md h5, .wg-md h6, .wg-md-table { margin: 0 0 0.6em; }
+.wg-md h1, .wg-md h2, .wg-md h3, .wg-md h4, .wg-md h5, .wg-md h6 { font-weight: 650; line-height: 1.25; text-transform: none; letter-spacing: 0; }
+.wg-md h1 { font-size: 20px; } .wg-md h2 { font-size: 17.5px; } .wg-md h3 { font-size: 16px; } .wg-md h4, .wg-md h5, .wg-md h6 { font-size: 14px; color: var(--dim); }
+.wg-md a { color: #d6e4ff; text-decoration: underline; text-decoration-color: rgba(214, 228, 255, 0.45); text-underline-offset: 2px; }
+.wg-md a:hover { color: #fff; text-decoration-color: currentColor; }
+.wg-md ul, .wg-md ol { padding-left: 1.4em; }
+.wg-md li + li { margin-top: 0.2em; }
+.wg-md li.task { list-style: none; margin-left: -1.4em; }
+.wg-md-check { appearance: none; -webkit-appearance: none; width: 15px; height: 15px; margin: 0 7px -2px 0; border-radius: 5px; border: 1.6px solid rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.08) center / 11px no-repeat; cursor: pointer; vertical-align: baseline; }
+.wg-md-check:checked { border-color: transparent; background-color: #5b7dff; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); }
+.wg-md-check:disabled { cursor: default; opacity: 0.75; }
+.wg-md li.task:has(> .wg-md-check:checked) { color: var(--faint); text-decoration: line-through; }
+.wg-md code { padding: 1px 5px; border-radius: 6px; background: rgba(255, 255, 255, 0.14); font: 0.88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.wg-md pre { padding: 9px 11px; border-radius: 10px; background: rgba(8, 10, 30, 0.3); overflow: auto; font-size: 12.5px; line-height: 1.45; }
+.wg-md pre code { padding: 0; background: none; font-size: inherit; }
+.wg-md blockquote { padding: 2px 0 2px 12px; border-left: 3px solid rgba(255, 255, 255, 0.34); color: var(--dim); }
+.wg-md hr { height: 1px; margin: 0.7em 0; border: 0; background: rgba(255, 255, 255, 0.22); }
+.wg-md-table { max-width: 100%; overflow-x: auto; }
+.wg-md table { border-collapse: collapse; font-size: 13px; }
+.wg-md th, .wg-md td { padding: 5px 9px; text-align: left; vertical-align: top; border-bottom: 1px solid rgba(255, 255, 255, 0.18); }
+.wg-md th { font-weight: 650; color: var(--dim); }
+.wg-md-ph { margin: 0; color: var(--faint); font-style: italic; }
+.wg-md-editbtn { position: absolute; top: -4px; right: -6px; width: 26px; height: 26px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: rgba(0, 0, 0, 0.14); color: var(--dim); opacity: 0; transition: opacity 0.15s, background 0.15s; }
+.wg:hover .wg-md-editbtn, .wg-md-editbtn:focus-visible { opacity: 1; }
+.wg-md-editbtn:hover { background: rgba(0, 0, 0, 0.3); color: #fff; }
+@media (hover: none) { .wg-md-editbtn { opacity: 0.7; } }
+.wg-md-edit { display: block; width: 100%; min-height: 84px; max-height: 70vh; padding: 8px 10px; border-radius: 12px; resize: none; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: auto; }
+.wg-md-hint { display: block; margin-top: 5px; font-size: 11.5px; color: var(--faint); }
+/* tone: a soft tint over the glass; white text stays readable on every one */
+.wg[data-tone] { border-color: var(--tone-line); background-image: linear-gradient(var(--tone), var(--tone)); }
+.wg[data-tone='yellow'] { --tone: rgba(255, 207, 74, 0.3); --tone-line: rgba(255, 224, 130, 0.55); }
+.wg[data-tone='pink'] { --tone: rgba(255, 112, 168, 0.28); --tone-line: rgba(255, 160, 200, 0.55); }
+.wg[data-tone='blue'] { --tone: rgba(76, 156, 255, 0.3); --tone-line: rgba(140, 196, 255, 0.55); }
+.wg[data-tone='green'] { --tone: rgba(61, 220, 140, 0.26); --tone-line: rgba(130, 235, 180, 0.55); }
+.wg[data-tone='purple'] { --tone: rgba(168, 120, 255, 0.3); --tone-line: rgba(200, 170, 255, 0.55); }
+.wg[data-bare='1'] { padding-top: 16px; }
+/* picker */
+.modal-wgp { width: min(700px, 100%); }
+.modal-wgp.pick { height: min(640px, 86dvh); }
+.modal-wgp.pick .modal-body { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 14px; }
+.wg-picker { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.wg-pick-search { width: 100%; max-width: none; height: 38px; flex: none; }
+.wg-pick-search input[type='text'] { height: 34px; font-size: 14px; flex: 1; min-width: 0; }
+.wg-pick-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px 4px 4px 2px; margin: 0 -4px 0 -2px; display: flex; flex-direction: column; gap: 16px; }
+.wg-pick-g { margin: 0 0 8px 2px; display: flex; align-items: baseline; gap: 8px; font-size: 12px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+.wg-pick-g small { font-size: 11px; letter-spacing: 0; text-transform: none; font-weight: 500; }
+.wg-pick-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.wg-pick { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 14px; background: rgba(255, 255, 255, 0.07); text-align: left; color: #fff; transition: background 0.15s, border-color 0.15s; }
+.wg-pick:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.3); }
+.wg-pick:disabled { opacity: 0.5; cursor: default; }
+.wg-pick .ico { flex: none; }
+.wg-pick .pl-main { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.wg-pick b { font-weight: 600; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+.wg-pick small { display: block; color: var(--faint); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+.wg-pick-badge { align-self: flex-start; margin-top: 3px; padding: 0 8px; border-radius: 99px; background: rgba(255, 255, 255, 0.16); font-size: 11px; line-height: 18px; font-weight: 600; color: var(--dim); }
+.wg-pick[data-state='available'] { border-style: dashed; }
+.wg-pick[aria-busy='true'] svg { animation: spin 0.9s linear infinite; }
+.wg-pick-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 30px 12px; text-align: center; color: var(--dim); }
+.wg-pick-empty p { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 520px) {
+  .wg-pick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wg-pick { padding: 9px 10px; }
+}

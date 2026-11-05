@@ -138,6 +138,8 @@ func run() error {
 		Updater:     upd,
 	})
 
+	srv.Plugins().SeedDefaults(ctx) // built-in todo and note, once (docs/PLUGINS.md §15.4)
+
 	hcDone := make(chan struct{})
 	go func() { defer close(hcDone); hc.Run(ctx) }()
 	go upd.Run(ctx) // release check loop and confirmation of a freshly installed version

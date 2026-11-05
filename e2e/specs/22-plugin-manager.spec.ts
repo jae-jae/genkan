@@ -366,7 +366,7 @@ export async function search(ctx) { return [] }
     await anon.dispose()
   })
 
-  test('Develop with AI: the dialog shows a prompt with the guide URL, copy works, and step 1 jumps to Settings > AI', async ({ page, api }) => {
+  test('Develop with AI: the dialog shows a short Skill prompt (no guide link), copy works, and step 1 jumps to Settings > AI', async ({ page, api }) => {
     void api
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: origin() })
     await openApp(page)
@@ -374,15 +374,14 @@ export async function search(ctx) { return [] }
     await page.getByTestId('plugin-dev-ai-btn').click()
     const dlg = page.getByTestId('plugin-dev-modal')
     await expect(dlg).toBeVisible()
-    for (const s of ['dev-step-1', 'dev-step-2', 'dev-step-3']) await expect(page.getByTestId(s)).toBeVisible()
+    for (const s of ['dev-step-1', 'dev-step-2']) await expect(page.getByTestId(s)).toBeVisible()
+    await expect(page.getByTestId('dev-step-3')).toHaveCount(0)
     const prompt = page.getByTestId('dev-prompt')
-    await expect(prompt).toContainText('docs/PLUGIN_DEV.md')
-    await expect(prompt).toContainText('https://raw.githubusercontent.com/jae-jae/genkan/main/docs/PLUGIN_DEV.md')
-    await expect(prompt).toContainText('enable:false') // install disabled, test, then enable
-    await expect(prompt).toContainText('/api/plugins/{id}/test')
+    // the Skill carries the guide and the workflow: one short sentence, no guide URL, no long steps
+    await expect(prompt).toContainText('Use the Genkan Skill to develop a Genkan plugin for me:')
+    expect(await prompt.textContent()).not.toMatch(/\.md|githubusercontent|enable:false|\/api\/plugins/)
     await expect(page.getByTestId('dev-placeholder')).toBeVisible() // the requirement goes here
-    // the guide link in step 2
-    await expect(page.getByTestId('dev-step-2').locator('a[href*="docs/PLUGIN_DEV.md"]')).toHaveAttribute('target', '_blank')
+    await expect(dlg.locator('a')).toHaveCount(0)
 
     const full = (await prompt.textContent())!
     await page.getByTestId('dev-copy-btn').click()
@@ -408,7 +407,7 @@ export async function search(ctx) { return [] }
     await expect(page.getByTestId('settings-modal')).toBeVisible()
   })
 
-  test('Develop with AI follows the UI language (the prompt is Chinese with the same guide URL)', async ({ page }) => {
+  test('Develop with AI follows the UI language (the prompt is the short Chinese sentence)', async ({ page }) => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: origin() })
     await openApp(page)
     await page.evaluate(() => localStorage.setItem('genkan.lang', 'zh'))
@@ -417,10 +416,10 @@ export async function search(ctx) { return [] }
     await openSettings(page, 'plugins')
     await page.getByTestId('plugin-dev-ai-btn').click()
     const prompt = page.getByTestId('dev-prompt')
-    await expect(prompt).toContainText('我想开发一个 Genkan 插件')
-    await expect(prompt).toContainText('docs/PLUGIN_DEV.md')
+    await expect(prompt).toContainText('用 Genkan Skill 帮我开发一个 Genkan 插件：')
+    await expect(page.getByTestId('dev-placeholder')).toContainText('在这里写下你的需求')
     await page.getByTestId('dev-copy-btn').click()
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('docs/PLUGIN_DEV.md')
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('用 Genkan Skill 帮我开发一个 Genkan 插件：【在这里写下你的需求…】')
   })
 
   test('Third-party tab renders (warning, search, sort) and ends in a list, an empty state or a clean error - never a broken page', async ({ page, api }) => {

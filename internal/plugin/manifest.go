@@ -55,6 +55,7 @@ type ConfigField struct {
 	Max        *float64        `json:"max,omitempty"`
 	AllowFetch bool            `json:"allowFetch,omitempty"`
 	Multiline  bool            `json:"multiline,omitempty"`
+	VerifyTLS  bool            `json:"verifyTLS,omitempty"`
 }
 
 type WallpaperDecl struct {
@@ -531,6 +532,16 @@ func parseFields(v any, path string) ([]ConfigField, error) {
 			}
 			f.Multiline = b
 		}
+		if v, ok := fo["verifyTLS"]; ok {
+			b, valid := v.(bool)
+			if !valid {
+				return nil, fmt.Errorf("%s.verifyTLS must be a boolean", fp)
+			}
+			if f.Type != "url" || !f.AllowFetch {
+				return nil, fmt.Errorf(`%s.verifyTLS requires type "url" and allowFetch: true`, fp)
+			}
+			f.VerifyTLS = b
+		}
 		for _, k := range []string{"min", "max"} {
 			if nv, ok := fo[k]; ok && nv != nil {
 				n, isNum := toFloat(nv)
@@ -758,10 +769,9 @@ func maskConfig(schema []ConfigField, cfg map[string]any, keepKeys bool) (map[st
 	return out, set
 }
 
-// fetchHostsFromConfig returns the "host[:port]" fetch allow entries for url
-// fields marked allowFetch that have a value in cfg.
-func fetchHostsFromConfig(schema []ConfigField, cfg map[string]any) []string {
-	var out []string
+// fetchPolicyFromConfig separates network authorization from certificate policy.
+// Both lists use normalized host:port entries, including default ports.
+func fetchPolicyFromConfig(schema []ConfigField, cfg map[string]any) (hosts, verified []string) {
 	for _, f := range schema {
 		if !f.AllowFetch {
 			continue
@@ -779,7 +789,11 @@ func fetchHostsFromConfig(schema []ConfigField, cfg map[string]any) []string {
 				port = "443"
 			}
 		}
-		out = append(out, net.JoinHostPort(strings.ToLower(u.Hostname()), port))
+		host := net.JoinHostPort(strings.ToLower(u.Hostname()), port)
+		hosts = append(hosts, host)
+		if f.VerifyTLS {
+			verified = append(verified, host)
+		}
 	}
-	return out
+	return hosts, verified
 }

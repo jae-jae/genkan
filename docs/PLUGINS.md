@@ -69,6 +69,7 @@ export async function action(ctx)    { /* → { toast?: string, refresh?: boolea
   options?: { value: string, label: LocalizedString }[]   // select 必填，label ≤ 100
   min?: number, max?: number                       // number
   multiline?: boolean    // 仅 secret：多行私钥，最多 5000 字符；保密、保留和清除语义不变
+  verifyTLS?: boolean    // 仅 url + allowFetch:true；true 严格校验证书，省略/false 保持旧自签名兼容
   allowFetch?: boolean   // 仅 type:"url"：把此 URL 的主机（含端口）加入 fetch 白名单。用于 homelab 内网服务（如 Pi-hole 地址由用户填写）
 }
 ```
@@ -299,7 +300,9 @@ type Block =
 **配置**
 - REST `PATCH /api/plugins/{id}`、`PATCH /api/widgets/{id}` 的 `config` 是**整体替换**（省略的非 secret 字段回到默认值，空字符串等同于清除）；secret：`""`/省略 = 保持，`null` = 清除。MCP 的 `update_plugin` / `update_widget` 的 `config` 则是**合并**（null 删除该键）。
 - `WidgetInstance` 新增可选字段 **`secrets_set: string[]`**（仅管理员；实例 schema 里有值的 secret 字段名）。管理员看到的实例 `config` 中 secret 值为 `""`，访客的 `config` 中没有 secret 键。
-- `allowFetch` 的 url 字段把 `host:port` 加入白名单（URL 未写端口时为 80/443）。仅这些主机在 HTTPS 下**不校验证书**（自签证书的内网服务）；manifest 声明的主机始终校验证书。
+- `allowFetch` 的 url 字段把 `host:port` 加入白名单（URL 未写端口时为 80/443）。默认这些主机在 HTTPS 下不校验证书（兼容旧内网自签名服务）；字段设置 `verifyTLS: true` 后严格校验证书。仅 manifest 授权的主机保持严格校验。同一 hook 可见的多个字段指向相同 host:port 时，严格配置优先；壁纸下载也遵循此规则。`verifyTLS` 仅允许布尔值且必须配合 `type: "url", allowFetch: true`。
+- `schedule` 继承本插件已保存小组件实例的 `allowFetch` 来源，按每次调用重新构建；其他插件和其他实例的 `widget`/`action`/`search` 不获得这些权限。支持该行为的宿主提供 `genkan.capabilities.scheduleWidgetFetch === true`，同一来源仍以严格 TLS 配置优先。
+- 宿主通过 `genkan.capabilities.verifyTLS === true` 声明支持此能力。依赖严格 TLS 的插件必须在 fetch 前检查该标记，避免旧宿主忽略未知 manifest 字段后静默跳过证书校验。
 - secret 值会从插件日志、`last_error`、test 结果与错误信息中以 `***` 替换；`default` 对 secret 字段允许（manifest 内容是公开的）。
 
 **其它**

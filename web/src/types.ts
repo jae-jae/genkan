@@ -89,6 +89,7 @@ export interface ConfigField {
   max?: number
   allowFetch?: boolean
   multiline?: boolean
+  verifyTLS?: boolean
 }
 export type WidgetSize = 's' | 'm' | 'l'
 export interface PluginWidgetDef {

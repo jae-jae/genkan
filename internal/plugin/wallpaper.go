@@ -87,8 +87,9 @@ func (m *Manager) fetchWallpaper(e *entry, rec store.Plugin, source, lang string
 	}
 	cfg := withDefaults(e.man.ConfigSchema, rec.Config)
 	secrets := secretValues(e.man.ConfigSchema, rec.Config)
-	allow := newAllowList(e.man.Permissions.Fetch, fetchHostsFromConfig(e.man.ConfigSchema, cfg))
-	file, err := m.storeWallpaper(m.ctx, wr.URL, allow, fetchHostsFromConfig(e.man.ConfigSchema, cfg), store.PluginSourcePrefix(rec.ID, source))
+	hosts, verified := fetchPolicyFromConfig(e.man.ConfigSchema, cfg)
+	allow := newAllowList(e.man.Permissions.Fetch, hosts)
+	file, err := m.storeWallpaper(m.ctx, wr.URL, allow, hosts, verified, store.PluginSourcePrefix(rec.ID, source))
 	if err != nil {
 		err = hookErr("could not download the wallpaper: %s", redactSecrets(err.Error(), secrets))
 		e.logs.add("error", err.Error(), secrets)
@@ -102,7 +103,7 @@ func (m *Manager) fetchWallpaper(e *entry, rec store.Plugin, source, lang string
 // storeWallpaper obtains the image (data: URL or an http(s) download through
 // the plugin's fetch allow list), sniffs it, saves it under the source's
 // prefix and prunes older images. Returns the file name.
-func (m *Manager) storeWallpaper(ctx context.Context, src string, allow *allowList, lenient []string, prefix string) (string, error) {
+func (m *Manager) storeWallpaper(ctx context.Context, src string, allow *allowList, hosts, verified []string, prefix string) (string, error) {
 	var data []byte
 	if strings.HasPrefix(src, "data:") {
 		_, b64, _ := strings.Cut(src, ",")
@@ -114,7 +115,7 @@ func (m *Manager) storeWallpaper(ctx context.Context, src string, allow *allowLi
 	} else {
 		tr := newHostTransport()
 		defer tr.close()
-		tr.lenients.Store(newAllowList(lenient))
+		tr.setTLSHosts(hosts, verified)
 		client := newClient(tr, allow.check)
 		dctx, cancel := context.WithTimeout(ctx, downloadTimeout)
 		defer cancel()

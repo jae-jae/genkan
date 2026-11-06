@@ -326,16 +326,16 @@ func (p *pool) idleCount() int {
 // invoke ----------------------------------------------------------------------------
 
 type callOpts struct {
-	hook       string
-	timeout    time.Duration
-	ctx        map[string]any
-	pluginHost []string // allowFetch hosts from the plugin config
-	extraHosts []string // allowFetch hosts from the widget instance config
-	secrets    []string // values to redact from logs and errors
-	lang       string   // request language, for ctx.t
-	msgs       *Messages
-	instID     string   // widget instance of the call ("" = none)
-	instKV     *kvStore // storage behind ctx.instance.storage
+	hook          string
+	timeout       time.Duration
+	ctx           map[string]any
+	hosts         []string // allowFetch hosts from config visible to this hook
+	verifiedHosts []string // configured hosts requiring certificate verification
+	secrets       []string // values to redact from logs and errors
+	lang          string   // request language, for ctx.t
+	msgs          *Messages
+	instID        string   // widget instance of the call ("" = none)
+	instKV        *kvStore // storage behind ctx.instance.storage
 }
 
 // invoke runs one hook of the plugin and returns its result converted to Go
@@ -369,8 +369,8 @@ func (e *entry) invoke(parent context.Context, o callOpts) (res any, err error) 
 	reuse := false
 	defer func() { e.pool.release(in, reuse) }()
 
-	in.allow.Store(newAllowList(e.man.Permissions.Fetch, o.pluginHost, o.extraHosts))
-	in.tr.lenients.Store(newAllowList(o.pluginHost, o.extraHosts))
+	in.allow.Store(newAllowList(e.man.Permissions.Fetch, o.hosts))
+	in.tr.setTLSHosts(o.hosts, o.verifiedHosts)
 	in.redact.Store(&o.secrets)
 	in.api.SetContext(callCtx)
 	in.hookCtx, in.sshCalls = callCtx, 0

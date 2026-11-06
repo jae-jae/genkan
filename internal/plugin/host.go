@@ -155,15 +155,16 @@ func installHost(in *instance, m *Manager, probe bool) error {
 	}))}
 
 	if err := rt.SetGlobal("genkan", map[string]any{
-		"log":        moejs.NativeFunc(logf("info")),
-		"storage":    storage,
-		"links":      links,
-		"workspaces": workspaces,
-		"categories": categories,
-		"html":       htmlAPI(rt),
-		"widgets":    widgetsAPI,
-		"ssh":        map[string]any{"stats": moejs.NativeFunc(guard(in.sshStats))},
-		"version":    m.cfg.Version,
+		"log":          moejs.NativeFunc(logf("info")),
+		"storage":      storage,
+		"links":        links,
+		"workspaces":   workspaces,
+		"categories":   categories,
+		"html":         htmlAPI(rt),
+		"widgets":      widgetsAPI,
+		"ssh":          map[string]any{"stats": moejs.NativeFunc(guard(in.sshStats))},
+		"version":      m.cfg.Version,
+		"capabilities": map[string]any{"verifyTLS": true, "scheduleWidgetFetch": true},
 	}); err != nil {
 		return err
 	}

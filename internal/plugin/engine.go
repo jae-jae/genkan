@@ -370,7 +370,7 @@ func (e *entry) invoke(parent context.Context, o callOpts) (res any, err error) 
 	defer func() { e.pool.release(in, reuse) }()
 
 	in.allow.Store(newAllowList(e.man.Permissions.Fetch, o.hosts))
-	in.tr.lenients.Store(newAllowList(lenientHosts(o.hosts, o.verifiedHosts)))
+	in.tr.setTLSHosts(o.hosts, o.verifiedHosts)
 	in.redact.Store(&o.secrets)
 	in.api.SetContext(callCtx)
 	in.hookCtx, in.sshCalls = callCtx, 0

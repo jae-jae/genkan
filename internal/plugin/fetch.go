@@ -113,9 +113,20 @@ func (a *allowList) check(r *http.Request) error {
 // configured through an allowFetch url field without verifyTLS (homelab
 // services often use self-signed certificates). Strict declarations win.
 type hostTransport struct {
-	strict   *http.Transport
-	lenient  *http.Transport
-	lenients atomic.Pointer[allowList]
+	strict  *http.Transport
+	lenient *http.Transport
+	policy  atomic.Pointer[tlsHostPolicy]
+}
+
+// Keep both pattern sets together so pooled invocations replace the policy
+// atomically. Exact-string subtraction cannot account for overlapping suffixes.
+type tlsHostPolicy struct {
+	configured *allowList
+	verified   *allowList
+}
+
+func (t *hostTransport) setTLSHosts(hosts, verified []string) {
+	t.policy.Store(&tlsHostPolicy{configured: newAllowList(hosts), verified: newAllowList(verified)})
 }
 
 func newHostTransport() *hostTransport {
@@ -128,8 +139,11 @@ func newHostTransport() *hostTransport {
 }
 
 func (t *hostTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.URL.Scheme == "https" && t.lenients.Load().match(r.URL.Hostname(), defaultPort(r)) {
-		return t.lenient.RoundTrip(r)
+	if p := t.policy.Load(); p != nil && r.URL.Scheme == "https" {
+		host, port := r.URL.Hostname(), defaultPort(r)
+		if !p.verified.match(host, port) && p.configured.match(host, port) {
+			return t.lenient.RoundTrip(r)
+		}
 	}
 	return t.strict.RoundTrip(r)
 }

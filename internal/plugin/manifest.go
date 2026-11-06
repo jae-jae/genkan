@@ -797,19 +797,3 @@ func fetchPolicyFromConfig(schema []ConfigField, cfg map[string]any) (hosts, ver
 	}
 	return hosts, verified
 }
-
-// A strict declaration wins even when another config field grants legacy TLS
-// behavior for the same host (including across plugin and instance config).
-func lenientHosts(hosts, verified []string) []string {
-	strict := make(map[string]bool, len(verified))
-	for _, host := range verified {
-		strict[host] = true
-	}
-	var out []string
-	for _, host := range hosts {
-		if !strict[host] {
-			out = append(out, host)
-		}
-	}
-	return out
-}

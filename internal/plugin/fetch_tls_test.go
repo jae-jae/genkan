@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -144,7 +145,7 @@ func TestVerifyTLSPolicyNormalization(t *testing.T) {
 	hosts, verified := fetchPolicyFromConfig(schema, map[string]any{
 		"a": "https://EXAMPLE.test/path", "b": "https://example.test:443/", "c": "https://[::1]:8443/", "d": "https://[::1]:8443/",
 	})
-	if len(hosts) != 4 || len(verified) != 2 || len(lenientHosts(hosts, verified)) != 0 {
+	if len(hosts) != 4 || len(verified) != 2 || !newAllowList(verified).match("EXAMPLE.test", "443") || !newAllowList(verified).match("::1", "8443") {
 		t.Fatalf("%v %v", hosts, verified)
 	}
 }
@@ -223,4 +224,78 @@ func TestScheduleWidgetFetchScopeAndRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	run("tls-test", "schedule", "rejected")
+}
+
+// Route synthetic hostnames to an untrusted loopback TLS server. No public DNS
+// or provider credentials are involved in wildcard policy tests.
+func wildcardTLSStub(t *testing.T) {
+	t.Helper()
+	s := newTLSStub(t)
+	old := http.DefaultTransport
+	transport := old.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, s.Listener.Addr().String())
+	}
+	http.DefaultTransport = transport
+	t.Cleanup(func() { http.DefaultTransport = old; transport.CloseIdleConnections() })
+}
+
+func TestVerifyTLSOverlappingPatterns(t *testing.T) {
+	wildcardTLSStub(t)
+	const target = "https://api.example.test"
+	t.Run("widget", func(t *testing.T) {
+		e := newEnv(t)
+		e.install(tlsTestSource)
+		if _, err := e.m.Patch("tls-test", PatchRequest{Config: map[string]any{"target": target, "legacy": "https://*.example.test"}}); err != nil {
+			t.Fatal(err)
+		}
+		// Alternate policies on the same pooled runtime: strict matches must beat
+		// a legacy suffix, while unrelated hosts/ports retain legacy behavior.
+		for _, tc := range []struct{ strict, want string }{
+			{target, "rejected"}, {"https://other.example.test", "accepted"},
+			{"https://api.example.test:8443", "accepted"}, {target, "rejected"},
+			{"https://*.example.test", "rejected"},
+		} {
+			res, err := e.m.Test(context.Background(), "tls-test", TestRequest{Hook: "widget", Config: map[string]any{"strict": tc.strict}})
+			if err != nil || !res.OK || !strings.Contains(fmt.Sprint(res.Result), tc.want) {
+				t.Fatalf("strict %s: %+v %v", tc.strict, res, err)
+			}
+		}
+	})
+	t.Run("schedule-saved-instances", func(t *testing.T) {
+		e := newEnv(t)
+		e.install(tlsTestSource)
+		if _, err := e.m.Patch("tls-test", PatchRequest{Config: map[string]any{"target": target}}); err != nil {
+			t.Fatal(err)
+		}
+		addWidget(t, e, "tls-test", "main", map[string]any{"legacy": "https://*.example.test"})
+		w := addWidget(t, e, "tls-test", "main", map[string]any{"strict": target})
+		res, err := e.m.Test(context.Background(), "tls-test", TestRequest{Hook: "schedule"})
+		if err != nil || !res.OK || res.Result != "rejected" {
+			t.Fatalf("overlap: %+v %v", res, err)
+		}
+		if err := e.m.DeleteWidget(w.ID); err != nil {
+			t.Fatal(err)
+		}
+		res, err = e.m.Test(context.Background(), "tls-test", TestRequest{Hook: "schedule"})
+		if err != nil || !res.OK || res.Result != "accepted" {
+			t.Fatalf("legacy after deletion: %+v %v", res, err)
+		}
+	})
+	t.Run("wallpaper", func(t *testing.T) {
+		e := newEnv(t)
+		e.install(plug(`{id:"tls-pattern-wallpaper",name:"TLS",version:"1",config:[
+   {key:"target",type:"url",label:"Target"},
+   {key:"legacy",type:"url",label:"Legacy",allowFetch:true},
+   {key:"strict",type:"url",label:"Strict",allowFetch:true,verifyTLS:true}
+  ],wallpapers:[{id:"main",name:"Main"}]}`, `export function wallpaper(ctx){return {url:ctx.config.target}}`))
+		if _, err := e.m.Patch("tls-pattern-wallpaper", PatchRequest{Config: map[string]any{"target": target, "legacy": "https://*.example.test", "strict": target}}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := e.m.Wallpaper(context.Background(), "tls-pattern-wallpaper", "main", "en")
+		if err == nil || !strings.Contains(err.Error(), "certificate") {
+			t.Fatalf("expected certificate rejection: %v", err)
+		}
+	})
 }

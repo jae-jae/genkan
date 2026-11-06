@@ -49,7 +49,7 @@ export const plIcon = (n?: string) => (n && LUCIDE[n] ? n : 'puzzle')
 export const hosts = (p: PluginInfo) => p.permissions?.fetch || []
 export const linksPerm = (p: PluginInfo) => p.permissions?.links || ''
 export const schemaOf = (p: PluginInfo) => p.config_schema || []
-export const hasUrlFetch = (p: PluginInfo) => [...schemaOf(p), ...(p.widgets || []).flatMap((w) => w.config || [])].some((f) => f.type === 'url' && f.allowFetch)
+export const hasUrlFetch = (p: PluginInfo) => [...schemaOf(p), ...(p.widgets || []).flatMap((w) => w.config || [])].some((f) => (f.type === 'url' || f.type === 'secret') && f.allowFetch)
 export const permKey = (p: PluginInfo) => JSON.stringify([hosts(p).slice().sort(), linksPerm(p), hasUrlFetch(p), !!p.permissions?.ssh])
 export const needsConfig = (p: PluginInfo) => schemaOf(p).some((f: ConfigField) => f.required && f.type !== 'boolean')
 export const isRisky = (p: PluginInfo) => hosts(p).length > 0 || !!linksPerm(p) || hasUrlFetch(p) || !!p.permissions?.ssh

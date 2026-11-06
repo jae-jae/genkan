@@ -87,8 +87,9 @@ func (m *Manager) fetchWallpaper(e *entry, rec store.Plugin, source, lang string
 	}
 	cfg := withDefaults(e.man.ConfigSchema, rec.Config)
 	secrets := secretValues(e.man.ConfigSchema, rec.Config)
-	allow := newAllowList(e.man.Permissions.Fetch, fetchHostsFromConfig(e.man.ConfigSchema, cfg))
-	file, err := m.storeWallpaper(m.ctx, wr.URL, allow, fetchHostsFromConfig(e.man.ConfigSchema, cfg), store.PluginSourcePrefix(rec.ID, source))
+	hosts, verified := fetchPolicyFromConfig(e.man.ConfigSchema, cfg)
+	allow := newAllowList(e.man.Permissions.Fetch, hosts)
+	file, err := m.storeWallpaper(m.ctx, wr.URL, allow, lenientHosts(hosts, verified), store.PluginSourcePrefix(rec.ID, source))
 	if err != nil {
 		err = hookErr("could not download the wallpaper: %s", redactSecrets(err.Error(), secrets))
 		e.logs.add("error", err.Error(), secrets)

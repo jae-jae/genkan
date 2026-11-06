@@ -231,7 +231,8 @@ At least one of `wallpapers`, `widgets`, `search`, `schedules` is required. Unkn
 | `default` | optional, must be valid for the type. The manifest is public: **never put a real secret in a default** |
 | `required` | enforced when saving config or creating a widget (not in `/test`). A field with a `default` counts as satisfied |
 | `multiline` | only on `secret`; true enables a multiline private-key input, up to 5000 characters with LF/CR/tab; existing masking/keep/clear semantics apply |
-| `allowFetch` | only on `url`. Adds that URL's `host:port` (80/443 when no port is written) to the fetch allow-list for calls that carry the value, and **skips TLS certificate verification for exactly that host** (self-signed homelab HTTPS). Hosts from `permissions.fetch` are always verified |
+| `verifyTLS` | optional boolean, only with `type: "url", allowFetch: true`. `true` requires normal TLS certificate verification; omitted/`false` preserves legacy self-signed behavior. For the same host:port, any strict field visible to the hook takes precedence. Also applies to server-side wallpaper downloads |
+| `allowFetch` | only on `url`. Adds that URL's `host:port` (80/443 when no port is written) to the fetch allow-list for calls that carry the value, and, by default, skips TLS certificate verification for that host (legacy self-signed homelab HTTPS). Use `verifyTLS: true` for normal certificate verification. Manifest-only hosts are verified |
 
 Semantics:
 
@@ -284,6 +285,7 @@ Declare a capability without exporting its function and install fails: ``the man
 | `genkan.links.update(id, patch)` | needs `"write"`. Same body as `PATCH /api/links/{id}` |
 | `genkan.workspaces.list()`, `genkan.categories.list()` | needs `"read"` |
 | `genkan.html.select(html, selector, { base?, limit? })` | Synchronous, no permission, no network. Runs a CSS selector (cascadia: tags, classes, ids, attributes, combinators, `:nth-child`, `:not`, `:contains`, ...) over a full HTML document and returns `[{ html, text }]`. `html` = the sanitized outer HTML of the match (same allow-list as the `html` block, URLs made absolute with `base`; relative URLs are dropped without `base`), ready for `{ type: "html", html }`. `text` = collapsed text content (<= 4000 chars). `limit` default **10**, max 100. Matches inside an earlier match are skipped; no match = `[]`. Input <= **2 MiB** and selector <= 500 chars. An invalid selector or oversized input **throws** (`genkan.html.select: invalid selector "a[[": ...`), so catch it and return a readable `error` |
+| `genkan.capabilities.verifyTLS` | `true` when strict TLS for configured hosts is supported. Plugins that require it must check this before fetching: older hosts silently ignore unknown manifest fields |
 | `genkan.version` | server version string |
 
 Without the permission the call throws ``permission denied: genkan.links.list needs permissions.links = "read"``.

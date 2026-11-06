@@ -110,8 +110,8 @@ func (a *allowList) check(r *http.Request) error {
 }
 
 // hostTransport verifies TLS certificates, except for hosts the admin
-// configured through an allowFetch url field (homelab services often use
-// self-signed certificates). Manifest-declared hosts are always verified.
+// configured through an allowFetch url field without verifyTLS (homelab
+// services often use self-signed certificates). Strict declarations win.
 type hostTransport struct {
 	strict   *http.Transport
 	lenient  *http.Transport

@@ -50,9 +50,9 @@ export const hosts = (p: PluginInfo) => p.permissions?.fetch || []
 export const linksPerm = (p: PluginInfo) => p.permissions?.links || ''
 export const schemaOf = (p: PluginInfo) => p.config_schema || []
 export const hasUrlFetch = (p: PluginInfo) => [...schemaOf(p), ...(p.widgets || []).flatMap((w) => w.config || [])].some((f) => f.type === 'url' && f.allowFetch)
-export const permKey = (p: PluginInfo) => JSON.stringify([hosts(p).slice().sort(), linksPerm(p), hasUrlFetch(p)])
+export const permKey = (p: PluginInfo) => JSON.stringify([hosts(p).slice().sort(), linksPerm(p), hasUrlFetch(p), !!p.permissions?.ssh])
 export const needsConfig = (p: PluginInfo) => schemaOf(p).some((f: ConfigField) => f.required && f.type !== 'boolean')
-export const isRisky = (p: PluginInfo) => hosts(p).length > 0 || !!linksPerm(p) || hasUrlFetch(p)
+export const isRisky = (p: PluginInfo) => hosts(p).length > 0 || !!linksPerm(p) || hasUrlFetch(p) || !!p.permissions?.ssh
 
 export async function setEnabled(p: { id: string }, enabled: boolean) {
   busy.value = p.id
@@ -194,6 +194,7 @@ export function PermList({ p }: { p: PluginInfo }) {
           <span>{t('perm.fetchUser')}</span>
         </li>
       )}
+      {p.permissions?.ssh && <li class="pl-perm warn" data-testid="plugin-perm-ssh"><Icon n="server" size={16} /><span>{t('perm.ssh')}</span></li>}
       {lp && (
         <li class={'pl-perm' + (lp === 'write' ? ' warn' : '')} data-testid="plugin-perm-links" data-level={lp}>
           <Icon n={lp === 'write' ? 'triangle-alert' : 'bookmark'} size={16} />
@@ -223,6 +224,7 @@ export function PermChips({ p }: { p: PluginInfo }) {
         </code>
       ))}
       {hs.length > 3 && <code>+{hs.length - 3}</code>}
+      {p.permissions?.ssh && <code class="warn-code">SSH</code>}
       {hasUrlFetch(p) && <code>{t('perm.urlShort')}</code>}
       {lp && <code class={lp === 'write' ? 'warn-code' : ''}>{t(lp === 'write' ? 'perm.linksWriteShort' : 'perm.linksReadShort')}</code>}
     </span>

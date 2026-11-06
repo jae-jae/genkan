@@ -5,6 +5,12 @@ const now = () => new Date().toISOString()
 
 const F = (key, type, label, o = {}) => ({ key, type, label, ...o })
 const DEFS = {
+  'ssh-resources-demo': {
+    name: { en: 'SSH resources (demo)', zh: 'SSH 资源（演示）' }, version: '1.0.0', icon: 'server',
+    permissions: { fetch: [], ssh: true },
+    config_schema: [F('privateKey', 'secret', { en: 'Private key', zh: '私钥' }, { multiline: true })],
+    widgets: [{ id: 'resources', name: 'Resources', size: 'm', refresh: 30 }],
+  },
   weather: {
     name: { en: 'Weather', zh: '天气' }, version: '1.0.0', icon: 'cloud-sun', description: { en: 'Current weather and a 7-day trend from Open-Meteo (no API key).', zh: 'Open-Meteo 实时天气和 7 天趋势（无需 API key）。' }, author: 'genkan', homepage: 'https://open-meteo.com',
     permissions: { fetch: ['api.open-meteo.com', 'geocoding-api.open-meteo.com'], links: '' },
@@ -70,7 +76,7 @@ const DEFS = {
     permissions: { fetch: ['*'], links: 'read' }, config_schema: [], search: { name: 'Demo', prefix: 'demo' },
   },
 }
-const CATALOG = ['todo', 'note', 'weather', 'calculator', 'picsum', 'bing-wallpaper', 'hacker-news', 'world-clock', 'pihole', 'countdown', 'rss', 'link-importer', 'any-fetch']
+const CATALOG = ['ssh-resources-demo', 'todo', 'note', 'weather', 'calculator', 'picsum', 'bing-wallpaper', 'hacker-news', 'world-clock', 'pihole', 'countdown', 'rss', 'link-importer', 'any-fetch']
 
 // widget layout fields (PLUGINS.md 11.1): w = 0..6 columns (0 = default by manifest size), h = 0 (auto) or 80..1200 px
 const clampW = (v) => Math.min(6, Math.max(0, Math.round(Number(v) || 0)))
@@ -170,7 +176,7 @@ export function createPluginsMock({ send, workspaces, bump }) {
 
   const pub = (p) => ({
     id: p.id, name: p.name, version: p.version, description: p.description || '', author: p.author || '', homepage: p.homepage || '', icon: p.icon || '', enabled: p.enabled,
-    permissions: { fetch: p.permissions?.fetch || [], links: p.permissions?.links || '' }, config_schema: p.config_schema || [],
+    permissions: { fetch: p.permissions?.fetch || [], links: p.permissions?.links || '', ssh: !!p.permissions?.ssh }, config_schema: p.config_schema || [],
     wallpapers: p.wallpapers || [], widgets: p.widgets || [], search: p.search || null, schedules: p.schedules || [],
   })
   const adminInfo = (p) => ({ ...pub(p), config: Object.fromEntries(Object.entries(p.config || {}).map(([k, v]) => [k, (p.config_schema || []).find((f) => f.key === k)?.type === 'secret' ? '' : v])), secrets_set: p.secrets_set, source_url: p.source_url, last_error: p.last_error, installed_at: p.installed_at, updated_at: p.updated_at })

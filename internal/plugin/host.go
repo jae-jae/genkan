@@ -162,6 +162,7 @@ func installHost(in *instance, m *Manager, probe bool) error {
 		"categories": categories,
 		"html":       htmlAPI(rt),
 		"widgets":    widgetsAPI,
+		"ssh":        map[string]any{"stats": moejs.NativeFunc(guard(in.sshStats))},
 		"version":    m.cfg.Version,
 	}); err != nil {
 		return err

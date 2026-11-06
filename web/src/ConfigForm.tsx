@@ -110,7 +110,10 @@ function Field({ f, form, isSet, pre }: { f: ConfigField; form: ConfigFormState;
       const cleared = !!form.clear[f.key]
       control = (
         <div class="cfg-secret">
-          <input
+          {f.multiline ? <textarea id={id} data-testid={tid} rows={5} autocomplete="off" spellcheck={false}
+            data-set={isSet && !cleared ? '1' : '0'} disabled={cleared}
+            placeholder={cleared ? t('cfg.willClear') : isSet ? t('cfg.secretKeep') : ''}
+            value={String(v ?? '')} onInput={inp} /> : <input
             id={id}
             type="password"
             autocomplete="new-password"
@@ -120,7 +123,7 @@ function Field({ f, form, isSet, pre }: { f: ConfigField; form: ConfigFormState;
             placeholder={cleared ? t('cfg.willClear') : isSet ? t('cfg.secretKeep') : ''}
             value={String(v ?? '')}
             onInput={inp}
-          />
+          />}
           {isSet && (
             <button type="button" class="btn sm" data-testid={pre + '-secret-clear-' + f.key} aria-pressed={cleared} onClick={() => form.toggleClear(f.key)}>
               {cleared ? t('common.undo') : t('cfg.clear')}

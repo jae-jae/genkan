@@ -131,7 +131,7 @@ gk PATCH /api/links/$LINK '{"icon":"lucide:download","health_check":true}' | jq 
 
 ## Plugins
 
-The page can be extended with JavaScript plugins (widgets, wallpaper sources, search providers, scheduled jobs). To add one: `POST /api/plugins` with a built-in `{"catalog":"<id>"}` (see `GET /api/plugins/catalog`), a `{"url":...}` or your own `{"source":...}`; check it with `POST /api/plugins/{id}/test` and the plugin's logs; then place widgets with `POST /api/widgets`. Plugins only reach the hosts they declare, so tell the user which hosts and permissions a plugin asks for (`permissions` in the install response) before enabling one that uses `"*"`. Never put secrets into plugin source; use `secret` config fields.
+The page can be extended with JavaScript plugins (widgets, wallpaper sources, search providers, scheduled jobs). To add one: `POST /api/plugins` with a built-in `{"catalog":"<id>"}` (see `GET /api/plugins/catalog`), a `{"url":...}` or your own `{"source":...}`; check it with `POST /api/plugins/{id}/test` and the plugin's logs; then place widgets with `POST /api/widgets`. HTTP fetch only reaches declared hosts. Native SSH resource collection separately requires `permissions.ssh:true`, credentials; host fingerprint verification is optional (plugin-dev.md §2.12). Explain the requested access (`permissions` in the install response) before enabling a plugin that uses `"*"` or SSH. Never put secrets into plugin source; use `secret` config fields.
 
 ### Developing plugins
 

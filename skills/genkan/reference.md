@@ -596,3 +596,7 @@ The 52 Lucide icon names (use as `lucide:<name>`):
 ## Wallpaper formats
 
 Workspace `wallpaper`: `preset:aurora`, `preset:dusk` (default), `preset:ocean`, `preset:forest`, `preset:sakura`, `preset:graphite`, `upload:<file>` for an image in the gallery (`GET /api/wallpapers`), or `plugin:<pluginId>/<sourceId>` for a wallpaper source of an installed plugin (see Plugins; uninstalling the plugin resets such workspaces to `preset:dusk`). Empty on create means `preset:dusk`; an empty value on `PATCH` also resets to `preset:dusk`.
+
+### Native SSH plugin fields
+
+Plugin manifests may declare `permissions.ssh: true` (default false), shown in plugin preview/info and permission review. This grants `genkan.ssh.stats(options)` for fixed Linux resource collection to supplied hosts, with mandatory SHA256 host-key verification. It does not grant arbitrary command execution. `ConfigField` additionally accepts `multiline: true` on `secret` fields for PEM/OpenSSH keys (5000 characters; LF/CR/tab allowed). Existing config, secret masking, keep/clear and test endpoints are unchanged. See plugin-dev.md §2.12 for the full host API and errors.

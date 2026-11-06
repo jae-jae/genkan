@@ -9,7 +9,7 @@ import (
 	"github.com/jae-jae/genkan/internal/plugin"
 )
 
-const pluginDocs = " Plugin authoring guide: docs/PLUGINS.md (an ES module exporting `manifest`, optionally `messages` for localization with t()/ctx.t, and async hook functions wallpaper/widget/search/schedule/action). 插件开发说明见 docs/PLUGINS.md。"
+const pluginDocs = " Native Linux SSH metrics use await genkan.ssh.stats(options), require permissions.ssh=true; an optional SHA256 host fingerprint pins server identity, otherwise verification is skipped; private keys use secret fields with multiline:true. Plugin authoring guide: docs/PLUGINS.md (an ES module exporting `manifest`, optionally `messages` for localization with t()/ctx.t, and async hook functions wallpaper/widget/search/schedule/action). 插件开发说明见 docs/PLUGINS.md。"
 
 var errNoPlugins = errors.New("plugins are not available")
 

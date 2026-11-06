@@ -1,5 +1,5 @@
 // The "add widget" picker (docs/PLUGINS.md 15.5): a searchable grid of cards, grouped as installed, disabled, then not-installed built-ins. Enabled plugins first, then disabled ones
-// (picking enables them), then the built-in catalog plugins that are not installed yet (picking installs and enables them).
+// (picking enables them), then not-installed built-ins. SSH plugins require permission review before either path enables them.
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { get, patch, post } from './api'
 import { Icon } from './icons'
@@ -35,6 +35,7 @@ export function WidgetPicker({ onPick }: { onPick: (p: PluginInfo, d: PluginWidg
   const [cat, setCat] = useState<CatalogItem[] | null>(null)
   const [catDone, setCatDone] = useState(false)
   const [busy, setBusy] = useState('')
+  const [sshReview, setSSHReview] = useState<Entry | null>(null)
   const input = useRef<HTMLInputElement>(null)
   useEffect(() => {
     input.current?.focus()
@@ -74,9 +75,10 @@ export function WidgetPicker({ onPick }: { onPick: (p: PluginInfo, d: PluginWidg
   const fresh = shown.filter((e) => e.state === 'available')
   if (fresh.length) groups.push({ id: 'new', name: t('widget.group.install'), entries: fresh, state: 'available' })
 
-  const pick = async (e: Entry) => {
+  const pick = async (e: Entry, sshAllowed = false) => {
     if (busy) return
     if (e.state === 'enabled') return onPick(e.p!, e.d!)
+    if (e.state === 'disabled' && e.p?.permissions?.ssh && !sshAllowed) { setSSHReview(e); return }
     setBusy(e.key)
     try {
       let info: PluginInfo | undefined
@@ -84,7 +86,15 @@ export function WidgetPicker({ onPick }: { onPick: (p: PluginInfo, d: PluginWidg
         await patch('/api/plugins/' + e.pid, { enabled: true })
         info = ((await get<PluginInfo[] | null>('/api/plugins')) || []).find((x) => x.id === e.pid)
       } else {
-        info = await post<PluginInfo>('/api/plugins', { catalog: e.pid, enable: true })
+        info = await post<PluginInfo>('/api/plugins', { catalog: e.pid, enable: false })
+        if (info.permissions?.ssh) {
+          load()
+          setBusy('')
+          setSSHReview({ ...e, state: 'disabled', p: info })
+          return
+        }
+        await patch('/api/plugins/' + e.pid, { enabled: true })
+        info = { ...info, enabled: true }
       }
       load()
       const d = info?.widgets?.find((x) => x.id === e.wid)
@@ -95,6 +105,18 @@ export function WidgetPicker({ onPick }: { onPick: (p: PluginInfo, d: PluginWidg
       setBusy('')
     }
   }
+
+  if (sshReview) return (
+    <div class="pl-panel" data-testid="widget-ssh-permission">
+      <h3>{t('perm.title', { name: loc(sshReview.pname) })}</h3>
+      <p>{t('perm.ssh')}</p>
+      <p class="hint">{t('perm.note')}</p>
+      <div class="actions">
+        <button class="btn" data-testid="widget-ssh-cancel" onClick={() => setSSHReview(null)}>{t('perm.keep')}</button>
+        <button class="btn primary" data-testid="widget-ssh-allow" onClick={() => { const e = sshReview; setSSHReview(null); pick(e, true) }}>{t('perm.allow')}</button>
+      </div>
+    </div>
+  )
 
   const none = catDone && !entries.length
   return (

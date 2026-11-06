@@ -485,7 +485,7 @@ function Row({ p }: { p: PluginInfo }) {
           <button class="ib danger" aria-label={t('common.delete')} title={t('common.delete')} data-testid="plugin-delete" onClick={askDelete}>
             <Icon n="trash-2" size={16} />
           </button>
-          <Switch label={t('plugin.enable', { name: loc(p.name) })} checked={p.enabled} onChange={(v) => setEnabled(p, v)} testid="plugin-toggle" />
+          <Switch label={t('plugin.enable', { name: loc(p.name) })} checked={p.enabled} onChange={(v) => v && p.permissions?.ssh ? showOver({ kind: 'plugin-perm', plugin: p, fresh: false }) : setEnabled(p, v)} testid="plugin-toggle" />
         </div>
       </div>
       {o === 'config' && <ConfigPanel key={p.id + (p.updated_at || '')} p={p} />}

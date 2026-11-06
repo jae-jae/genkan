@@ -88,6 +88,7 @@ export interface ConfigField {
   min?: number
   max?: number
   allowFetch?: boolean
+  multiline?: boolean
 }
 export type WidgetSize = 's' | 'm' | 'l'
 export interface PluginWidgetDef {
@@ -111,7 +112,7 @@ export interface PluginInfo {
   homepage?: string
   icon?: string
   enabled: boolean
-  permissions?: { fetch?: string[] | null; links?: '' | 'read' | 'write' } | null
+  permissions?: { fetch?: string[] | null; links?: '' | 'read' | 'write'; ssh?: boolean } | null
   config_schema?: ConfigField[] | null
   wallpapers?: PluginWallpaperDef[] | null
   widgets?: PluginWidgetDef[] | null

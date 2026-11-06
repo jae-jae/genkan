@@ -9,7 +9,7 @@
 - 浏览器**永不执行插件代码**。插件输出的是**声明式 JSON**（小组件视图、搜索结果、壁纸元数据），由前端用固定组件渲染，不使用 `innerHTML`。
 - 遵守 SPEC 的第一原则：轻量。没有启用插件时不创建任何 JS 运行时、不增加常驻内存；首屏 JS gzip 仍需 ≤ 60 KB（插件相关 UI 尽量精简）。
 - AI-native：AI 可以通过 REST / MCP **编写、安装、测试**插件（"帮我写一个显示 Pi-hole 拦截数的小组件"）。
-- 安全：插件只能访问 manifest 声明的主机；有超时、内存上限、存储上限；无文件系统访问。
+- 安全：HTTP 只能访问 manifest 声明的主机；SSH 资源采集需独立声明 `permissions.ssh:true`，可连接调用参数指定的主机（包含内网），可选验证指纹；有超时、内存上限、存储上限；无文件系统访问。
 
 ## 1. 插件文件格式
 
@@ -68,6 +68,7 @@ export async function action(ctx)    { /* → { toast?: string, refresh?: boolea
   required?: boolean
   options?: { value: string, label: LocalizedString }[]   // select 必填，label ≤ 100
   min?: number, max?: number                       // number
+  multiline?: boolean    // 仅 secret：多行私钥，最多 5000 字符；保密、保留和清除语义不变
   allowFetch?: boolean   // 仅 type:"url"：把此 URL 的主机（含端口）加入 fetch 白名单。用于 homelab 内网服务（如 Pi-hole 地址由用户填写）
 }
 ```
@@ -678,7 +679,7 @@ const items = genkan.html.select(pageHtml, ".titleline > a", { base: "https://ne
   - **网格卡片**：宽度足够时 3 列，≤ 520px 时 2 列。卡片内容：图标、小组件名、插件名、默认尺寸。卡片的 testid 不变（`widget-pick-<plugin>-<widget>`）。
   - **分组**："已安装"（已启用插件的小组件，按插件名、小组件名排序）、"已禁用的插件"、最后是**未安装的 catalog 插件**"可安装"，卡片上有"未安装"徽标。卡片本身显示插件名，所以不再按插件逐个分组（实现中调整：单个小组件的插件会产生大量只有一张卡的组）。
     - 点未安装的卡片：调用 `POST /api/plugins {catalog: id, enable: true}`，成功后刷新插件列表，进入该小组件的配置表单。安装中显示加载状态，失败时 toast。
-    - 已安装但被禁用的插件也显示，徽标为"已禁用"。点击后先 `PATCH` 启用，再进入配置表单。
+    - 已安装但被禁用的插件也显示，徽标为"已禁用"。点击后先 `PATCH` 启用，再进入配置表单；SSH 插件先展示权限确认，取消保持禁用。
   - 弹窗内容区高度固定（最大约 70vh），只有列表区域滚动，搜索框固定在顶部。
 - 编辑模式下的"添加小组件"块独占一整行：`grid-column: 1 / -1`，高度约 52px，位于小组件区最前。
 
@@ -786,3 +787,35 @@ const items = genkan.html.select(pageHtml, ".titleline > a", { base: "https://ne
 - 两个插件的小组件都是 `refresh: 60`（只影响多设备间的同步；本机的修改靠 action 返回的 `view` 立即生效）。`todo` 的小组件 id 是 `list`，`note` 的是 `note`。
 - `todo`：标题只在有未完成项时带 `· N`；文字单行化（合并空白、去控制字符）并截到 500 字符；`toggle` 的 `params.checked` 缺省时翻转；`reorder` 的 `params.ids` 里未知 id 被忽略、没提到的条目保持原有顺序排在最后；空文本、未知 id、第 201 条都**抛出本地化错误**（API 返回 502，`error` 为该文案，前端以 toast 显示）。
 - `note`：`tone` 选项为 `default`（不染色）或五种颜色，默认 `yellow`；`save` 的 `params.value` 必须是字符串，否则抛错；空字符串会删除存储键。
+
+## 17. 原生 SSH 资源采集
+
+插件声明 `permissions: { ssh: true }` 后，可调用 `await genkan.ssh.stats(options)`。默认无 SSH 权限，安装预览、权限列表与更新权限比较均包含此权限。该权限允许使用插件提供的凭据连接任意指定主机（包括内网），不复用 HTTP fetch 白名单。界面以警告样式提示，只启用可信插件。小组件选择器中选择已禁用或新安装的 SSH 插件，也必须确认权限后才启用；取消则保持禁用。
+
+`options` 为 `{host, port?, username, fingerprint?, password?, privateKey?, passphrase?}`。`host` 是不含协议/端口的主机名或 IP，IPv6 不带方括号；`port` 默认为 22。`fingerprint` 可选：省略或空字符串时直接连接，不确认也不校验服务器身份；提供时必须是从可信服务器控制台核实的 `SHA256:` 主机公钥指纹，格式错误或不匹配仍拒绝连接。密码和 PEM/OpenSSH 私钥二选一；加密私钥可提供口令；OpenSSH bcrypt 参数上限为 64 轮/64 字节 salt，超出返回 `SSH_KEY_COST`，避免解密耗时突破 hook 预算。凭据使用 `secret` 配置，私钥声明 `multiline:true`（最多 5000 字符，允许换行、回车和制表符）；所有 secret 仍采用原有遮蔽、保持、清除和存储规则，**不是额外的静态加密存储**。普通 secret 的 2000 字符限制不变。
+
+实现使用现有 `golang.org/x/crypto/ssh`，没有本机 shell/SSH 进程、文件访问、SSH agent、端口转发或任意远程命令 API。仅执行内置只读 Linux 采集脚本；远端需要 `/proc`、`/bin/sh`、awk、cat、df、uname、tail、sleep，无需 root/sudo 或远端 agent。仅采集可见的系统资源，不保证是容器 cgroup 限额。
+
+- 每次 hook 最多调用一次；全服务最多 8 个同时执行的采集，排队计入超时。
+- 每次最多 7 秒，也受 hook 剩余时间限制；取消会关闭连接。采样窗口约 1 秒。
+- stdout 最多 64 KiB，stderr 最多 8 KiB；不把原始错误、banner 或 stderr 返回给插件。
+- 安装探测和模块顶层不能联网。连接不跨调用复用。
+
+返回对象：
+
+```js
+{
+  hostname, kernel, arch, cores,
+  collectedAt,       // Genkan 时钟，Unix 毫秒
+  cpuPercent,        // 0..100，总 CPU 两次计数之差，排除 idle/iowait；不重复计算 guest
+  uptimeSeconds,
+  load: [load1, load5, load15],
+  memory: { totalBytes, usedBytes, percent }, // used = MemTotal - MemAvailable
+  disk: { mount: "/", totalBytes, usedBytes, percent }, // df -Pk /；percent = used/(used+available)，含保留空间语义
+  network: { rxBytesPerSecond, txBytesPerSecond } // 非 lo 接口合计，计数重置/新增接口不产生虚假速率
+}
+```
+
+网络合计可能重复计算 bridge/veth/物理接口中的同一流量；首版不支持网卡筛选、其他挂载点或非 Linux 系统。计数缺失/不合法会报错，不伪造为零。
+
+错误为固定代码：`SSH_CONFIG`、`SSH_FINGERPRINT`、`SSH_CREDENTIALS`、`SSH_KEY`、`SSH_KEY_COST`、`SSH_HOST_KEY`、`SSH_HANDSHAKE`、`SSH_CONNECT`、`SSH_TIMEOUT`、`SSH_SESSION`、`SSH_COLLECT`、`SSH_DATA`、`SSH_OUTPUT`、`SSH_LIMIT`。无权限和安装期调用有明确错误。插件应自行用 `ctx.t` 翻译，且不可把凭据写入视图或缓存。

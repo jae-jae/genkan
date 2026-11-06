@@ -33,6 +33,7 @@ type Manifest struct {
 }
 
 type Permissions struct {
+	SSH   bool     `json:"ssh,omitempty"` // fixed Linux resource collection
 	Fetch []string `json:"fetch"`
 	Links string   `json:"links"` // "" | "read" | "write"
 }
@@ -53,6 +54,7 @@ type ConfigField struct {
 	Min        *float64        `json:"min,omitempty"`
 	Max        *float64        `json:"max,omitempty"`
 	AllowFetch bool            `json:"allowFetch,omitempty"`
+	Multiline  bool            `json:"multiline,omitempty"`
 }
 
 type WallpaperDecl struct {
@@ -306,6 +308,13 @@ func parseManifest(raw any) (*Manifest, error) {
 				m.Permissions.Fetch = append(m.Permissions.Fetch, s)
 			}
 		}
+		if sv, ok := po["ssh"]; ok {
+			b, valid := sv.(bool)
+			if !valid {
+				return nil, fmt.Errorf("manifest.permissions.ssh must be a boolean")
+			}
+			m.Permissions.SSH = b
+		}
 		if lv, ok := po["links"]; ok && lv != nil {
 			s, _ := lv.(string)
 			if s != "read" && s != "write" && s != "" {
@@ -515,6 +524,13 @@ func parseFields(v any, path string) ([]ConfigField, error) {
 			}
 			f.AllowFetch = b
 		}
+		if mv, ok := fo["multiline"]; ok {
+			b, valid := mv.(bool)
+			if !valid || (b && f.Type != "secret") {
+				return nil, fmt.Errorf("%s.multiline requires a secret field and a boolean", fp)
+			}
+			f.Multiline = b
+		}
 		for _, k := range []string{"min", "max"} {
 			if nv, ok := fo[k]; ok && nv != nil {
 				n, isNum := toFloat(nv)
@@ -582,14 +598,14 @@ func checkValue(f *ConfigField, v any) (any, error) {
 			s = strings.TrimSpace(s)
 		}
 		limit := maxConfigString
-		if f.Type == "text" {
+		if f.Type == "text" || f.Multiline {
 			limit = maxConfigText
 		}
 		if utf8.RuneCountInString(s) > limit {
 			return nil, fmt.Errorf("is too long (max %d characters)", limit)
 		}
 		for _, r := range s {
-			if unicode.IsControl(r) && !(f.Type == "text" && (r == '\n' || r == '\t' || r == '\r')) {
+			if unicode.IsControl(r) && !((f.Type == "text" || f.Multiline) && (r == '\n' || r == '\t' || r == '\r')) {
 				return nil, fmt.Errorf("contains control characters")
 			}
 		}

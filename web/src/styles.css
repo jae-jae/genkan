@@ -562,7 +562,7 @@ code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; pa
 .cfg-err { color: #ffb3bf; font-size: 12.5px; }
 .req { color: #ff9aa8; }
 .cfg-secret { display: flex; gap: 8px; align-items: center; }
-.cfg-secret input { flex: 1; min-width: 0; }
+.cfg-secret input, .cfg-secret textarea { flex: 1; min-width: 0; }
 .cfg-secret .btn[aria-pressed='true'] { background: rgba(255, 255, 255, 0.24); }
 
 /* ---------- widgets ---------- */

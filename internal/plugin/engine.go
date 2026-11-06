@@ -102,10 +102,12 @@ type instance struct {
 	api  *webapi.API
 	tr   *hostTransport
 
-	loading atomic.Bool // true while the module's top level runs: the global t() is usable only then
-	track   moejs.Value // (promise, ok, fail) => Promise.resolve(promise).then(ok, fail)
-	allow   atomic.Pointer[allowList]
-	redact  atomic.Pointer[[]string]
+	hookCtx  context.Context // accessed only on the JS loop; copied by async SSH calls
+	sshCalls int
+	loading  atomic.Bool // true while the module's top level runs: the global t() is usable only then
+	track    moejs.Value // (promise, ok, fail) => Promise.resolve(promise).then(ok, fail)
+	allow    atomic.Pointer[allowList]
+	redact   atomic.Pointer[[]string]
 }
 
 var (
@@ -371,6 +373,7 @@ func (e *entry) invoke(parent context.Context, o callOpts) (res any, err error) 
 	in.tr.lenients.Store(newAllowList(o.pluginHost, o.extraHosts))
 	in.redact.Store(&o.secrets)
 	in.api.SetContext(callCtx)
+	in.hookCtx, in.sshCalls = callCtx, 0
 
 	interrupted := make(chan struct{})
 	stop := context.AfterFunc(callCtx, func() {

@@ -206,6 +206,7 @@ export const manifest = {
 | `homepage` | optional `http(s)` URL |
 | `icon` | optional Lucide name `^[a-z0-9][a-z0-9-]{0,39}$`; the UI shows it only if it knows the name (section 2.9) |
 | `permissions.fetch` | <= 30 entries: `host`, `host:port`, `*.suffix` (subdomains only, **not** the bare domain), or `*` (any host; shown with a warning, avoid). Lower-case, no scheme, no path. No port = any port. Redirect targets must match too. May be `[]`. |
+| `permissions.ssh` | optional boolean; `true` permits fixed Linux resource collection over SSH to supplied hosts, including LAN; fingerprint verification optional (section 2.12) |
 | `permissions.links` | `"read"` = `genkan.links.list`, `workspaces.list`, `categories.list`; `"write"` adds `links.create` / `links.update`. Omitted = none. |
 | `config` | plugin-level fields, <= 30 |
 | `wallpapers[]` | `id` (`^[a-z0-9][a-z0-9_-]{0,39}$`, unique), `name` required <= 40 (LocalizedString), `refresh` seconds, **>= 300**, default 3600 |
@@ -229,6 +230,7 @@ At least one of `wallpapers`, `widgets`, `search`, `schedules` is required. Unkn
 | `label` / `help` | required <= 60 / optional <= 200 chars; LocalizedStrings (a `select` option's `label` too, <= 100). Prefer `t("key")` |
 | `default` | optional, must be valid for the type. The manifest is public: **never put a real secret in a default** |
 | `required` | enforced when saving config or creating a widget (not in `/test`). A field with a `default` counts as satisfied |
+| `multiline` | only on `secret`; true enables a multiline private-key input, up to 5000 characters with LF/CR/tab; existing masking/keep/clear semantics apply |
 | `allowFetch` | only on `url`. Adds that URL's `host:port` (80/443 when no port is written) to the fetch allow-list for calls that carry the value, and **skips TLS certificate verification for exactly that host** (self-signed homelab HTTPS). Hosts from `permissions.fetch` are always verified |
 
 Semantics:
@@ -476,6 +478,31 @@ They apply to `name`, `description`, config `label` / `help`, `select` option `l
 - It exists only while the module is evaluated, takes **no params** (extra arguments are ignored) and is expanded to `{ lang: text }` with the languages that have the key. A key missing from every language, or `t()` without a `messages` export, fails validation and names the field: ``manifest.widgets[0].name: t("zzz") is not defined in any language of `messages` ``.
 - Calling the global `t` inside a hook **throws** (`t() only works while the module is evaluated ... use ctx.t`). Always write `const { t } = ctx` in hooks: the local name shadows the global one.
 - Test it: `gk POST /api/plugins/preview '{"source":...}' | jq .plugin.name` shows the expanded object; `gk POST /api/plugins/ID/test '{"hook":"widget","lang":"zh"}'` renders in Chinese (`lang` defaults to `en`). Widget caches are per language; wallpaper results are cached per source for all languages (a wallpaper `title` / `credit` is in the language of the first request).
+
+### 2.12 Native SSH resource collection
+
+Requires a Genkan build with `genkan.ssh.stats`. Declare `permissions: { ssh: true }`; omitted/false is denied. This permission allows SSH to supplied hosts, including private networks, independently of the HTTP allow-list. Explain that permission before enabling. No local processes, local keys, agent, tunnels or arbitrary command execution are exposed.
+
+```js
+// Inside a hook; credentials belong in secret config fields, never source.
+const c = ctx.instance.config;
+const data = await genkan.ssh.stats({
+  host: c.host, port: c.port || 22, username: c.username,
+  fingerprint: c.fingerprint, // optional verified SHA256: server host key fingerprint
+  privateKey: c.privateKey, passphrase: c.passphrase,
+  // alternatively password: c.password (do not supply both methods)
+});
+```
+
+Omitting `fingerprint` or passing an empty string skips server identity verification without a confirmation prompt. A supplied fingerprint must be valid SHA256 and match before authentication; invalid or mismatched values still fail.
+
+Host is a bare hostname/IP (IPv6 without brackets), port defaults to 22. Private keys support PEM/OpenSSH and optional passphrases. OpenSSH bcrypt is limited to 64 rounds / 64-byte salt (`SSH_KEY_COST` above that), bounding non-cancellable key decoding work. Use `{key:"privateKey",type:"secret",multiline:true,label:t("key")}`. Multiline secrets allow up to 5000 characters and LF/CR/tab; regular secrets retain their limit. Saved values stay blank in API responses; empty/omitted keeps, null clears. Secrets use existing storage, not additional encryption at rest.
+
+The fixed read-only script requires Linux `/proc` plus sh, awk, cat, df, uname, tail and sleep. No sudo or remote agent. One call per hook, 8 concurrent collections server-wide, 7-second deadline including queue time (also bounded by hook time), 64 KiB stdout / 8 KiB stderr. Cancellation closes the connection. A roughly one-second sample produces CPU and network rates. Module top-level calls are forbidden.
+
+Returns `{hostname,kernel,arch,cores,collectedAt,cpuPercent,uptimeSeconds,load:[one,five,fifteen],memory:{totalBytes,usedBytes,percent},disk:{mount:"/",totalBytes,usedBytes,percent},network:{rxBytesPerSecond,txBytesPerSecond}}`. `collectedAt` is Genkan Unix milliseconds. Percentages are 0..100. Memory is total minus MemAvailable. Disk percentage is used/(used+available), like df with reserved space. Network sums non-loopback interfaces; bridge/veth can double-count traffic. This measures visible system resources, not container cgroup limits. Counter resets/new interfaces contribute no rate for that interval.
+
+Errors are fixed `SSH_CONFIG`, `SSH_FINGERPRINT`, `SSH_CREDENTIALS`, `SSH_KEY`, `SSH_KEY_COST`, `SSH_HOST_KEY`, `SSH_HANDSHAKE`, `SSH_CONNECT`, `SSH_TIMEOUT`, `SSH_SESSION`, `SSH_COLLECT`, `SSH_DATA`, `SSH_OUTPUT`, `SSH_LIMIT`. Translate these using messages; never show raw exceptions or cache credentials. Do not use stale success data after host-key or authentication failures. Older Genkan builds lack this API: show an upgrade message.
 
 ## 3. Recipes
 

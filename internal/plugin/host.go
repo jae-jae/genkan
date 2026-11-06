@@ -164,7 +164,7 @@ func installHost(in *instance, m *Manager, probe bool) error {
 		"widgets":      widgetsAPI,
 		"ssh":          map[string]any{"stats": moejs.NativeFunc(guard(in.sshStats))},
 		"version":      m.cfg.Version,
-		"capabilities": map[string]any{"verifyTLS": true},
+		"capabilities": map[string]any{"verifyTLS": true, "scheduleWidgetFetch": true},
 	}); err != nil {
 		return err
 	}

@@ -64,6 +64,18 @@ func (m *Manager) call(parent context.Context, e *entry, rec store.Plugin, r hoo
 			o.instKV = newScratchKV()
 		}
 	}
+	// Schedules can access this plugin's saved instances through widgets.list().
+	// Grant their declared origins only to this hook, never to other plugins or
+	// unrelated widget/search calls. The policy is rebuilt for every invocation.
+	if r.hook == "schedule" {
+		for _, w := range m.ownWidgets(e) {
+			if d := e.man.widget(w.Widget); d != nil {
+				hosts, verified := fetchPolicyFromConfig(d.Config, w.Config)
+				o.hosts = append(o.hosts, hosts...)
+				o.verifiedHosts = append(o.verifiedHosts, verified...)
+			}
+		}
+	}
 	// genkan.widgets.list() hands the plugin all of its instances' secrets: keep them out of logs and errors
 	o.secrets = append(o.secrets, m.widgetSecrets(e)...)
 	return e.invoke(parent, o)

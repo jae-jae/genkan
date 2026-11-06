@@ -236,7 +236,7 @@ At least one of `wallpapers`, `widgets`, `search`, `schedules` is required. Unkn
 
 Semantics:
 
-- Plugin-level fields -> `ctx.config` in every hook. Widget fields -> `ctx.instance.config` in `widget` and `action`. An `allowFetch` field only opens the network for hooks that can see it (a widget-level field does not help `search` or `schedule`).
+- Plugin-level fields -> `ctx.config` in every hook. Widget fields -> `ctx.instance.config` in `widget` and `action`. Widget `allowFetch` fields authorize that instance’s `widget`/`action` calls. A `schedule` also receives the configured origins of this plugin’s saved widget instances; `search` does not. Hosts expose `genkan.capabilities.scheduleWidgetFetch === true` when this schedule behavior is supported.
 - **Defaults are applied at read time** (`ctx.config.x` has the default; the stored config does not contain it). Empty strings and `null` remove a key. Unknown keys are dropped. Strings <= 2000 chars (`text` <= 5000), no control characters.
 - `PATCH` of `config` (plugin or widget) **replaces** it. `secret`: `""` / omitted = keep, `null` = clear.
 - `secret` values are never returned by the API: admins see `""` plus `secrets_set: ["key"]`, guests see nothing. Inside the plugin they are plain text in `ctx`. They are replaced by `***` in logs, errors and `/test` results (values shorter than 4 characters are not masked).

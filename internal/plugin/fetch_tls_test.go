@@ -183,3 +183,44 @@ func TestVerifyTLSPooledInstanceSwitch(t *testing.T) {
 		}
 	}
 }
+
+func TestScheduleWidgetFetchScopeAndRevocation(t *testing.T) {
+	s := newTLSStub(t)
+	e := newEnv(t)
+	e.install(tlsTestSource)
+	e.install(strings.ReplaceAll(tlsTestSource, `"tls-test"`, `"foreign-tls"`))
+	for _, id := range []string{"tls-test", "foreign-tls"} {
+		if _, err := e.m.Patch(id, PatchRequest{Config: map[string]any{"target": s.URL}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func(id, hook, want string) {
+		t.Helper()
+		res, err := e.m.Test(context.Background(), id, TestRequest{Hook: hook})
+		if err != nil || !res.OK || !strings.Contains(fmt.Sprint(res.Result), want) {
+			t.Fatalf("%s/%s: %+v %v", id, hook, res, err)
+		}
+	}
+	w := addWidget(t, e, "tls-test", "main", map[string]any{"legacy": s.URL})
+	run("tls-test", "schedule", "accepted")
+	run("foreign-tls", "schedule", "rejected")
+	run("tls-test", "widget", "rejected")
+	strict := addWidget(t, e, "tls-test", "main", map[string]any{"strict": s.URL})
+	run("tls-test", "schedule", "rejected") // strict wins across saved instances
+	if err := e.m.DeleteWidget(strict.ID); err != nil {
+		t.Fatal(err)
+	}
+	run("tls-test", "schedule", "accepted")
+	if _, err := e.m.UpdateWidget(w.ID, WidgetPatch{Config: map[string]any{"legacy": "https://other.example.test"}}); err != nil {
+		t.Fatal(err)
+	}
+	run("tls-test", "schedule", "rejected")
+	if _, err := e.m.UpdateWidget(w.ID, WidgetPatch{Config: map[string]any{"legacy": s.URL}}); err != nil {
+		t.Fatal(err)
+	}
+	run("tls-test", "schedule", "accepted")
+	if err := e.m.DeleteWidget(w.ID); err != nil {
+		t.Fatal(err)
+	}
+	run("tls-test", "schedule", "rejected")
+}

@@ -248,6 +248,14 @@ func httpURL(s string) bool {
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != ""
 }
 
+// A private URL grants one concrete HTTP(S) endpoint, never a wildcard. Keep
+// parse errors internal: url.Parse errors can include the entire credential.
+func secretFetchURL(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && len(s) <= 2048 && (u.Scheme == "http" || u.Scheme == "https") &&
+		u.Hostname() != "" && !strings.Contains(u.Hostname(), "*") && u.User == nil && u.Fragment == ""
+}
+
 // parseManifest validates the manifest object read from the module.
 func parseManifest(raw any) (*Manifest, error) {
 	o, err := asObj(raw, "manifest")
@@ -520,8 +528,8 @@ func parseFields(v any, path string) ([]ConfigField, error) {
 			if !ok {
 				return nil, fmt.Errorf("%s.allowFetch must be a boolean", fp)
 			}
-			if b && f.Type != "url" {
-				return nil, fmt.Errorf(`%s.allowFetch is only valid for type "url"`, fp)
+			if b && f.Type != "url" && f.Type != "secret" {
+				return nil, fmt.Errorf(`%s.allowFetch is only valid for type "url" or "secret"`, fp)
 			}
 			f.AllowFetch = b
 		}
@@ -537,8 +545,8 @@ func parseFields(v any, path string) ([]ConfigField, error) {
 			if !valid {
 				return nil, fmt.Errorf("%s.verifyTLS must be a boolean", fp)
 			}
-			if f.Type != "url" || !f.AllowFetch {
-				return nil, fmt.Errorf(`%s.verifyTLS requires type "url" and allowFetch: true`, fp)
+			if (f.Type != "url" && f.Type != "secret") || !f.AllowFetch {
+				return nil, fmt.Errorf(`%s.verifyTLS requires type "url" or "secret" and allowFetch: true`, fp)
 			}
 			f.VerifyTLS = b
 		}
@@ -619,6 +627,9 @@ func checkValue(f *ConfigField, v any) (any, error) {
 			if unicode.IsControl(r) && !((f.Type == "text" || f.Multiline) && (r == '\n' || r == '\t' || r == '\r')) {
 				return nil, fmt.Errorf("contains control characters")
 			}
+		}
+		if f.Type == "secret" && f.AllowFetch && s != "" && !secretFetchURL(s) {
+			return nil, fmt.Errorf("must be an http(s) URL without userinfo, fragments or wildcard hosts")
 		}
 		switch f.Type {
 		case "url":
@@ -777,6 +788,11 @@ func fetchPolicyFromConfig(schema []ConfigField, cfg map[string]any) (hosts, ver
 			continue
 		}
 		s, _ := cfg[f.Key].(string)
+		// Saved/imported values also pass the private URL guard, even if they
+		// predate the schema or were not written through cleanConfig.
+		if f.Type == "secret" && !secretFetchURL(s) {
+			continue
+		}
 		u, err := url.Parse(s)
 		if err != nil || u.Hostname() == "" {
 			continue

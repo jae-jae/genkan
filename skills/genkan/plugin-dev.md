@@ -8,8 +8,8 @@ This guide is part of the **Genkan Agent Skill**, next to [SKILL.md](SKILL.md) (
 
 1. One file, one `export const manifest = {...}`, plus `export async function` hooks. **No `import`**, no `require`, no DOM, no filesystem.
 2. Every capability in the manifest needs its exported function (`wallpapers` -> `wallpaper`, `widgets` -> `widget`, `search` -> `search`, `schedules` -> `schedule`). `action` is optional and powers `button` blocks and all interactive blocks (`input`, list `check`/`edit`/`actions`/`sortAction`, editable `markdown`).
-3. **Network is deny-by-default.** List hosts in `permissions.fetch`, or use a `url` config field with `allowFetch: true` for user-specific hosts (LAN services).
-4. **Never hardcode secrets or personal hostnames.** Credentials are `secret` config fields; endpoints are `url` fields.
+3. **Network is deny-by-default.** List hosts in `permissions.fetch`, or use a `url` or `secret` config field with `allowFetch: true` for user-specific hosts (LAN services).
+4. **Never hardcode secrets or personal hostnames.** Credentials and private endpoint URLs are `secret` config fields; public endpoints are `url` fields.
 5. **Install with `"enable": false`, run `/test` for every hook, read `ok`, `error`, `logs` and `result.error`, and only then enable.**
 6. Globals do not persist between calls. Keep state in `genkan.storage`.
 7. Return shapes are sanitized (unknown block types and fields are dropped silently). Compare `result` of `/test` with what you intended.
@@ -231,10 +231,12 @@ At least one of `wallpapers`, `widgets`, `search`, `schedules` is required. Unkn
 | `default` | optional, must be valid for the type. The manifest is public: **never put a real secret in a default** |
 | `required` | enforced when saving config or creating a widget (not in `/test`). A field with a `default` counts as satisfied |
 | `multiline` | only on `secret`; true enables a multiline private-key input, up to 5000 characters with LF/CR/tab; existing masking/keep/clear semantics apply |
-| `verifyTLS` | optional boolean, only with `type: "url", allowFetch: true`. `true` requires normal TLS certificate verification; omitted/`false` preserves legacy self-signed behavior. For the same host:port, any strict field visible to the hook takes precedence. Also applies to server-side wallpaper downloads |
-| `allowFetch` | only on `url`. Adds that URL's `host:port` (80/443 when no port is written) to the fetch allow-list for calls that carry the value, and, by default, skips TLS certificate verification for that host (legacy self-signed homelab HTTPS). Use `verifyTLS: true` for normal certificate verification. Manifest-only hosts are verified |
+| `verifyTLS` | optional boolean, only with `type: "url"` or `"secret"`, and `allowFetch: true`. `true` requires normal TLS certificate verification; omitted/`false` preserves legacy self-signed behavior. For the same host:port, any strict field visible to the hook takes precedence. Also applies to server-side wallpaper downloads |
+| `allowFetch` | on `url` or `secret`. Adds that URL's `host:port` (80/443 when no port is written) to the fetch allow-list for calls that carry the value, and, by default, skips TLS certificate verification for that host (legacy self-signed homelab HTTPS). Use `verifyTLS: true` for normal certificate verification. Manifest-only hosts are verified |
 
 Semantics:
+
+- Private endpoint URLs can use `{type: "secret", allowFetch: true}`. The value must be an HTTP(S) URL without userinfo, fragments or wildcard hosts. Only its normalized host:port becomes a network grant; the full URL keeps secret masking/redaction. `verifyTLS` remains optional, with the same legacy default. Hosts expose `genkan.capabilities.secretFetch === true`. For older hosts, conditionally omit/disable `allowFetch` and show an upgrade message before fetching.
 
 - Plugin-level fields -> `ctx.config` in every hook. Widget fields -> `ctx.instance.config` in `widget` and `action`. Widget `allowFetch` fields authorize that instance’s `widget`/`action` calls. A `schedule` also receives the configured origins of this plugin’s saved widget instances; `search` does not. Hosts expose `genkan.capabilities.scheduleWidgetFetch === true` when this schedule behavior is supported.
 - **Defaults are applied at read time** (`ctx.config.x` has the default; the stored config does not contain it). Empty strings and `null` remove a key. Unknown keys are dropped. Strings <= 2000 chars (`text` <= 5000), no control characters.

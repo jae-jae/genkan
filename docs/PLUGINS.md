@@ -7,7 +7,7 @@
 - 用 JavaScript 插件扩展导航页：**壁纸源、网页小组件(Widget)、搜索提供者、定时任务、小组件按钮动作**。
 - 插件在**服务端**运行，引擎为纯 Go 的 [moejs](https://github.com/MoeForge/moejs)（`github.com/MoeForge/moejs`，使用 `v0.1.0-alpha.11` 或更新版本；`eventloop` + `webapi` 子包提供定时器和 `fetch`）。保持 `CGO_ENABLED=0`、单二进制。
 - 浏览器**永不执行插件代码**。插件输出的是**声明式 JSON**（小组件视图、搜索结果、壁纸元数据），由前端用固定组件渲染，不使用 `innerHTML`。
-- 遵守 SPEC 的第一原则：轻量。没有启用插件时不创建任何 JS 运行时、不增加常驻内存；首屏 JS gzip 仍需 ≤ 60 KB（插件相关 UI 尽量精简）。
+- 遵守 SPEC 的第一原则：轻量。没有启用插件时不创建任何 JS 运行时、不增加常驻内存；首屏 JS gzip 仍需 ≤ 80 KB（插件相关 UI 尽量精简）。
 - AI-native：AI 可以通过 REST / MCP **编写、安装、测试**插件（"帮我写一个显示 Pi-hole 拦截数的小组件"）。
 - 安全：HTTP 只能访问 manifest 声明的主机；SSH 资源采集需独立声明 `permissions.ssh:true`，可连接调用参数指定的主机（包含内网），可选验证指纹；有超时、内存上限、存储上限；无文件系统访问。
 

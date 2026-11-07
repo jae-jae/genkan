@@ -5,6 +5,7 @@ import type { Ref } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ApiError, get, patch, post } from './api'
 import { paint } from './highlight'
+import { fetchPluginList } from './lazy'
 import './plStrings'
 import { Icon } from './icons'
 import { LUCIDE } from './lucide'
@@ -35,13 +36,28 @@ export interface Progress {
 }
 export const progress = signal<Progress | null>(null)
 
-export async function loadList() {
+let listSeq = 0
+export async function loadList(fresh = true) {
+  const my = ++listSeq
   try {
-    list.value = (await get<PluginInfo[] | null>('/api/plugins')) || []
+    const r = await fetchPluginList(fresh)
+    if (my === listSeq) list.value = r
   } catch (e) {
     list.value ??= []
     toastError(e)
   }
+}
+
+export function seedList(lp: Promise<PluginInfo[] | null>) {
+  const my = listSeq
+  lp.then((v) => {
+    if (v && my === listSeq) list.value = v
+  })
+}
+
+export function clearList() {
+  listSeq++
+  list.value = null
 }
 
 // ---------- manifest helpers ----------

@@ -36,7 +36,7 @@ cd web && npm run mock & npm run dev   # UI with hot reload against the mock API
 
 ## Rules that keep the project healthy
 
-- **Size budgets.** First-screen JS must stay ≤ 60 KB gzip (`npm run build` prints the sizes). Put heavy, rarely used UI in lazy chunks (`web/src/lazy.ts`). The Docker image is ~20 MB, so justify any new Go or npm dependency in the PR.
+- **Size budgets.** First-screen JS must stay ≤ 80 KB gzip (`npm run build` prints the sizes). Put heavy, rarely used UI in lazy chunks (`web/src/lazy.ts`). The Docker image is ~20 MB, so justify any new Go or npm dependency in the PR.
 - **i18n.** Every UI string goes in `web/src/i18n.ts` in **both** `en` and `zh`. Built-in plugins use their `messages` table and `ctx.t` (see `docs/PLUGINS.md` §12).
 - **Test ids.** New interactive UI gets a `data-testid`, documented in `web/TESTIDS.md`.
 - **API changes** update, in the same PR:

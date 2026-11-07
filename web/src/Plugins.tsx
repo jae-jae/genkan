@@ -3,7 +3,7 @@ import { useEffect, useState } from 'preact/hooks'
 import { del, get, patch } from './api'
 import { ConfigFields, useConfigForm } from './ConfigForm'
 import { Icon } from './icons'
-import { loadPluginData, loadPluginMarket, loadPluginSource, useChunk } from './lazy'
+import { fetchCatalog, loadPluginData, loadPluginMarket, loadPluginSource, useChunk } from './lazy'
 import { Modal, Switch } from './parts'
 import { lang, loc, t } from './i18n'
 import { closeModal, load, modal, openSettings, settingsTab, showOver, toast, toastError, version, type ModalState } from './store'
@@ -20,6 +20,7 @@ import {
   addTab,
   batch,
   busy,
+  clearList,
   hosts,
   install,
   linksPerm,
@@ -29,6 +30,7 @@ import {
   open,
   progress,
   schemaOf,
+  seedList,
   setEnabled,
   usePreview,
   usePreviewData,
@@ -38,12 +40,29 @@ import {
 type PermState = Extract<ModalState, { kind: 'plugin-perm' }>
 
 const catalog = signal<CatalogItem[] | null>(null)
-async function loadCatalog() {
+let catSeq = 0
+async function loadCatalog(silent = false) {
+  const my = ++catSeq
   try {
-    catalog.value = (await get<CatalogItem[] | null>('/api/plugins/catalog')) || []
+    const r = await fetchCatalog()
+    if (my === catSeq) catalog.value = r
   } catch {
-    catalog.value ??= []
+    if (!silent) catalog.value ??= []
   }
+}
+
+export function seedPlugins(lp: Promise<PluginInfo[] | null>, cp: Promise<CatalogItem[] | null>) {
+  seedList(lp)
+  const my = catSeq
+  cp.then((v) => {
+    if (v && my === catSeq) catalog.value = v
+  })
+}
+
+export function clearPlugins() {
+  clearList()
+  catSeq++
+  catalog.value = null
 }
 
 // ---------- permission confirmation (stacked over Settings) ----------
@@ -636,7 +655,10 @@ function AddView() {
 }
 
 export function PluginsTab() {
-  useEffect(() => void loadList(), [version.value])
+  useEffect(() => {
+    void loadList(false)
+    void loadCatalog(true)
+  }, [version.value])
   const l = list.value
   if (view.value === 'add') return <AddView />
   return (

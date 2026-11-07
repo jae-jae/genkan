@@ -4,7 +4,7 @@ import { Board } from './Board'
 import { CtxMenu, onPageContextMenu } from './ContextMenu'
 import { CategoryModal, ConfirmModal, LinkEditor, WorkspaceModal } from './Editors'
 import { Hero, focusSearch, searchFocused } from './Hero'
-import { loadPlugins, loadUpdate, loadWidgets, useChunk } from './lazy'
+import { loadPlugins, loadUpdate, loadWidgets, useChunk, watchPlugins } from './lazy'
 import { Toasts } from './parts'
 import { SettingsModal } from './Settings'
 import { Topbar } from './Topbar'
@@ -128,6 +128,7 @@ export function App() {
   useEffect(() => void load(), [])
   const admin = loaded.value && isAdmin.value
   useEffect(() => watchUpdate(admin), [admin])
+  useEffect(() => watchPlugins(admin), [admin])
   const ws = curWs.value
   const title = settings.value.title
   useEffect(() => {

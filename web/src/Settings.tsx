@@ -4,7 +4,7 @@ import { AiTab } from './Ai'
 import { ContentTab } from './Content'
 import { WallpaperGallery } from './Gallery'
 import { Icon } from './icons'
-import { loadPlugins, loadUpdate, useChunk } from './lazy'
+import { loadPlugins, loadUpdate, useChunk, warmPlugins } from './lazy'
 import { Modal, Row, Switch } from './parts'
 import { langPref, setLang, t, type LangPref } from './i18n'
 import { upd } from './updState'
@@ -242,6 +242,7 @@ function About() {
 
 const TABS = ['general', 'appearance', 'content', 'plugins', 'ai', 'security', 'data', 'about'] as const
 export function SettingsModal(_: { state: Extract<ModalState, { kind: 'settings' }> }) {
+  useEffect(warmPlugins, [])
   const raw = settingsTab.value
   const tab = (TABS as readonly string[]).includes(raw) ? raw : 'general'
   return (

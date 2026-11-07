@@ -12,7 +12,7 @@ Genkan（玄関）是一款可自托管的极简导航页，面向 homelab 玩�
 |---|---|
 | Docker 镜像 | ≤ 20 MB（`FROM scratch`，静态二进制） |
 | 空闲内存 RSS | ≤ 25 MB |
-| 首屏 JS (gzip) | ≤ 60 KB；CSS ≤ 15 KB |
+| 首屏 JS (gzip) | ≤ 80 KB；CSS ≤ 15 KB |
 | 首屏请求 | `index.html` + 1 JS + 1 CSS + `GET /api/bootstrap`（一次拿全数据） |
 | 架构 | linux/amd64 + linux/arm64 |
 | 外部依赖 | 运行时零外网依赖（图标抓取、健康检查访问的是用户自己的服务） |

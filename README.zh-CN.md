@@ -3,7 +3,7 @@
 # Genkan 玄関
 
 **面向 homelab 的 AI 原生导航页。**<br>
-对 AI 助手说一句话，Genkan 立即帮你整理好所有服务。壁纸 + 毛玻璃界面，约 11 MB。
+对 AI 助手说一句话，轻松整理服务、小组件与插件。壁纸 + 毛玻璃界面，约 11 MB。
 
 [![CI](https://github.com/jae-jae/genkan/actions/workflows/ci.yml/badge.svg)](https://github.com/jae-jae/genkan/actions/workflows/ci.yml)
 [![Docker image](https://img.shields.io/badge/ghcr.io-jae--jae%2Fgenkan-2496ED?logo=docker&logoColor=white)](https://github.com/jae-jae/genkan/pkgs/container/genkan)
@@ -18,34 +18,26 @@
 
 ## AI 优先
 
-Genkan 就是为 AI 助手来操作而设计的。把 Claude、Cursor 或任何 AI Agent 接上去，直接说你想要什么：
+Genkan 就是为 AI 助手来操作而设计的。在 **设置 → AI** 中接入 Claude、Cursor 或任何 AI Agent 后，直接开口说你想要什么：
 
 > *「把我的服务按类型分组，并置顶我最常用的五个。」*
 >
 > *「把 nas.lan 上的 Jellyfin、Sonarr 和 Radarr 加到 Media，并开启在线检测。」*
 >
 > *「找出失效的链接，移到一个“归档”分类里。」*
+>
+> *「帮我写一个监控 Proxmox 服务器的小组件插件，并添加到首页。」*
 
-改动立即生效，已打开的页面实时刷新。接入 Agent 有两种互相独立的方式：Agent Skill（源码在 [`skills/genkan/`](skills/genkan)，通过 curl 直接调用 REST API，无需配置 MCP），或内置的 [MCP](https://modelcontextprotocol.io) 服务（13 个工具）；实时刷新基于 SSE，所有数据都留在你自己的服务器上。
-
-**二选一接入**（设置 → AI 页面会给出带真实值的内容；一个 API Token 即可搞定）：
-
-1. **Skill（推荐）：** 设置 → AI → 复制安装提示词，发给你的 AI 助手，它会自动安装 Skill 并配置 Token（也可在该页下载安装包，解压到 `~/.claude/skills/`）。
-2. **MCP（备选）：** `claude mcp add --transport http genkan http://<host>:8080/mcp --header "Authorization: Bearer <token>"`（页面中也有通用 JSON 配置）。
-
-> [!WARNING]
-> Token 等同于管理员权限，且包含在安装提示词与 MCP 配置中。请勿分享或提交到代码仓库；一旦泄露请立即重新生成。
-
-REST API（Skill 使用）与 MCP 工具说明见 [`docs/SPEC.md`](docs/SPEC.md)（中文）。
+改动会立即生效，已打开的页面实时刷新。
 
 ## 特性
 
-- **AI 驱动**：通过一键 Skill（REST API）或内置 MCP 服务整理，改动实时生效
+- **AI 驱动**：通过 Agent Skill 或内置 MCP 服务自然语言管理链接、小组件与插件，改动实时生效
 - **多工作空间**：分类、置顶链接、工作空间与链接均可选 Lucide 图标
-- **界面精美**：壁纸 + 毛玻璃胶囊，桌面与手机适配
+- **界面精美**：壁纸 + 毛玻璃胶囊与小组件卡片，桌面与手机适配
 - **智能排序**：按使用频率（默认）、最近使用或自定义拖拽
-- **快捷搜索**：`/` 或 `Ctrl/⌘+K`，跨工作空间，可回退网页搜索
-- **插件**：用 JavaScript 插件扩展壁纸源、小组件、搜索和定时任务；插件在服务端的纯 Go 沙箱引擎（[moejs](https://github.com/MoeForge/moejs)）中运行，AI 也能为你编写并安装插件
+- **快捷搜索**：`/` 或 `Ctrl/⌘+K`，支持跨工作空间搜索、网页回退与搜索插件
+- **插件与小组件**：基于纯 Go 沙箱引擎（[moejs](https://github.com/MoeForge/moejs)）运行 JavaScript / TypeScript 插件，可扩展可交互桌面小组件、壁纸源、搜索提供者与定时任务
 - **在线检测**与自动图标
 - **高性能 & 体积小**：单个 Go 二进制，镜像约 11 MB，内存约 6 MB
 - **私有安全**：自托管，登录 + 访客只读，无遥测
@@ -79,19 +71,7 @@ volumes:
 
 镜像提供 `linux/amd64` 与 `linux/arm64`（树莓派、Apple Silicon、NAS 均可）。
 
-## 插件
-
-插件是单个 JavaScript（或 TypeScript）文件，可以为 Genkan 增加壁纸源、首页小组件、搜索提供者（比如搜索框里的计算器）和定时任务。插件在服务端沙箱中运行（有内存与时间限制，无文件系统，只能访问插件声明且经你确认的主机），只返回声明式 JSON，浏览器不会执行任何插件代码。
-
-在 设置 → 插件 中可一键安装内置示例（待办、便签、计算器、世界时钟、倒计时、天气、RSS、Pi-hole 等），也可以粘贴源码或 URL。待办和便签会在首次启动时自动安装，小组件还可以交互（输入框、勾选、就地编辑、拖动排序、Markdown 便签）。
-
-**用 AI 开发插件：** [Agent Skill](skills/genkan) 现在也覆盖插件开发。装好 Skill（设置 → AI）后，直接对你的 AI 助手说“用 Genkan Skill 帮我开发一个 Genkan 插件：……”并描述需求即可。Skill 自带完整的插件开发指南（[`skills/genkan/plugin-dev.md`](skills/genkan/plugin-dev.md)）和“编写、测试、安装”的完整流程，不再需要粘贴长提示词；设置 → 插件 → 用 AI 开发 中有一行现成的提示词可以直接复制。插件接口约定见 [`docs/PLUGINS.md`](docs/PLUGINS.md)。
-
-## 更新
-
-每次合并到 `main` 都会自动发布一个新版本（`vX.Y.Z`），包含新镜像和签名的二进制。Genkan 每 6 小时向 GitHub 检查一次新版本（设置 → 关于，默认开启），有新版本时管理员会在右上角看到更新按钮。在更新日志面板中可以**原地热更新**：新程序下载到数据目录，校验 ed25519 签名和校验和、备份数据后重启进入新版本；新版本启动失败会自动回滚。拉取更新的镜像始终优先于原地更新。详见 [`docs/UPDATES.md`](docs/UPDATES.md)。
-
-## 配置
+### 配置
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
@@ -106,16 +86,40 @@ volumes:
 - 放在反向代理（Nginx、Caddy、Traefik）后面时，请转发 `X-Forwarded-Proto: https`，会话 Cookie 才会带 `Secure` 标记。
 - 子命令：`genkan version`、`genkan healthcheck`（Docker `HEALTHCHECK` 使用）。
 
+## 插件
+
+插件是单个 JavaScript 或 TypeScript 文件，运行在服务端纯 Go 沙箱引擎（[moejs](https://github.com/MoeForge/moejs)）中：具备内存与耗时限制、无文件系统访问权限，并采用默认拒绝的网络、链接与 SSH 权限模型（需管理员确认后才可启用）。插件只返回声明式 UI 块，浏览器不会执行任何插件代码。
+
+- **桌面小组件**：支持瀑布流自由布局、拖拽排序与尺寸调节，可渲染统计卡片、进度条、折线/柱状/趋势图、可交互待办清单、Markdown 便签及媒体内容；**待办**与**便签**会在首次启动时自动安装。
+- **壁纸源**：Bing 每日壁纸、NASA APOD、Picsum 或自定义图片源。
+- **搜索提供者**：搜索框内直接计算表达式、搜索 GitHub 仓库或返回自定义即时结果。
+- **定时任务**：后台定时采样，支持星标趋势与订阅用量历史统计。
+
+**内置插件与第三方插件：**
+- **内置目录（17 款插件）：** 待办、便签、计算器、天气、世界时钟、倒计时、Pi-hole、健康检查概览、GitHub Stars、GitHub 搜索、Hacker News、RSS、媒体嵌入、链接导入、Bing 壁纸、NASA APOD、Picsum —— 可在 **设置 → 插件** 或小组件选择器中一键安装。
+- **第三方市场与 [`jae-jae/genkan-plugins`](https://github.com/jae-jae/genkan-plugins)：** 在 **设置 → 插件 → 添加插件 → 第三方** 中，Genkan 会自动发现带有 `genkan-plugin` 主题的 GitHub 仓库，安装前可直接查看所需权限与源码（也支持通过 URL 或直接粘贴源码安装）。可以参考第三方插件库示例 [`jae-jae/genkan-plugins`](https://github.com/jae-jae/genkan-plugins)，其中包含了 **SSH 服务器**（通过原生 SSH 采集 Linux CPU/内存/磁盘/网络）、**机场订阅**（实时流量配额与 7 天/30 天/趋势图）、**Codex 用量**、**股票趋势** 与 **比特币价格** 等实用插件。
+
+**用 AI 开发插件：** [Agent Skill](skills/genkan) 内置完整的插件开发指南（[`skills/genkan/plugin-dev.md`](skills/genkan/plugin-dev.md)）与“编写、测试、安装”闭环。在 **设置 → 插件 → 用 AI 开发** 复制一行提示词发送给 AI 助手，即可为你编写、调试并直接安装自定义插件。插件接口约定见 [`docs/PLUGINS.md`](docs/PLUGINS.md)。
+
+<div align="center">
+  <img src="docs/images/widgets.jpg" alt="内置与第三方插件小组件展示" width="900"><br>
+  <sub>内置插件与第三方示例库 <a href="https://github.com/jae-jae/genkan-plugins">genkan-plugins</a> 小组件展示：SSH 服务器、机场订阅、股票趋势、Codex 用量、Pi-hole 与比特币价格</sub>
+</div>
+
 ## 截图
 
 <table>
   <tr>
-    <td><img src="docs/images/ai.jpg" alt="AI 设置"><br><sub>设置 → AI：Token（已遮罩）、Skill 提示词、MCP</sub></td>
-    <td><img src="docs/images/search.jpg" alt="快捷搜索"><br><sub>跨工作空间的快捷搜索</sub></td>
+    <td><img src="docs/images/plugins.jpg" alt="插件管理"><br><sub>设置 → 插件：集中管理已安装插件、配置、日志与存储</sub></td>
+    <td><img src="docs/images/plugin-market.jpg" alt="第三方插件市场"><br><sub>第三方插件市场：自动发现 <code>genkan-plugin</code> 仓库（如 <code>jae-jae/genkan-plugins</code>）</sub></td>
   </tr>
   <tr>
+    <td><img src="docs/images/widget-picker.jpg" alt="小组件选择器"><br><sub>可搜索的小组件选择器：添加小组件或一键安装内置插件</sub></td>
+    <td><img src="docs/images/ai.jpg" alt="AI 设置"><br><sub>设置 → AI：已遮罩的 Token、一键 Skill 提示词与 MCP</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/search.jpg" alt="快捷搜索"><br><sub>跨工作空间的快捷搜索（支持计算器等搜索插件）</sub></td>
     <td><img src="docs/images/content.jpg" alt="内容管理器"><br><sub>内容管理器：集中管理工作空间、分类与链接</sub></td>
-    <td><img src="docs/images/context-menu.jpg" alt="右键菜单"><br><sub>右键菜单（手机上为长按）</sub></td>
   </tr>
 </table>
 

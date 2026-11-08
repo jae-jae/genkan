@@ -11,6 +11,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Api, adminContext, mainMenuItem, openMainMenu, openSettings, openWsMenu, origin, touchGesture } from '../helpers'
 import { CATEGORIES, SERVICES, WORKSPACES, svcUrl } from '../fixtures/homelab'
+import { SHOTS_NOW_MS, seedPluginsAndWidgets } from '../fixtures/plugins'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const OUT = resolve(here, '../../.tmp/screenshots')
@@ -23,7 +24,9 @@ mkdirSync(OUT, { recursive: true })
 const NOW = new Date('2026-11-04T09:41:00')
 
 const DESKTOP = { width: 1440, height: 1000 }
-const DESKTOP_EDIT = { width: 1440, height: 1180 }
+const DESKTOP_HOME = { width: 1440, height: 1320 }
+const DESKTOP_WIDGETS = { width: 1440, height: 1172 }
+const DESKTOP_EDIT = { width: 1440, height: 1420 }
 const MOBILE = { width: 390, height: 844 }
 
 test.describe.configure({ mode: 'serial' })
@@ -81,6 +84,8 @@ test.beforeAll(async () => {
   wsId = Object.fromEntries(WORKSPACES.map((w) => [w.key, wsKey(w.key)]))
   svcId = Object.fromEntries(SERVICES.map((s) => [s.id, linkKey(s.id)]))
   expect(b.links.length).toBe(SERVICES.length)
+
+  await seedPluginsAndWidgets(api, wsKey, ZH)
 })
 
 test('prepare: wallpaper gallery', async ({ browser }) => {
@@ -276,12 +281,14 @@ async function newPage(browser: Browser, opts: { viewport: { width: number; heig
   return { ctx, page }
 }
 
-/** Wait until fonts, icons, wallpaper cross-fade, health dots and CSS animations have settled. */
+/** Wait until fonts, icons, wallpaper cross-fade, health dots, widgets and CSS animations have settled. */
 async function settle(page: Page) {
   await page.evaluate(() => document.fonts.ready)
   await expect(page.locator('.wp-layer')).toHaveCount(1)
   await expect.poll(() => page.evaluate(() => [...document.images].every((i) => i.complete && i.naturalWidth > 0)), { timeout: 15_000 }).toBe(true)
   await expect(page.locator('[data-status="unknown"]')).toHaveCount(0, { timeout: 25_000 })
+  await expect(page.locator('[data-testid="widget"][aria-busy="true"]')).toHaveCount(0, { timeout: 25_000 })
+  await expect(page.getByTestId('widget-skeleton')).toHaveCount(0, { timeout: 25_000 })
   await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => (a.effect?.getComputedTiming().iterations ?? 1) !== Infinity).map((a) => a.finished.catch(() => {}))))
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
 }
@@ -299,9 +306,17 @@ async function shot(page: Page, name: string) {
 }
 
 test('desktop: home', async ({ browser }) => {
-  const { ctx, page } = await newPage(browser, { viewport: DESKTOP })
+  const { ctx, page } = await newPage(browser, { viewport: DESKTOP_HOME })
   await openHome(page)
   await shot(page, 'desktop-home')
+  await ctx.close()
+})
+
+test('desktop: widgets dashboard', async ({ browser }) => {
+  const { ctx, page } = await newPage(browser, { viewport: DESKTOP_WIDGETS, ws: wsKey('dev') })
+  await openHome(page)
+  await expect(page.getByTestId('widget').first()).toBeVisible()
+  await shot(page, 'desktop-widgets')
   await ctx.close()
 })
 
@@ -312,6 +327,16 @@ test('desktop: search with results', async ({ browser }) => {
   await page.keyboard.type('arr')
   await expect(page.getByTestId('search-result').first()).toBeVisible()
   await shot(page, 'desktop-search')
+  await ctx.close()
+})
+
+test('desktop: search calculator plugin', async ({ browser }) => {
+  const { ctx, page } = await newPage(browser, { viewport: DESKTOP })
+  await openHome(page)
+  await page.keyboard.press('/')
+  await page.keyboard.type('256*16')
+  await expect(page.getByTestId('plugin-search-result').first()).toBeVisible()
+  await shot(page, 'desktop-search-calc')
   await ctx.close()
 })
 
@@ -356,8 +381,8 @@ test('desktop: main menu open', async ({ browser }) => {
 test('desktop: page context menu', async ({ browser }) => {
   const { ctx, page } = await newPage(browser, { viewport: DESKTOP })
   await openHome(page)
-  // an empty stretch of the page, right of the capsules
-  await page.mouse.click(930, 450, { button: 'right' })
+  // an empty stretch of wallpaper beside the hero clock/search
+  await page.mouse.click(1180, 260, { button: 'right' })
   await expect(page.getByTestId('ctx-menu-page')).toBeVisible()
   await shot(page, 'desktop-context-menu-page')
   await ctx.close()
@@ -369,6 +394,146 @@ test('desktop: capsule context menu', async ({ browser }) => {
   await page.getByTestId(`link-${svcId.pve}`).click({ button: 'right', position: { x: 40, y: 20 } })
   await expect(page.getByTestId('ctx-menu-link')).toBeVisible()
   await shot(page, 'desktop-context-menu-link')
+  await ctx.close()
+})
+
+test('desktop: settings, plugins tab', async ({ browser }) => {
+  const { ctx, page } = await newPage(browser, { viewport: DESKTOP })
+  await openHome(page)
+  await page.getByTestId('plugins-btn').click()
+  await expect(page.getByTestId('settings-panel-plugins')).toBeVisible()
+  await expect(page.getByTestId('plugin-row').first()).toBeVisible()
+  await shot(page, 'desktop-settings-plugins')
+  await ctx.close()
+})
+
+test('desktop: settings, plugin market (third-party)', async ({ browser }) => {
+  const { ctx, page } = await newPage(browser, { viewport: DESKTOP })
+  await page.route('**/api/plugins/market?**', (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [
+          {
+            repo: 'jae-jae/genkan-plugins',
+            description: ZH
+              ? 'Genkan 官方插件集合：Codex 用量、比特币价格、股票趋势、SSH 服务器、机场订阅。'
+              : 'Official collection of Genkan plugins: Codex Usage, Bitcoin Price, Stock Trend, SSH Server, Airport Subscription.',
+            stars: 128,
+            updated_at: '2026-11-03T18:00:00Z',
+            html_url: 'https://github.com/jae-jae/genkan-plugins',
+            owner_avatar: '',
+            default_branch: 'main',
+          },
+        ],
+        total: 1,
+        cached_at: SHOTS_NOW_MS,
+      }),
+    }),
+  )
+  await page.route('**/api/plugins/market/repo**', (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        repo: 'jae-jae/genkan-plugins',
+        default_branch: 'main',
+        cached_at: SHOTS_NOW_MS,
+        plugins: [
+          {
+            path: 'plugins/ssh-server.js',
+            url: 'https://raw.githubusercontent.com/jae-jae/genkan-plugins/main/plugins/ssh-server.js',
+            installed: true,
+            installed_version: '1.0.0',
+            plugin: {
+              id: 'ssh-server',
+              name: { en: 'SSH Server', zh: 'SSH 服务器' },
+              version: '1.0.0',
+              description: { en: 'Linux resources over native SSH: CPU, memory, root disk, network and recent CPU history.', zh: '通过原生 SSH 显示 Linux 服务器的 CPU、内存、根分区、网络和近期 CPU 趋势。' },
+              icon: 'server',
+              permissions: { ssh: true },
+              widgets: [{ id: 'resources', name: { en: 'SSH Server', zh: 'SSH 服务器' } }],
+            },
+          },
+          {
+            path: 'plugins/airport-subscription.js',
+            url: 'https://raw.githubusercontent.com/jae-jae/genkan-plugins/main/plugins/airport-subscription.js',
+            installed: true,
+            installed_version: '1.0.0',
+            plugin: {
+              id: 'airport-subscription',
+              name: { en: 'Airport Subscription', zh: '机场订阅' },
+              version: '1.0.0',
+              description: { en: 'Real-time proxy subscription quota, daily usage bars, traffic trend and cycle countdown.', zh: '实时代理订阅流量配额、今日用量、7天/30天/趋势图表与重置倒计时。' },
+              icon: 'plane',
+              permissions: { fetch: [] },
+              widgets: [{ id: 'sub', name: { en: 'Airport Subscription', zh: '机场订阅' } }],
+              schedules: [{ id: 'sample', name: { en: 'Sample', zh: '采样' }, every: 60 }],
+            },
+          },
+          {
+            path: 'plugins/stock-trend.js',
+            url: 'https://raw.githubusercontent.com/jae-jae/genkan-plugins/main/plugins/stock-trend.js',
+            installed: true,
+            installed_version: '1.0.0',
+            plugin: {
+              id: 'stock-trend',
+              name: { en: 'Stock Trend', zh: '股票趋势' },
+              version: '1.0.0',
+              description: { en: 'Stock and index quotes with 1D, 1M and 1Y price charts.', zh: '股票与指数行情及 1 天/1 月/1 年走势图。' },
+              icon: 'chart-line',
+              permissions: { fetch: ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'] },
+              widgets: [{ id: 'market', name: { en: 'Stock Trend', zh: '股票趋势' } }],
+            },
+          },
+          {
+            path: 'plugins/codex-usage.js',
+            url: 'https://raw.githubusercontent.com/jae-jae/genkan-plugins/main/plugins/codex-usage.js',
+            installed: true,
+            installed_version: '1.0.0',
+            plugin: {
+              id: 'codex-usage',
+              name: { en: 'Codex Usage', zh: 'Codex 用量' },
+              version: '1.0.0',
+              description: { en: 'Remaining Codex subscription allowance and reset times.', zh: '查询 Codex 订阅剩余额度与重置时间。' },
+              icon: 'gauge',
+              permissions: { fetch: ['chatgpt.com:443'] },
+              widgets: [{ id: 'usage', name: { en: 'Codex Usage', zh: 'Codex 用量' } }],
+            },
+          },
+        ],
+      }),
+    }),
+  )
+  await openHome(page)
+  await page.getByTestId('plugins-btn').click()
+  await page.getByTestId('plugin-add-btn').click()
+  await page.getByTestId('plugin-add-tab-market').click()
+  await expect(page.getByTestId('market-repo').first()).toBeVisible()
+  await page.locator('[data-testid="market-repo"] button').first().click()
+  await expect(page.getByTestId('market-plugin').first()).toBeVisible()
+  await shot(page, 'desktop-plugin-market')
+  await ctx.close()
+})
+
+test('desktop: settings, develop plugin with AI modal', async ({ browser }) => {
+  const { ctx, page } = await newPage(browser, { viewport: DESKTOP })
+  await openHome(page)
+  await page.getByTestId('plugins-btn').click()
+  await page.getByTestId('plugin-dev-ai-btn').click()
+  await expect(page.getByTestId('plugin-dev-modal')).toBeVisible()
+  await shot(page, 'desktop-plugin-dev-ai')
+  await ctx.close()
+})
+
+test('desktop: widget picker modal', async ({ browser }) => {
+  const { ctx, page } = await newPage(browser, { viewport: DESKTOP })
+  await openHome(page)
+  await page.getByTestId('edit-toggle').click()
+  await page.getByTestId('widget-add').click()
+  await expect(page.getByTestId('widget-picker')).toBeVisible()
+  await shot(page, 'desktop-widget-picker')
   await ctx.close()
 })
 
@@ -429,6 +594,11 @@ test('desktop: login page', async ({ browser }) => {
 })
 
 test('mobile: home', async ({ browser }) => {
+  // Mobile hero demo showcases navigation links without widgets.
+  const b = (await api.bootstrap()) as { widgets?: { id: string; workspace_id: string }[] }
+  for (const w of b.widgets || []) {
+    if (w.workspace_id === wsKey('home')) await api.call('DELETE', `/api/widgets/${w.id}`)
+  }
   const { ctx, page } = await newPage(browser, { viewport: MOBILE, mobile: true })
   await openHome(page)
   await shot(page, 'mobile-home')
@@ -447,7 +617,9 @@ test('mobile: search', async ({ browser }) => {
 test('mobile: capsule long-press sheet', async ({ browser }) => {
   const { ctx, page } = await newPage(browser, { viewport: MOBILE, mobile: true })
   await openHome(page)
-  const b = (await page.getByTestId(`link-${svcId.pve}`).boundingBox())!
+  const link = page.getByTestId(`link-${svcId.pve}`)
+  await link.scrollIntoViewIfNeeded()
+  const b = (await link.boundingBox())!
   await touchGesture(page, b.x + b.width / 2, b.y + b.height / 2, { hold: 700 })
   await expect(page.getByTestId('ctx-menu-link')).toBeVisible()
   await shot(page, 'mobile-link-sheet')

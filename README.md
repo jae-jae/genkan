@@ -3,7 +3,7 @@
 # Genkan 玄関
 
 **The AI-native start page for your homelab.**<br>
-Tell your AI assistant to organize your services and Genkan applies it instantly. Wallpaper, frosted-glass UI, ~11 MB.
+Organize your services, widgets and plugins by talking to your AI assistant. Wallpaper, frosted-glass UI, ~11 MB.
 
 [![CI](https://github.com/jae-jae/genkan/actions/workflows/ci.yml/badge.svg)](https://github.com/jae-jae/genkan/actions/workflows/ci.yml)
 [![Docker image](https://img.shields.io/badge/ghcr.io-jae--jae%2Fgenkan-2496ED?logo=docker&logoColor=white)](https://github.com/jae-jae/genkan/pkgs/container/genkan)
@@ -18,34 +18,26 @@ English | [简体中文](README.zh-CN.md)
 
 ## AI-first
 
-Genkan is built to be driven by an AI assistant. Point Claude, Cursor or any AI agent at it and just say what you want:
+Genkan is built to be driven by an AI assistant. Connect Claude, Cursor or any AI agent in **Settings → AI**, then just say what you want:
 
 > *"Group my services by type and pin the five I use most."*
 >
 > *"Add Jellyfin, Sonarr and Radarr at nas.lan to Media and enable health checks."*
 >
 > *"Find dead links and move them to an Archive category."*
+>
+> *"Build a widget plugin for my Proxmox server and add it to the Home page."*
 
-Changes land immediately and the open page updates live. There are two alternative ways to connect an agent: an Agent Skill (source in [`skills/genkan/`](skills/genkan); it uses the REST API with curl, no MCP setup needed) or the built-in [MCP](https://modelcontextprotocol.io) server with 13 tools. Live updates use SSE, and everything stays local on your own server.
-
-**Pick one** (Settings → AI shows both with your real values; one API token covers everything):
-
-1. **Skill (recommended):** Settings → AI → copy the setup prompt and send it to your AI assistant; it installs the Skill and your token (or download the package there and unzip it into `~/.claude/skills/`).
-2. **MCP (alternative):** `claude mcp add --transport http genkan http://<host>:8080/mcp --header "Authorization: Bearer <token>"` (a generic JSON snippet is there too).
-
-> [!WARNING]
-> The token is full admin access and is embedded in the setup prompt and MCP snippets. Never share or commit them; regenerate the token if it leaks.
-
-The REST API (which the Skill uses) and the MCP tools are described in [`docs/SPEC.md`](docs/SPEC.md).
+Changes apply immediately and open pages update live.
 
 ## Features
 
-- **AI-native**: organize via a one-click Skill (REST API) or the built-in MCP server; changes apply live
+- **AI-native**: talk to your AI assistant via the Agent Skill or built-in MCP server to manage links, widgets and plugins live
 - **Multiple workspaces**: categories, pinned links, Lucide icons for workspaces and links
-- **Beautiful UI**: wallpapers and frosted-glass capsules, desktop and mobile
+- **Beautiful UI**: wallpapers and frosted-glass capsules & widget cards, desktop and mobile
 - **Smart sorting**: by usage frequency (default), recent, or custom drag order
-- **Quick search**: `/` or `Ctrl/⌘+K`, across all workspaces, web fallback
-- **Plugins**: JavaScript plugins add wallpaper sources, dashboard widgets, search providers and scheduled jobs; they run server-side in a sandboxed pure-Go engine ([moejs](https://github.com/MoeForge/moejs)), and your AI can write and install them for you
+- **Quick search**: `/` or `Ctrl/⌘+K`, across all workspaces, web fallback and search plugins
+- **Plugins & widgets**: JavaScript / TypeScript plugins run in a sandboxed pure-Go engine ([moejs](https://github.com/MoeForge/moejs)) to add interactive dashboard widgets, wallpaper sources, search providers and scheduled jobs
 - **Health checks** and automatic favicons
 - **Fast and tiny**: single Go binary, ~11 MB image, ~6 MB RAM
 - **Private**: self-hosted, login plus read-only guest mode, no telemetry
@@ -79,19 +71,7 @@ volumes:
 
 Images are published for `linux/amd64` and `linux/arm64` (Raspberry Pi, Apple Silicon, NAS).
 
-## Plugins
-
-Plugins are single JavaScript (or TypeScript) files that extend Genkan with wallpaper sources, widgets on the board, search providers (a calculator in the search box, say) and scheduled jobs. They run on the server in a sandbox (memory and time limits, no filesystem, network access only to the hosts the plugin declares and you approve) and only return declarative JSON, so the browser never executes plugin code.
-
-Install the built-in examples (to-do list, sticky note, calculator, world clock, countdown, weather, RSS, Pi-hole and more) from Settings → Plugins, or paste your own source or a URL. The to-do list and the note are installed automatically on first start, and widgets can be interactive (inputs, checkboxes, in-place editing, drag sorting, Markdown notes).
-
-**Develop plugins with AI:** the [Agent Skill](skills/genkan) now covers plugin development. Once it is installed (Settings → AI), just tell your assistant "Use the Genkan Skill to develop a Genkan plugin for me: …" and describe what you want. The Skill carries the complete plugin guide ([`skills/genkan/plugin-dev.md`](skills/genkan/plugin-dev.md)) and the write, test and install workflow, so no long prompt is needed; Settings → Plugins → Develop with AI has the one-line prompt ready to copy. The plugin contract is documented in [`docs/PLUGINS.md`](docs/PLUGINS.md) (Chinese).
-
-## Updates
-
-Every merge to `main` publishes a release (`vX.Y.Z`) with a new image and signed binaries. Genkan checks GitHub for new releases every 6 hours (Settings → About, on by default) and shows an update button in the top bar for admins. The changelog panel can update **in place**: the new binary is downloaded into the data directory, its ed25519 signature and checksum are verified, your data is backed up, and Genkan restarts into it, rolling back automatically if the new version fails to start. Pulling a newer image always wins over an in-place update. Details: [`docs/UPDATES.md`](docs/UPDATES.md).
-
-## Configuration
+### Configuration
 
 | Variable | Default | Description |
 |---|---|---|
@@ -106,16 +86,40 @@ Every merge to `main` publishes a release (`vX.Y.Z`) with a new image and signed
 - Behind a reverse proxy (Nginx, Caddy, Traefik), forward `X-Forwarded-Proto: https` so cookies get the `Secure` flag.
 - Subcommands: `genkan version`, `genkan healthcheck` (used by the Docker `HEALTHCHECK`).
 
+## Plugins
+
+Plugins are single JavaScript or TypeScript files that run server-side in a sandboxed pure-Go engine ([moejs](https://github.com/MoeForge/moejs)) with memory and time limits, no filesystem access, and deny-by-default host, link and SSH permissions reviewed by the admin. They return declarative UI blocks, so the browser never executes plugin code.
+
+- **Dashboard widgets:** resizable, drag-sortable masonry cards with stats, progress bars, charts (`line`, `bar`, `spark`), interactive checklists, Markdown notes, and embedded media. **To-do** and **Note** are pre-installed on first start.
+- **Wallpaper sources:** Bing Daily, NASA APOD, Picsum, or custom image feeds.
+- **Search providers:** inline calculator, GitHub repository search, or custom instant results right in the search box.
+- **Scheduled jobs:** background sampling for trend history and quota tracking.
+
+**Built-in & third-party plugins:**
+- **Built-in catalog (17 plugins):** To-do, Note, Calculator, Weather, World Clock, Countdown, Pi-hole, Uptime Summary, GitHub Stars, GitHub Search, Hacker News, RSS, Media, Link Importer, Bing Wallpaper, NASA APOD, and Picsum — install from **Settings → Plugins** or directly from the widget picker.
+- **Third-party market & [`jae-jae/genkan-plugins`](https://github.com/jae-jae/genkan-plugins):** Genkan automatically discovers GitHub repositories tagged with the `genkan-plugin` topic in **Settings → Plugins → Add → Third-party**, allowing you to inspect permissions and preview source code before enabling (or install from any URL or pasted code). For an example of how third-party plugins are built and organized, see [`jae-jae/genkan-plugins`](https://github.com/jae-jae/genkan-plugins), which includes **SSH Server** (Linux CPU, memory, disk & network over native SSH), **Airport Subscription** (proxy quota & 7D/30D/trend charts), **Codex Usage**, **Stock Trend**, and **Bitcoin Price**.
+
+**Develop plugins with AI:** The [Agent Skill](skills/genkan) includes the full plugin authoring guide ([`skills/genkan/plugin-dev.md`](skills/genkan/plugin-dev.md)) and live test workflow. Click **Settings → Plugins → Develop with AI** to copy the one-line prompt and have your assistant write, test and install custom plugins on your instance. Plugin contract: [`docs/PLUGINS.md`](docs/PLUGINS.md).
+
+<div align="center">
+  <img src="docs/images/widgets.jpg" alt="Dashboard widgets from built-in and third-party plugins" width="900"><br>
+  <sub>Dashboard widgets from built-in plugins and the third-party example repository <a href="https://github.com/jae-jae/genkan-plugins">genkan-plugins</a> (SSH Server, Airport Subscription, Stock Trend, Codex Usage, Pi-hole, Bitcoin Price)</sub>
+</div>
+
 ## Screenshots
 
 <table>
   <tr>
-    <td><img src="docs/images/ai.jpg" alt="AI settings"><br><sub>Settings → AI: token (masked), Skill prompt, MCP</sub></td>
-    <td><img src="docs/images/search.jpg" alt="Quick search"><br><sub>Quick search across all workspaces</sub></td>
+    <td><img src="docs/images/plugins.jpg" alt="Plugin manager"><br><sub>Settings → Plugins: manage installed plugins, configs, logs and storage</sub></td>
+    <td><img src="docs/images/plugin-market.jpg" alt="Third-party plugin market"><br><sub>Third-party plugin market: discover <code>genkan-plugin</code> repositories (e.g. <code>jae-jae/genkan-plugins</code>)</sub></td>
   </tr>
   <tr>
+    <td><img src="docs/images/widget-picker.jpg" alt="Widget picker"><br><sub>Searchable widget picker: add widgets or install built-ins in one click</sub></td>
+    <td><img src="docs/images/ai.jpg" alt="AI settings"><br><sub>Settings → AI: masked API token, one-click Skill prompt and MCP</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/search.jpg" alt="Quick search"><br><sub>Quick search across all workspaces (plus search plugins like Calculator)</sub></td>
     <td><img src="docs/images/content.jpg" alt="Content manager"><br><sub>Content manager for workspaces, categories and links</sub></td>
-    <td><img src="docs/images/context-menu.jpg" alt="Context menu"><br><sub>Right-click (long-press on mobile) menus</sub></td>
   </tr>
 </table>
 

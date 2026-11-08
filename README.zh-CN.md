@@ -71,31 +71,7 @@ volumes:
 
 镜像提供 `linux/amd64` 与 `linux/arm64`（树莓派、Apple Silicon、NAS 均可）。
 
-## 插件
-
-插件是单个 JavaScript 或 TypeScript 文件，运行在服务端纯 Go 沙箱引擎（[moejs](https://github.com/MoeForge/moejs)）中：具备内存与耗时限制、无文件系统访问权限，并采用默认拒绝的网络、链接与 SSH 权限模型（需管理员确认后才可启用）。插件只返回声明式 UI 块，浏览器不会执行任何插件代码。
-
-- **桌面小组件**：支持瀑布流自由布局、拖拽排序与尺寸调节，可渲染统计卡片、进度条、折线/柱状/趋势图、可交互待办清单、Markdown 便签及媒体内容；**待办**与**便签**会在首次启动时自动安装。
-- **壁纸源**：Bing 每日壁纸、NASA APOD、Picsum 或自定义图片源。
-- **搜索提供者**：搜索框内直接计算表达式、搜索 GitHub 仓库或返回自定义即时结果。
-- **定时任务**：后台定时采样，支持星标趋势与订阅用量历史统计。
-
-**内置插件与第三方插件：**
-- **内置目录（17 款插件）：** 待办、便签、计算器、天气、世界时钟、倒计时、Pi-hole、健康检查概览、GitHub Stars、GitHub 搜索、Hacker News、RSS、媒体嵌入、链接导入、Bing 壁纸、NASA APOD、Picsum —— 可在 **设置 → 插件** 或小组件选择器中一键安装。
-- **第三方市场与 [`jae-jae/genkan-plugins`](https://github.com/jae-jae/genkan-plugins)：** 在 **设置 → 插件 → 添加插件 → 第三方** 可直接发现带 `genkan-plugin` 主题的 GitHub 仓库，安装前可检查权限与源码；也可直接通过 URL 或粘贴代码安装。官方插件库 [`genkan-plugins`](https://github.com/jae-jae/genkan-plugins) 提供 **SSH 服务器**（原生 SSH 采集 Linux CPU/内存/磁盘/网络）、**机场订阅**（实时流量配额与 7 天/30 天/趋势图）、**Codex 用量**、**股票趋势** 与 **比特币价格** 等插件。
-
-**用 AI 开发插件：** [Agent Skill](skills/genkan) 内置完整的插件开发指南（[`skills/genkan/plugin-dev.md`](skills/genkan/plugin-dev.md)）与“编写、测试、安装”闭环。在 **设置 → 插件 → 用 AI 开发** 复制一行提示词发送给 AI 助手，即可为你编写、调试并直接安装自定义插件。插件接口约定见 [`docs/PLUGINS.md`](docs/PLUGINS.md)。
-
-<div align="center">
-  <img src="docs/images/widgets.jpg" alt="内置与第三方插件小组件展示" width="900"><br>
-  <sub>内置插件与 <a href="https://github.com/jae-jae/genkan-plugins">genkan-plugins</a> 小组件展示：SSH 服务器、机场订阅、股票趋势、Codex 用量、Pi-hole 与比特币价格</sub>
-</div>
-
-## 更新
-
-每次合并到 `main` 都会自动发布一个新版本（`vX.Y.Z`），包含新镜像和签名的二进制。Genkan 每 6 小时向 GitHub 检查一次新版本（设置 → 关于，默认开启），有新版本时管理员会在右上角看到更新按钮。在更新日志面板中可以**原地热更新**：新程序下载到数据目录，校验 ed25519 签名和校验和、备份数据后重启进入新版本；新版本启动失败会自动回滚。拉取更新的镜像始终优先于原地更新。详见 [`docs/UPDATES.md`](docs/UPDATES.md)。
-
-## 配置
+### 配置
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
@@ -110,12 +86,32 @@ volumes:
 - 放在反向代理（Nginx、Caddy、Traefik）后面时，请转发 `X-Forwarded-Proto: https`，会话 Cookie 才会带 `Secure` 标记。
 - 子命令：`genkan version`、`genkan healthcheck`（Docker `HEALTHCHECK` 使用）。
 
+## 插件
+
+插件是单个 JavaScript 或 TypeScript 文件，运行在服务端纯 Go 沙箱引擎（[moejs](https://github.com/MoeForge/moejs)）中：具备内存与耗时限制、无文件系统访问权限，并采用默认拒绝的网络、链接与 SSH 权限模型（需管理员确认后才可启用）。插件只返回声明式 UI 块，浏览器不会执行任何插件代码。
+
+- **桌面小组件**：支持瀑布流自由布局、拖拽排序与尺寸调节，可渲染统计卡片、进度条、折线/柱状/趋势图、可交互待办清单、Markdown 便签及媒体内容；**待办**与**便签**会在首次启动时自动安装。
+- **壁纸源**：Bing 每日壁纸、NASA APOD、Picsum 或自定义图片源。
+- **搜索提供者**：搜索框内直接计算表达式、搜索 GitHub 仓库或返回自定义即时结果。
+- **定时任务**：后台定时采样，支持星标趋势与订阅用量历史统计。
+
+**内置插件与第三方插件：**
+- **内置目录（17 款插件）：** 待办、便签、计算器、天气、世界时钟、倒计时、Pi-hole、健康检查概览、GitHub Stars、GitHub 搜索、Hacker News、RSS、媒体嵌入、链接导入、Bing 壁纸、NASA APOD、Picsum —— 可在 **设置 → 插件** 或小组件选择器中一键安装。
+- **第三方市场与 [`jae-jae/genkan-plugins`](https://github.com/jae-jae/genkan-plugins)：** 在 **设置 → 插件 → 添加插件 → 第三方** 中，Genkan 会自动发现带有 `genkan-plugin` 主题的 GitHub 仓库，安装前可直接查看所需权限与源码（也支持通过 URL 或直接粘贴源码安装）。可以参考第三方插件库示例 [`jae-jae/genkan-plugins`](https://github.com/jae-jae/genkan-plugins)，其中包含了 **SSH 服务器**（通过原生 SSH 采集 Linux CPU/内存/磁盘/网络）、**机场订阅**（实时流量配额与 7 天/30 天/趋势图）、**Codex 用量**、**股票趋势** 与 **比特币价格** 等实用插件。
+
+**用 AI 开发插件：** [Agent Skill](skills/genkan) 内置完整的插件开发指南（[`skills/genkan/plugin-dev.md`](skills/genkan/plugin-dev.md)）与“编写、测试、安装”闭环。在 **设置 → 插件 → 用 AI 开发** 复制一行提示词发送给 AI 助手，即可为你编写、调试并直接安装自定义插件。插件接口约定见 [`docs/PLUGINS.md`](docs/PLUGINS.md)。
+
+<div align="center">
+  <img src="docs/images/widgets.jpg" alt="内置与第三方插件小组件展示" width="900"><br>
+  <sub>内置插件与第三方示例库 <a href="https://github.com/jae-jae/genkan-plugins">genkan-plugins</a> 小组件展示：SSH 服务器、机场订阅、股票趋势、Codex 用量、Pi-hole 与比特币价格</sub>
+</div>
+
 ## 截图
 
 <table>
   <tr>
     <td><img src="docs/images/plugins.jpg" alt="插件管理"><br><sub>设置 → 插件：集中管理已安装插件、配置、日志与存储</sub></td>
-    <td><img src="docs/images/plugin-market.jpg" alt="第三方插件市场"><br><sub>第三方插件市场：浏览并安装 <code>jae-jae/genkan-plugins</code> 等社区插件</sub></td>
+    <td><img src="docs/images/plugin-market.jpg" alt="第三方插件市场"><br><sub>第三方插件市场：自动发现 <code>genkan-plugin</code> 仓库（如 <code>jae-jae/genkan-plugins</code>）</sub></td>
   </tr>
   <tr>
     <td><img src="docs/images/widget-picker.jpg" alt="小组件选择器"><br><sub>可搜索的小组件选择器：添加小组件或一键安装内置插件</sub></td>

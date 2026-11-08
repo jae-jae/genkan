@@ -71,31 +71,7 @@ volumes:
 
 Images are published for `linux/amd64` and `linux/arm64` (Raspberry Pi, Apple Silicon, NAS).
 
-## Plugins
-
-Plugins are single JavaScript or TypeScript files that run server-side in a sandboxed pure-Go engine ([moejs](https://github.com/MoeForge/moejs)) with memory and time limits, no filesystem access, and deny-by-default host, link and SSH permissions reviewed by the admin. They return declarative UI blocks, so the browser never executes plugin code.
-
-- **Dashboard widgets:** resizable, drag-sortable masonry cards with stats, progress bars, charts (`line`, `bar`, `spark`), interactive checklists, Markdown notes, and embedded media. **To-do** and **Note** are pre-installed on first start.
-- **Wallpaper sources:** Bing Daily, NASA APOD, Picsum, or custom image feeds.
-- **Search providers:** inline calculator, GitHub repository search, or custom instant results right in the search box.
-- **Scheduled jobs:** background sampling for trend history and quota tracking.
-
-**Built-in & third-party plugins:**
-- **Built-in catalog (17 plugins):** To-do, Note, Calculator, Weather, World Clock, Countdown, Pi-hole, Uptime Summary, GitHub Stars, GitHub Search, Hacker News, RSS, Media, Link Importer, Bing Wallpaper, NASA APOD, and Picsum — install from **Settings → Plugins** or directly from the widget picker.
-- **Third-party market & [`jae-jae/genkan-plugins`](https://github.com/jae-jae/genkan-plugins):** Discover GitHub repositories tagged `genkan-plugin` in **Settings → Plugins → Add → Third-party**, inspect permissions and source before enabling, or paste any URL or code. The official [`genkan-plugins`](https://github.com/jae-jae/genkan-plugins) collection includes **SSH Server** (Linux CPU, memory, disk & network over native SSH), **Airport Subscription** (proxy quota & 7D/30D/trend charts), **Codex Usage**, **Stock Trend**, and **Bitcoin Price**.
-
-**Develop plugins with AI:** The [Agent Skill](skills/genkan) includes the full plugin authoring guide ([`skills/genkan/plugin-dev.md`](skills/genkan/plugin-dev.md)) and live test workflow. Click **Settings → Plugins → Develop with AI** to copy the one-line prompt and have your assistant write, test and install custom plugins on your instance. Plugin contract: [`docs/PLUGINS.md`](docs/PLUGINS.md).
-
-<div align="center">
-  <img src="docs/images/widgets.jpg" alt="Dashboard widgets from built-in and third-party plugins" width="900"><br>
-  <sub>Dashboard widgets from built-in and <a href="https://github.com/jae-jae/genkan-plugins">genkan-plugins</a> plugins: SSH Server, Airport Subscription, Stock Trend, Codex Usage, Pi-hole and Bitcoin Price</sub>
-</div>
-
-## Updates
-
-Every merge to `main` publishes a release (`vX.Y.Z`) with a new image and signed binaries. Genkan checks GitHub for new releases every 6 hours (Settings → About, on by default) and shows an update button in the top bar for admins. The changelog panel can update **in place**: the new binary is downloaded into the data directory, its ed25519 signature and checksum are verified, your data is backed up, and Genkan restarts into it, rolling back automatically if the new version fails to start. Pulling a newer image always wins over an in-place update. Details: [`docs/UPDATES.md`](docs/UPDATES.md).
-
-## Configuration
+### Configuration
 
 | Variable | Default | Description |
 |---|---|---|
@@ -110,12 +86,32 @@ Every merge to `main` publishes a release (`vX.Y.Z`) with a new image and signed
 - Behind a reverse proxy (Nginx, Caddy, Traefik), forward `X-Forwarded-Proto: https` so cookies get the `Secure` flag.
 - Subcommands: `genkan version`, `genkan healthcheck` (used by the Docker `HEALTHCHECK`).
 
+## Plugins
+
+Plugins are single JavaScript or TypeScript files that run server-side in a sandboxed pure-Go engine ([moejs](https://github.com/MoeForge/moejs)) with memory and time limits, no filesystem access, and deny-by-default host, link and SSH permissions reviewed by the admin. They return declarative UI blocks, so the browser never executes plugin code.
+
+- **Dashboard widgets:** resizable, drag-sortable masonry cards with stats, progress bars, charts (`line`, `bar`, `spark`), interactive checklists, Markdown notes, and embedded media. **To-do** and **Note** are pre-installed on first start.
+- **Wallpaper sources:** Bing Daily, NASA APOD, Picsum, or custom image feeds.
+- **Search providers:** inline calculator, GitHub repository search, or custom instant results right in the search box.
+- **Scheduled jobs:** background sampling for trend history and quota tracking.
+
+**Built-in & third-party plugins:**
+- **Built-in catalog (17 plugins):** To-do, Note, Calculator, Weather, World Clock, Countdown, Pi-hole, Uptime Summary, GitHub Stars, GitHub Search, Hacker News, RSS, Media, Link Importer, Bing Wallpaper, NASA APOD, and Picsum — install from **Settings → Plugins** or directly from the widget picker.
+- **Third-party market & [`jae-jae/genkan-plugins`](https://github.com/jae-jae/genkan-plugins):** Genkan automatically discovers GitHub repositories tagged with the `genkan-plugin` topic in **Settings → Plugins → Add → Third-party**, allowing you to inspect permissions and preview source code before enabling (or install from any URL or pasted code). For an example of how third-party plugins are built and organized, see [`jae-jae/genkan-plugins`](https://github.com/jae-jae/genkan-plugins), which includes **SSH Server** (Linux CPU, memory, disk & network over native SSH), **Airport Subscription** (proxy quota & 7D/30D/trend charts), **Codex Usage**, **Stock Trend**, and **Bitcoin Price**.
+
+**Develop plugins with AI:** The [Agent Skill](skills/genkan) includes the full plugin authoring guide ([`skills/genkan/plugin-dev.md`](skills/genkan/plugin-dev.md)) and live test workflow. Click **Settings → Plugins → Develop with AI** to copy the one-line prompt and have your assistant write, test and install custom plugins on your instance. Plugin contract: [`docs/PLUGINS.md`](docs/PLUGINS.md).
+
+<div align="center">
+  <img src="docs/images/widgets.jpg" alt="Dashboard widgets from built-in and third-party plugins" width="900"><br>
+  <sub>Dashboard widgets from built-in plugins and the third-party example repository <a href="https://github.com/jae-jae/genkan-plugins">genkan-plugins</a> (SSH Server, Airport Subscription, Stock Trend, Codex Usage, Pi-hole, Bitcoin Price)</sub>
+</div>
+
 ## Screenshots
 
 <table>
   <tr>
     <td><img src="docs/images/plugins.jpg" alt="Plugin manager"><br><sub>Settings → Plugins: manage installed plugins, configs, logs and storage</sub></td>
-    <td><img src="docs/images/plugin-market.jpg" alt="Third-party plugin market"><br><sub>Third-party plugin market: discover <code>jae-jae/genkan-plugins</code> and community plugins</sub></td>
+    <td><img src="docs/images/plugin-market.jpg" alt="Third-party plugin market"><br><sub>Third-party plugin market: discover <code>genkan-plugin</code> repositories (e.g. <code>jae-jae/genkan-plugins</code>)</sub></td>
   </tr>
   <tr>
     <td><img src="docs/images/widget-picker.jpg" alt="Widget picker"><br><sub>Searchable widget picker: add widgets or install built-ins in one click</sub></td>

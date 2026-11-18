@@ -459,4 +459,37 @@ test.describe('widget layout (masonry, drag, resize, context menu)', () => {
     const body = card(page, clock.id).locator('.wg-body')
     expect(await body.evaluate((e) => e.scrollHeight > e.clientHeight && ['auto', 'scroll'].includes(getComputedStyle(e).overflowY))).toBe(true)
   })
+
+  test('with widgets and no links, admin gets a compact bar instead of the empty-page card and guests get nothing', async ({ page, api, browser }) => {
+    await install(api, 'countdown')
+    await add(api, 'countdown', 'timer')
+    await openApp(page)
+    await settled(page, 1)
+
+    await expect(page.getByTestId('empty-state')).toHaveCount(0)
+    await expect(page.getByTestId('empty-links')).toBeVisible()
+    await page.getByTestId('empty-add-link').click()
+    await expect(page.getByTestId('link-modal')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await page.getByTestId('empty-mcp').click()
+    await expect(page.getByTestId('settings-panel-ai')).toBeVisible()
+    await page.keyboard.press('Escape')
+
+    // guest mode: sees the widget, neither empty-state nor empty-links
+    await api.settings({ guest_access: true })
+    const gctx = await browser.newContext({ baseURL: origin(), locale: 'en-US' })
+    const g = await gctx.newPage()
+    await g.goto('/')
+    await settled(g, 1)
+    await expect(g.getByTestId('empty-state')).toHaveCount(0)
+    await expect(g.getByTestId('empty-links')).toHaveCount(0)
+    await gctx.close()
+
+    // disabling the plugin hides the last visible widget, bringing back empty-state
+    await api.call('PATCH', '/api/plugins/countdown', { enabled: false })
+    await page.reload()
+    await expect(page.getByTestId('widget')).toHaveCount(0)
+    await expect(page.getByTestId('empty-links')).toHaveCount(0)
+    await expect(page.getByTestId('empty-state')).toBeVisible()
+  })
 })

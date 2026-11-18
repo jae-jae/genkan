@@ -249,6 +249,9 @@ img.ico { background: rgba(255, 255, 255, 0.9); padding: 2px; box-shadow: 0 1px 
 .empty h2 { margin: 0 0 8px; font-size: 21px; font-weight: 650; }
 .empty p { margin: 0 auto 22px; color: var(--dim); max-width: 380px; }
 .empty-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.empty-links { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; opacity: 0.78; transition: opacity 0.2s; }
+.empty-links:hover, .empty-links:focus-within { opacity: 1; }
+.empty-links-text { font-size: 13.5px; color: var(--dim); text-shadow: 0 1px 8px rgba(8, 10, 40, 0.35); margin-right: 2px; }
 
 /* ---------- controls ---------- */
 .btn { height: 40px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.12); color: #fff; font-weight: 550; font-size: 14px; text-decoration: none; white-space: nowrap; transition: background 0.18s, transform 0.2s var(--ease), box-shadow 0.2s, opacity 0.2s; }

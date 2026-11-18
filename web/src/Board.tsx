@@ -16,9 +16,11 @@ import {
   links,
   modal,
   openSettings,
+  plugins,
   reorderCategories,
   settings,
   trackClick,
+  widgets,
 } from './store'
 import type { Category, Link } from './types'
 import { safeHref, sortLinks } from './util'
@@ -238,11 +240,36 @@ export function Board() {
   // pinned links show in the top row AND in their own category
   const pinned = sortLinks(wl.filter((l) => l.pinned), mode, true)
   const uncat = sortLinks(wl.filter((l) => !l.category_id || !catIds.has(l.category_id)), mode)
-  // An empty workspace shows the onboarding card; in edit mode the (empty) sections are shown instead so
-  // categories and the first links can be added.
+  // An empty workspace shows the onboarding card unless widgets are visible; with widgets present, show a
+  // compact link bar for admins (nothing for guests). In edit mode the (empty) sections are shown instead.
   const empty = wl.length === 0 && !edit
+  const hasWidgets =
+    empty &&
+    widgets.value.some((w) => (!w.workspace_id || w.workspace_id === ws.id) && plugins.value.some((p) => p.id === w.plugin && p.enabled))
 
-  if (empty)
+  if (empty) {
+    if (hasWidgets) {
+      if (!admin) return null
+      return (
+        <main class="board" key={ws.id}>
+          <div class="empty-links" data-testid="empty-links">
+            <span class="empty-links-text">{t('empty.noLinks')}</span>
+            <button
+              class="btn sm glass-lite"
+              data-testid="empty-add-link"
+              onClick={() => (modal.value = { kind: 'link', defaults: { workspace_id: ws.id, category_id: '', pinned: false } })}
+            >
+              <Icon n="plus" size={14} />
+              {t('empty.add')}
+            </button>
+            <button class="btn sm glass-lite" data-testid="empty-mcp" onClick={() => openSettings('ai')}>
+              <Icon n="bot" size={14} />
+              {t('empty.mcp')}
+            </button>
+          </div>
+        </main>
+      )
+    }
     return (
       <main class="board" key={ws.id}>
         <div class="empty glass" data-testid="empty-state">
@@ -265,6 +292,7 @@ export function Board() {
         </div>
       </main>
     )
+  }
 
   const def = (category_id: string, pinned = false) => ({ workspace_id: ws.id, category_id, pinned })
   return (

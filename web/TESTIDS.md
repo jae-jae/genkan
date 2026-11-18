@@ -52,7 +52,7 @@ Shortcuts: `/`, `Ctrl/Cmd+K` focus, `ArrowUp/Down`, `Enter`, `Esc`, digits `1-9`
 | testid | element |
 |---|---|
 | `board` | main area (`data-editing="1"` in edit mode) |
-| `empty-state`, `empty-add-link`, `empty-mcp` | empty workspace |
+| `empty-state`, `empty-links`, `empty-add-link`, `empty-mcp` | `empty-state` when workspace has neither links nor visible widgets; `empty-links` (admin only, compact row) when it has widgets but no links |
 | `section-pinned` | pinned row at the top, NO heading (shown if any pinned link, or in edit mode). The `section-pinned-title` testid no longer exists |
 | `category-<id>` (+ `category-<id>-title`) | category section (`h2` is the title) |
 | `category-uncategorized` | uncategorized section (title only shown when categories/pinned exist) |

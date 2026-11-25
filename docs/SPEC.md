@@ -48,7 +48,7 @@ Genkan（玄関）是一款可自托管的极简导航页，面向 homelab 玩�
 ├── skills/embed.go        package skills；`//go:embed genkan/SKILL.md genkan/reference.md genkan/plugin-dev.md`（go:embed 不能引用父目录），`Files()` 返回与仓库字节一致的文件
 ├── e2e/                   Playwright 端到端测试
 ├── Dockerfile, docker-compose.yml, Makefile, README.md, LICENSE, CONTRIBUTING.md, SECURITY.md
-├── .github/               CI（测试 + 多架构镜像推送到 GHCR）、dependabot、Issue/PR 模板
+├── .github/               CI（测试 + 多架构镜像推送到 GHCR）、Issue/PR 模板
 ```
 
 ## 3. 配置（环境变量）

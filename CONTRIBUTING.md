@@ -69,7 +69,7 @@ On merge the workflow runs the tests, then builds the linux amd64/arm64 tarballs
 1. Generate the signing key pair: `go run ./tools/relsign keygen`. It prints the private key (64 bytes) and the public key (32 bytes), both base64. Alternatively `-out PREFIX` writes `PREFIX.key` (0600) and `PREFIX.pub`.
 2. Store the private key as the repository secret `GENKAN_RELEASE_KEY` (Settings, Secrets and variables, Actions). Keep a backup somewhere safe and never commit it. Without the secret the release job fails.
 3. Put the public key into `internal/update` (the embedded key), and commit it before the first release. The public key cannot be changed for installs that already run, so do not lose the private key.
-4. Create the labels: `release:major`, `release:minor`, `release:skip`, `feature`, `bug` (and `dependencies`, which Dependabot already uses).
+4. Create the labels: `release:major`, `release:minor`, `release:skip`, `feature`, `bug`, `dependencies`.
 5. Check locally with `go run ./tools/relsign verify checksums.txt checksums.txt.sig <public key>` on a downloaded release.
 
 By contributing you agree that your contribution is licensed under the [MIT License](LICENSE).
